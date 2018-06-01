@@ -49,6 +49,7 @@ class HandlerClass(object):
         env_file = self._package_path + '/' + rospy.get_param(node_name + '/environment_file_name')
         hand_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_file')
         hand_config_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_config_file')
+        hand_ball_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_ball_file')
         hand_cache_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_cache_file')
         robot_name = rospy.get_param(node_name + '/robot_name')
         manip_name = rospy.get_param(node_name + '/manipulator_name')
@@ -59,6 +60,7 @@ class HandlerClass(object):
         # Create planner
         self._planner = IntegratedHFTSPlanner(env_file=env_file,
                                               hand_cache_file=hand_cache_file,
+                                              hand_ball_file=hand_ball_file,
                                               robot_name=robot_name,
                                               manipulator_name=manip_name,
                                               data_root_path=self._package_path + '/data',
