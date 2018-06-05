@@ -13,8 +13,8 @@ from hfts_grasp_planner.sdf.core import SceneSDF
 from hfts_grasp_planner.sdf.robot import RobotSDF
 from hfts_grasp_planner.sdf.costs import DistanceToFreeSpace
 from hfts_grasp_planner.robot_hand import RobotHand, InvalidTriangleException
-import itertools
 from hfts_grasp_planner.utils import ObjectFileIO, clamp, compute_grasp_stability, normal_distance, position_distance, dist_in_range
+import itertools
 import rospy
 import scipy.optimize
 import IPython
@@ -113,10 +113,12 @@ class HFTSSampler(object):
         self._orEnv.SetDebugLevel(orpy.DebugLevel.Fatal)
         self._orEnv.GetCollisionChecker().SetCollisionOptions(orpy.CollisionOptions.Contacts)
         if vis:
-            self._orEnv.SetViewer('qtcoin') # attach viewer (optional)
+            self._do_visualize = True
+            # self._orEnv.SetViewer('qtcoin') # attach viewer (optional)
             self._or_handles = []
         else:
             self._or_handles = None
+            self._do_visualize = False
         self._scene_or_env = None
         self._hand_loaded = False
         self._scene_interface = scene_interface
@@ -277,6 +279,8 @@ class HFTSSampler(object):
         return arrow_handles
 
     def _debug_visualize(self, labels, handle_index=-1):
+        if not self._b_visualize:
+            return
         grasp_conf, object_contacts, hand_contacts = self.compose_grasp_info(labels)
         self._robot.SetVisible(False)
         self.draw_contacts(object_contacts, handle_index=handle_index)
@@ -448,6 +452,8 @@ class HFTSSampler(object):
             self._robot = RobotHand(env=self._orEnv, cache_file=hand_cache_file,
                                     or_hand_file=hand_file, hand_config_file=hand_config_file)
             self._robot_sdf = RobotSDF(self._robot)
+            if self._do_visualize:  # we can set the viewer after loading the robot
+                self._orEnv.SetViewer('qtcoin')
             self._robot_sdf.load_approximation(hand_ball_file)
             self._hand_manifold = self._robot.get_hand_manifold()
             self._hand_manifold.load()

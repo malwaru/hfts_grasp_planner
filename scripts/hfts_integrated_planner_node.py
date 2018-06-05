@@ -234,7 +234,6 @@ class HandlerClass(object):
                            'first_level_branching_factor': self._params['hfts_first_level_branching_factor']}
         self._planner.set_parameters(time_limit=self._params['time_limit'],
                                      compute_velocities=self._params['compute_velocities'],
-                                     com_center_weight=self._params['com_center_weight'],
                                      hfts_generation_params=hfts_gen_params,
                                      b_force_new_hfts=self._params['force_new_hfts'],
                                      min_iterations=self._params['min_iterations'],

@@ -5,6 +5,7 @@ import time
 import os
 import logging
 import yaml
+import itertools
 from scipy.spatial import KDTree
 from utils import vec_angel_diff, dist_in_range, compute_grasp_stability
 from openravepy.misc import DrawAxes
@@ -323,6 +324,7 @@ class RobotHand(object):
     def get_fingertip_symmetries(self):
         return self._fingertip_symmetries
 
+
 # TODO maybe define an interface with the methods the grasp planner needs this to have
 class ReachabilityKDTree(object):
     """
@@ -369,6 +371,9 @@ class ReachabilityKDTree(object):
             data = np.concatenate((self._codes, self._hand_configurations), axis=1)
             meta_data = np.array([self._min_code, self._max_code])
             store_data = np.array([meta_data, data], dtype=object)
+            dir_name = os.path.dirname(self._cache_file_name)
+            if not os.path.exists(dir_name):  # ensure the path exists
+                os.makedirs(dir_name)
             np.save(self._cache_file_name, store_data)
         self._kd_tree = KDTree(self._codes)
 
@@ -397,22 +402,21 @@ class ReachabilityKDTree(object):
         logging.info('[ReachabilityKDTree::Evaluating %i hand configurations.' % actual_num_samples)
         # now compute codes for all configurations
         with self._or_robot.GetEnv():
-            for sample_idx in xrange(self._num_samples):
-                sample = self._hand_configurations[sample_idx]
+            for (sample, idx) in itertools.izip(self._hand_configurations, xrange(self._hand_configurations.shape[0])):
                 self._or_robot.SetDOFValues(sample)
                 while self._or_robot.CheckSelfCollision():  # overwrite sample, if it is in collision
                     sample = np.random.rand(1, num_dofs)[0] * joint_ranges + lower_limits
                     self._or_robot.SetDOFValues(sample)
-                    self._hand_configurations[sample_idx] = sample
+                    self._hand_configurations[idx] = sample
                 fingertip_contacts = self._or_robot.get_ori_tip_pn(sample)
                 handles = []
                 self.draw_contacts(fingertip_contacts, handles)
-                self._codes[sample_idx] = self._encode_grasp_non_normalized(fingertip_contacts)
+                self._codes[idx] = self._encode_grasp_non_normalized(fingertip_contacts)
         # Normalize code
         self._min_code = np.min(self._codes, axis=0)
         self._max_code = np.max(self._codes, axis=0)
         self._codes = (self._codes - self._min_code) / (self._max_code - self._min_code)
-        logging.info('[ReachabilityKDTree::Sampling finished. Found %i collision-free hand configurations.' % sample_idx)
+        logging.info('[ReachabilityKDTree::Sampling finished. Found %i collision-free hand configurations.' % self._hand_configurations.shape[0])
 
     def _encode_grasp_non_normalized(self, grasp):
         """

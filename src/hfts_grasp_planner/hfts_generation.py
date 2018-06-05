@@ -7,6 +7,7 @@ import sklearn.cluster
 import math
 import time
 from external.plyfile import PlyData
+from itertools import izip
 
 
 def sample_face(v0, v1, v2, normal, density):
@@ -105,15 +106,13 @@ def filter_unsmooth_points(points, radius, max_variance):
     start_time = time.time()
     kdt = sklearn.neighbors.KDTree(points[:, :3], leaf_size=6, metric='euclidean')
     vld_idx = np.ones(points.shape[0], dtype=bool)
-    for i in range(len(points)):
-        point = points[i]
-        nbs_indices = kdt.query_radius(point[:3], radius)[0]
+    for (point, i) in izip(points, xrange(len(points))):
+        nbs_indices = kdt.query_radius(np.array([point[:3]]), radius)[0]
         if len(nbs_indices) == 0:
             continue
         nb_points_normals = points[nbs_indices, 3:]
         var = np.var(nb_points_normals, axis=0)
-        if max(var) > max_variance:
-            vld_idx[i] = False
+        vld_idx[i] = max(var) <= max_variance
     points = points[vld_idx, :]
     print 'filtering points took %fs' % (time.time() - start_time)
     return points

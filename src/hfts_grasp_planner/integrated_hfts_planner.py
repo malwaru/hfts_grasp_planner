@@ -91,7 +91,7 @@ class IntegratedHFTSPlanner(object):
         # default open hand configuration is initial configuration
         if open_hand_config is None:
             manip = self._robot.GetActiveManipulator()
-            open_hand_config = self._robot.GetDOFValues(manip.GetGripperDOFIndices())
+            open_hand_config = self._robot.GetDOFValues(manip.GetGripperIndices())
         self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot,
                                                                     self._cSampler, open_hand_config)
         p_goal_provider = DynamicPGoalProvider()
@@ -238,7 +238,7 @@ class IntegratedHFTSPlanner(object):
     def set_parameters(self, min_iterations=None, max_iterations=None,
                        free_space_weight=None, connected_space_weight=None,
                        use_approximates=None, compute_velocities=None,
-                       time_limit=None, com_center_weight=None,
+                       time_limit=None, 
                        reachability_weight=None,
                        hfts_generation_params=None, max_num_hierarchy_descends=None,
                        b_force_new_hfts=None, vel_factor=None):
@@ -247,8 +247,7 @@ class IntegratedHFTSPlanner(object):
             self._time_limit = time_limit
         if compute_velocities is not None:
             self._compute_velocities = compute_velocities
-        self._grasp_planner.set_parameters(com_center_weight=com_center_weight,
-                                           reachability_weight=reachability_weight,
+        self._grasp_planner.set_parameters(reachability_weight=reachability_weight,
                                            b_force_new_hfts=b_force_new_hfts,
                                            hfts_generation_params=hfts_generation_params)
         if max_num_hierarchy_descends == 0:
