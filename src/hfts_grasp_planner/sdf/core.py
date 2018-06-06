@@ -795,6 +795,8 @@ class SceneSDF(object):
                 body.SetTransform(old_tf)  # restore transform
                 body.Enable(False)  # disable body again
                 # finally, if we have a body path for this body, store it
+                if self._sdf_paths is None:
+                    self._sdf_paths = {}
                 if body_name in self._sdf_paths:
                     body_sdf.save(self._sdf_paths[body_name])
             self._body_sdfs[body_name] = (body, body_sdf)
