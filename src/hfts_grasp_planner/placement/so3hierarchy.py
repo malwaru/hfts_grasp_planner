@@ -12,6 +12,14 @@ class SO3Hierarchy(object):
         As hierarchy on S^2 this hierarchy applies HEALPix; for S^1 it applies just a simple grid on the interval [0,2pi].
         At the root level, HEALPix has 12 patches, which for each subsequent level in the hierarchy are subdivided by 4.
         The grid on S^1 has 6 elements on the root level and each element is split by 2 for each subsequent level.
+        Arguments in favor for this hierarchy:
+            - minimizes dispersion and discrepancy on each level of the hierarchy, 
+               i.e. we get a good cover of SO(3) on each level
+            - children of hierarchy nodes are all nearest neighbors of their parents w.r.t. to
+                metric p(x, y) = arccos(|x dot y|), where x and y are quaternions representing
+                rotations
+            - no preference given to what axis is more important. all rotations are treated equally
+                (this makes it look unintuitive when plotting as frames)
     """
     S2_ROOT_NEIGHBORS = [[3, 4, 5, 1], [0, 5, 6, 2], [1, 6, 7, 3], [2, 7, 4, 0],
                          [3, 11, 8, 0], [0, 8, 9, 1], [1, 9, 10, 2], [2, 10, 11, 3],
@@ -44,7 +52,7 @@ class SO3Hierarchy(object):
         return ([], [])
 
     @staticmethod
-    def get_branching_factor(depth):
+    def get_branching_factors(depth):
         if depth == 0:
             return (12, 6)
         return (4, 2)

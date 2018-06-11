@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import logging
+import itertools
 import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
@@ -73,6 +74,8 @@ class SE3Hierarchy(object):
                 @param global_id - global id of this node within the hierarchy, None if root
             """
             self._global_id = global_id
+            if self._global_id is None:
+                self._global_id = ((), (), (), (), ()) 
             self._relative_id = SE3Hierarchy.extract_relative_id(self._global_id)
             self._cartesian_box = cartesian_box
             self._so3_key = so3_key
@@ -84,6 +87,13 @@ class SE3Hierarchy(object):
             self._child_cache = {}
 
         def get_random_node(self):
+            """
+                Return a random child node, as required by optimizers defined in
+                the optimization module. This function simply calls get_random_child().
+            """
+            return self.get_random_child()
+
+        def get_random_child(self):
             """
                 Returns a randomly selected child node of this node.
                 This selection respects the node blacklist of the hierarchy.
@@ -115,14 +125,14 @@ class SE3Hierarchy(object):
             # TODO respect blacklist
             neighbor_id = np.zeros(5, np.int)
             neighbor_id[:3] = np.clip(child_id[:3] + random_dir, 0, max_ids)
-            so3_key = self._so3_hierarchy.get_random_neighbor(node.get_so3_id())
+            so3_key = self._so3_hierarchy.get_random_neighbor(node.get_so3_key())
             neighbor_id[3] = so3_key[0][-1]
             neighbor_id[4] = so3_key[1][-1]
             return self.get_child_node(neighbor_id)
 
         def get_child_node(self, child_id):
             """
-                Returns a node representing the child with the specified id.
+                Returns a node representing the child with the specified local id.
                 @param child_id - numpy array of type int and length 5 (expected to be in range)
             """
             child_id_key = tuple(child_id)
@@ -142,13 +152,26 @@ class SE3Hierarchy(object):
             self._child_cache[tuple(child_id_key)] = child_node
             return child_node
 
+        def get_children(self):
+            """
+                Return a generator that allows to iterate over all children.
+            """
+            bfs = self._so3_hierarchy.get_branching_factors(self._depth)
+            local_keys = itertools.product(range(self._hierarchy._cart_branching),
+                                           range(self._hierarchy._cart_branching),
+                                           range(self._hierarchy._cart_branching),
+                                           range(bfs[0]), range(bfs[1]))
+            for lkey in local_keys:
+                child = self.get_child_node(lkey)
+                yield child
+
         def get_representative_value(self, rtype=0):
             """
                 Returns a point in SE(3) that represents this cell, i.e. the center of this cell
                 @param rtype - Type to represent point (0 = 4x4 matrix)
             """
             position = self._cartesian_box[0] + self._cartesian_range / 2.0
-            quaternion = self._so3_hierarchy.get_representative_value(self._so3_key)
+            quaternion = self._so3_hierarchy.get_quaternion(self._so3_key)
             if rtype == 0:  # return a matrix
                 matrix = transformations.quaternion_matrix(quaternion)
                 matrix[:3, 3] = position
@@ -181,19 +204,22 @@ class SE3Hierarchy(object):
         self._cart_branching = cart_branching
         self._so3_hierarchy = so3hierarchy.SO3Hierarchy()
         self._max_depth = max(0, min(depth, self._so3_hierarchy.max_depth()))
-        self._root = self.SE3HierarchyNode(bounding_box, self._so3_hierarchy.get_root_key(), self)
+        self._root = self.SE3HierarchyNode(cartesian_box=bounding_box,
+                                           so3_key=self._so3_hierarchy.get_root_key(),
+                                           depth=0,
+                                           hierarchy=self)
         self._blacklist = None  # TODO need some data structure to blacklist nodes
 
     @staticmethod
     def extract_relative_id(global_id):
         """
-            Extracts the local id from the given global id. Returns None for root id (None)
+            Extracts the local id from the given global id. 
             Note that a local is a tuple (a,b,c,d,e,f) where all elements are integers.
             This is different from a global id!
         """
-        if global_id is None:
-            return ()
         depth = len(global_id[0])
+        if depth == 0:
+            return ()  # local root id is empty
         return tuple((global_id[i][depth - 1] for i in xrange(5)))
 
     @staticmethod
