@@ -380,7 +380,7 @@ class SDF(object):
     def __init__(self, grid, approximation_box=None) :
         """
             Creates a new signed distance field.
-            You may either create an SDF using a SDFBuilder to by loading it from file.
+            You may either create an SDF using a SDFBuilder or by loading it from file.
             In neither case you will have to call this constructor yourself.
             - :grid: a VoxelGrid storing all signed distances - used by SDFBuilder
             - :approximation_box: a box used for approximating distances outside of the grid
@@ -855,7 +855,7 @@ class SceneSDF(object):
             static_file_path = dir_name + '/' + static_file_name
             # TODO We could have a name collision here, if the environment contains a kinbody called static
             sdf_paths['__static_sdf__'] = static_file_path
-            rel_paths['__static_sdf__'] = 'static_sdf' + './' + static_file_name
+            rel_paths['__static_sdf__'] = './' + static_file_name
             if '__static_sdf__' not in self._sdf_paths:
                 self._static_sdf.save(static_file_path)
         for (key, value) in self._sdf_paths:  # reuse the filenames we loaded things from
@@ -894,10 +894,10 @@ class SceneSDF(object):
                     if body is None:
                         logging.log(logging.ERROR, "Could not find kinbody %s" % name)
                         continue
-                    self._body_sdfs[name] = (body, SDF(path))
+                    self._body_sdfs[name] = (body, SDF.load(path))
                     available_sdfs[name] = True
                 else:
-                    self._static_sdf = SDF(path)
+                    self._static_sdf = SDF.load(path)
                     available_sdfs['__static_sdf__'] = True
             # verify we have all movable bodies
             for name in self._movable_body_names:
