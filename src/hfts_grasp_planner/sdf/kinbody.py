@@ -33,7 +33,8 @@ class OccupancyOctree(object):
             self.occupied = True
             self.children = []
             self.depth = depth
-            self.position = aabb[3:] + 0.5 * self.dimensions
+            self.position = aabb[:3] + 0.5 * self.dimensions
+            self.num_occupied_leaves = 0
 
         def is_leaf(self):
             """
@@ -143,7 +144,8 @@ class OccupancyOctree(object):
                 current_cell.occupied = env.CheckCollision(self._body, cell_body)
                 if current_cell.occupied:  # do we need to refine its children?
                     child_dimensions = current_cell.dimensions / 2.0
-                    if np.multiply.reduce(child_dimensions) > self._min_cell_size:
+                    if np.multiply.reduce(child_dimensions) > self._min_cell_size:  
+                        # if we haven't reached the minimal resolution yet
                         child_combinations = itertools.product(range(2), repeat=3)
                         for child_id in child_combinations:
                             child_aabb = np.empty((6,))
@@ -154,11 +156,26 @@ class OccupancyOctree(object):
                             cells_to_refine.append(new_child)
                             self._depth = max(self._depth, new_child.depth)
                     else:
-                        self._total_volume += np.multiply.reduce(current_cell.dimensions)
-  
+                        # current cell is a leaf and occupied
+                        current_cell.num_occupied_leaves = 1
+
             body_manager.clear()
             self._body.SetTransform(original_tf)
-    
+            # update num_occupied_leaves flags
+            def compute_num_occupied_leaves(node):
+                # helper function to recursively compute the number of occupied leaves
+                if node.is_leaf():
+                    return node.num_occupied_leaves
+                if not node.occupied:
+                    assert(node.num_occupied_leaves == 0)
+                    return 0
+                for child in node.children:
+                    node.num_occupied_leaves += compute_num_occupied_leaves(child)
+                return node.num_occupied_leaves
+            compute_num_occupied_leaves(self._root)
+            self._total_volume = self._root.num_occupied_leaves * \
+                                 np.multiply.reduce(self._root.dimensions / pow(2, self._depth))
+
     def get_depth(self):
         """
             Return the maximal depth of the hierarchy.
@@ -181,18 +198,18 @@ class OccupancyOctree(object):
         if not self._root.occupied:
             return 0.0
         tf = self._body.GetTransform()
-        intersection_volume = 0.0
+        num_intersecting_leaves = 0
         layer_idx = 0
         current_layer = [self._root]  # invariant current_layer items are occupied
         next_layer = [] 
         # iterate through hierarchy layer by layer (bfs)
         while current_layer:
             # first get the positions of all cells on the current layer
-            current_layer_positions = [cell.position for cell in current_layer]
-            query_positions = np.ones((len(current_layer_positions), 4))
-            query_positions[:, :3] = current_layer_positions
+            query_positions = np.ones((len(current_layer), 4))
+            query_positions[:, :3] = np.array([cell.position for cell in current_layer])
+            query_positions = np.dot(query_positions, tf.transpose())
             # query distances for all cells on this layer
-            distances = scene_sdf.get_distances(np.dot(tf, query_positions))
+            distances = scene_sdf.get_distances(query_positions)
             # all cells on the same layer have the same dimensions and volume
             radius = np.linalg.norm(current_layer[0].dimensions / 2.0)  
             cell_volume = np.multiply.reduce(current_layer[0].dimensions)
@@ -201,17 +218,19 @@ class OccupancyOctree(object):
                     continue
                 elif distances[idx] < -1.0 * radius:  
                     # the cell lies so far inside of an obstacle, that it is completely in collision
-                    intersection_volume += cell_volume
+                    num_intersecting_leaves += cell.num_occupied_leaves
                 else:
                     if layer_idx < self._depth:  # as long as there are children, we can descend
                         next_layer.extend([child for child in cell.children if child.occupied])
                     else:
-                        # TODO we should/could check the intersection volume more accurately here
-                        intersection_volume += cell_volume
+                        num_intersecting_leaves += 1
             # switch to next layer
             current_layer = next_layer
             next_layer = []
-        return intersection_volume
+            layer_idx += 1
+        intersection_volume = num_intersecting_leaves * np.multiply.reduce(self._root.dimensions / pow(2, self._depth))
+        relative_volume = num_intersecting_leaves / float(self._root.num_occupied_leaves)
+        return intersection_volume, relative_volume
 
     def visualize(self, level):
         """
