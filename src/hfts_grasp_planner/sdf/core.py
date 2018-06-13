@@ -12,6 +12,7 @@ import itertools
 import skfmm
 import numpy as np
 import openravepy as orpy
+from itertools import izip
 from openravepy.misc import ComputeBoxMesh
 from hfts_grasp_planner.utils import inverse_transform
 
@@ -918,7 +919,7 @@ class ORSDFVisualization(object):
         self._handles = []
 
     def visualize(self, sdf, volume, resolution=0.1, min_sat_value=None, max_sat_value=None, alpha=0.1,
-                  style=0):
+                  style='sprites'):
         """
             Samples the given sdf within the specified volume and visualizes the data.
             @param sdf - the signed distance field to visualize
@@ -927,7 +928,8 @@ class ORSDFVisualization(object):
             @param min_sat_value (optional) - all points with distance smaller than this will have the same color
             @param max_sat_value (optional) - all point with distance larger than this will have the same color
             @param alpha (optional) - alpha value for colors
-            @param style (optional) - if 0, renders cells using 2d sprites, if 1, renders cells using 3d balls
+            @param style (optional) - if sprites, renders cells using 2d sprites, if balls, renders cells using 3d balls,
+                                     if boxes, renders cells using boxes.
                                       WARNING: Rendering many balls(cells) will crash OpenRAVE
         """
         # first sample values
@@ -958,12 +960,20 @@ class ORSDFVisualization(object):
             rel_value = np.clip((value - min_sat_value) / (max_sat_value - min_sat_value), 0.0, 1.0)
             return (1.0 - rel_value) * red_color + rel_value * blue_color
         colors = np.array([compute_color(v) for v in values])
-        if style == 0:
+        if style == 'sprites':
             handle = self._env.plot3(positions[:, :3], 10, colors)  # size is in pixel
-        else:
+            self._handles.append(handle)
+        elif style == 'balls':
             # Instead we can also render balls, but this can easily crash OpenRAVE if done for many cells
             handle = self._env.plot3(positions[:, :3], resolution / 2.0, colors, 1)
-        self._handles.append(handle)
+            self._handles.append(handle)
+        elif style == 'boxes':
+            extents = [resolution / 2.0, resolution / 2.0, resolution / 2.0]
+            for pos, color in izip(positions, colors):
+                handle = self._env.drawbox(pos, extents, color)
+                self._handles.append(handle)
+        else:
+            raise ValueError('Could not render sdf. Unknown style %s' % style)
         print ('Rendering took %f s' % (time.time() - start_time))
         # Alternatively, the following code would render the sdf using meshes, but this also kills openrave
         # colors = np.reshape([12 * [compute_color(v)] for v in values], (12 * values.shape[0], 4))
