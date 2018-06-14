@@ -70,7 +70,7 @@ class SO3Hierarchy(object):
             s1_key[-1] = np.clip(s1_key[-1] + rdir, 0, 5)
         else:
             s2_key[-1] = np.random.randint(4)
-            s1_key[-1] = (s1_key[-1] + 1) % 2  # there is no choice
+            s1_key[-1] = np.random.randint(2)
         return (s2_key, s1_key)
 
     @staticmethod

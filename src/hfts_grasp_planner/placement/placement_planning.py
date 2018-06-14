@@ -4,21 +4,27 @@ import itertools
 import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
+import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
 import numpy as np
 import math
 
 class PlacementObjectiveFn(object):
     """
         Implements an objective function for object placement.
+        #TODO: should this class be in a different module?
     """
-    def __init__(self, env):
+    def __init__(self, env, scene_sdf):
         """
             Creates a new PlacementObjectiveFn
+            @param env - openrave environment
+            @param scene_sdf - SceneSDF of the environment
         """
         self._env = env
         self._obj_name = None
         self._model_name = None
         self._kinbody = None
+        self._scene_sdf = scene_sdf
+        self._kinbody_octree = None
 
     def set_target_object(self, obj_name, model_name=None):
         """
@@ -28,8 +34,10 @@ class PlacementObjectiveFn(object):
         self._obj_name = obj_name
         self._model_name = model_name if model_name is not None else obj_name
         self._kinbody = self._env.GetKinBody(self._obj_name)
+        # TODO we could/should disable the object within the scene_sdf if it is in it
         if not self._kinbody:
             raise ValueError("Could not set target object " + obj_name + " because it does not exist")
+        self._kinbody_octree = kinbody_sdf.OccupancyOctree(10e-9, self._kinbody)
 
     def get_target_object(self):
         """
@@ -42,17 +50,23 @@ class PlacementObjectiveFn(object):
         """
             Evalutes the objective function for the given node (must be SE3HierarchyNode)
         """
+        assert(self._kinbody_octree)
+        assert(self._scene_sdf)
+        # set the transform to the pose to evaluate
         representative = node.get_representative_value()
         self._kinbody.SetTransform(representative)
+        # compute the collision cost for this pose
+        _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
+        preference_val = np.dot(representative[:3, 1], np.array([0, 0, 1]))
         #TODO return proper objective
-        return sum(representative[:, 3])
+        return col_val + preference_val
 
     @staticmethod
     def is_better(val_1, val_2):
         """
             Returns whether val_1 is better than val_2
         """
-        return val_1 < val_2
+        return val_1 > val_2
 
 
 class SE3Hierarchy(object):
@@ -145,7 +159,7 @@ class SE3Hierarchy(object):
             min_point = self._cartesian_box[0] + offset
             max_point = min_point + self._child_dimensions
             global_child_id = SE3Hierarchy.construct_id(self._global_id, child_id_key)
-            child_node = SE3Hierarchy.SE3HierarchyNode((min_point[:3], max_point[:3]), 
+            child_node = SE3Hierarchy.SE3HierarchyNode((min_point, max_point), 
                                                         (global_child_id[3], global_child_id[4]),
                                                         self._depth + 1, self._hierarchy,
                                                         global_id=global_child_id)
@@ -237,6 +251,9 @@ class SE3Hierarchy(object):
 
     def get_root(self):
         return self._root
+    
+    def get_depth(self):
+        return self._max_depth
 
 
 class PlacementGoalPlanner:
@@ -244,22 +261,23 @@ class PlacementGoalPlanner:
         the FreeSpaceProximitySampler.
     """
     def __init__(self, object_io_interface,
-                 env, visualize=False):
+                 env, scene_sdf, visualize=False):
         """
             Creates a PlacementGoalPlanner
             @param object_io_interface IOObject Object that handles IO requests
             @param env OpenRAVE environment
+            @param scene_sdf SceneSDF of the OpenRAVE environment
             @param visualize If true, the internal OpenRAVE environment is set to be visualized
         """
         self._hierarchy = None
         self._object_io_interface = object_io_interface
         self._env = env
-        self._objective_function = PlacementObjectiveFn(env)
+        self._objective_function = PlacementObjectiveFn(env, scene_sdf)
         # self._optimizer = optimization.StochasticOptimizer(self._objective_function)
         self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
         self._placement_volume = None
         self._env = env
-        self._parameters = {'cart_branching': 10, 'rot_branching': 10, 'max_depth': 4}
+        self._parameters = {'cart_branching': 3, 'max_depth': 4}  # TODO update
         self._initialized = False
 
     def set_placement_volume(self, workspace_volume):
@@ -275,7 +293,10 @@ class PlacementGoalPlanner:
         #TODO
         if not self._initialized:
             self._initialize()
-        obj_val, best_node = self._optimizer.run(self.get_root(), 10000)
+        current_node = self.get_root()
+        for depth in range(min(depth_limit, self._hierarchy.get_depth())):
+            obj_val, best_node = self._optimizer.run(current_node, 1000)
+            current_node = best_node
         return best_node
 
     def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):

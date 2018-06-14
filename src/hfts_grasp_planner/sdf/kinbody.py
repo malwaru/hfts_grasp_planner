@@ -194,11 +194,19 @@ class OccupancyOctree(object):
             of the scene described by the provided scene sdf.
             @param scene_sdf - signed distance field of the environment that the body
                 this map belongs to resides in
+            @return (v, rv, dc, adc) -
+                v is the total volume that is intersecting
+                rv is this volume relative to the body's total volume, i.e. in range [0, 1]
+                dc is a cost that is computed by (approximately) summing up all signed
+                    distances of intersecting cells
+                adc is this cost divided by the number of intersecting cells, i.e. the average
+                    signed distance of the intersecting cells
         """
         if not self._root.occupied:
-            return 0.0
+            return 0.0, 0.0, 0.0, 0.0
         tf = self._body.GetTransform()
         num_intersecting_leaves = 0
+        distance_cost = 0.0
         layer_idx = 0
         current_layer = [self._root]  # invariant current_layer items are occupied
         next_layer = [] 
@@ -219,18 +227,23 @@ class OccupancyOctree(object):
                 elif distances[idx] < -1.0 * radius:  
                     # the cell lies so far inside of an obstacle, that it is completely in collision
                     num_intersecting_leaves += cell.num_occupied_leaves
+                    # regarding the distance cost, assume the worst case, i.e. add the maximum distance 
+                    # that any child might have for all children
+                    distance_cost += cell.num_occupied_leaves * (distances[idx] - radius)
                 else:
                     if layer_idx < self._depth:  # as long as there are children, we can descend
                         next_layer.extend([child for child in cell.children if child.occupied])
                     else:
                         num_intersecting_leaves += 1
+                        distance_cost += distances[idx]
             # switch to next layer
             current_layer = next_layer
             next_layer = []
             layer_idx += 1
         intersection_volume = num_intersecting_leaves * np.multiply.reduce(self._root.dimensions / pow(2, self._depth))
         relative_volume = num_intersecting_leaves / float(self._root.num_occupied_leaves)
-        return intersection_volume, relative_volume
+        normalized_distance_cost = distance_cost / float(self._root.num_occupied_leaves) 
+        return intersection_volume, relative_volume, distance_cost, normalized_distance_cost
 
     def visualize(self, level):
         """

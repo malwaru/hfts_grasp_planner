@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/r850_robotiq/r850_robotiq.xml"/>
+ 
+    <KinBody name="floor">
+      <Translation>0.3   0.0   -0.5</Translation>
+      <Body type="static">
+        <Geom type="box">
+          <extents>1 1.5 0.005</extents>
+          <diffuseColor>.6 .6 .6</diffuseColor>
+            <ambientColor>0.6 0.6 0.6</ambientColor>
+        </Geom>
+      </Body>
+    </KinBody>
+
+    <KinBody name="base">
+      <!-- <Translation>-0.13   0.0   -0.25</Translation>  -->
+      <Translation>-0.13   -0.0375   -0.27</Translation> 
+      <Body type="static">
+        <Geom type="box">
+          <extents>0.45 0.275 0.25</extents>
+          <diffuseColor>.6 .6 .6</diffuseColor>
+            <ambientColor>0.6 0.6 0.6</ambientColor>
+        </Geom>
+      </Body>
+    </KinBody>
+
+    <KinBody name="cluttered_shelf">
+      <Translation>0.58   0.96   0.67</Translation> 
+      <RotationAxis>0 0 1 180</RotationAxis>
+      <Body type="static">
+        <Geom type="trimesh">
+            <Data>cluttered_env_scaled.stl</Data>
+            <Render>cluttered_env_scaled.stl</Render>
+        </Geom>
+      </Body>
+    </KinBody>
+
+    <KinBody name="crayola">
+        <Translation>-0.16 0.78 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../crayola/objectModel.ply</Data>
+                <Render>../crayola/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="bunny">
+        <Translation>-0.16 0.78 1.5</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../bunny/objectModel.ply</Data>
+                <Render>../bunny/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+</Environment> 
