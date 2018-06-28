@@ -8,12 +8,13 @@ import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
 import numpy as np
 import math
 
+
 class PlacementObjectiveFn(object):
     """
         Implements an objective function for object placement.
         #TODO: should this class be in a different module?
     """
-    def __init__(self, env, scene_sdf):
+    def __init__(self, env, scene_sdf, vol_approx=0.005):
         """
             Creates a new PlacementObjectiveFn
             @param env - openrave environment
@@ -25,6 +26,7 @@ class PlacementObjectiveFn(object):
         self._kinbody = None
         self._scene_sdf = scene_sdf
         self._kinbody_octree = None
+        self._vol_approx = vol_approx
 
     def set_target_object(self, obj_name, model_name=None):
         """
@@ -37,7 +39,7 @@ class PlacementObjectiveFn(object):
         # TODO we could/should disable the object within the scene_sdf if it is in it
         if not self._kinbody:
             raise ValueError("Could not set target object " + obj_name + " because it does not exist")
-        self._kinbody_octree = kinbody_sdf.OccupancyOctree(10e-9, self._kinbody)
+        self._kinbody_octree = kinbody_sdf.OccupancyOctree(self._vol_approx, self._kinbody)
 
     def get_target_object(self):
         """
@@ -57,7 +59,8 @@ class PlacementObjectiveFn(object):
         self._kinbody.SetTransform(representative)
         # compute the collision cost for this pose
         _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
-        preference_val = np.dot(representative[:3, 1], np.array([0, 0, 1]))
+        # preference_val = np.dot(representative[:3, 1], np.array([0, 0, 1]))
+        preference_val = 0.0
         #TODO return proper objective
         return col_val + preference_val
 
@@ -135,7 +138,7 @@ class SE3Hierarchy(object):
                                    np.random.randint(-1, 2),
                                    np.random.randint(-1, 2)])
             child_id = node.get_id(relative_to_parent=True)
-            max_ids = [self._hierarchy._cart_branching, self._hierarchy._cart_branching, self._hierarchy._cart_branching]
+            max_ids = [self._hierarchy._cart_branching - 1, self._hierarchy._cart_branching - 1, self._hierarchy._cart_branching - 1]
             # TODO respect blacklist
             neighbor_id = np.zeros(5, np.int)
             neighbor_id[:3] = np.clip(child_id[:3] + random_dir, 0, max_ids)
@@ -273,11 +276,11 @@ class PlacementGoalPlanner:
         self._object_io_interface = object_io_interface
         self._env = env
         self._objective_function = PlacementObjectiveFn(env, scene_sdf)
-        # self._optimizer = optimization.StochasticOptimizer(self._objective_function)
-        self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
+        self._optimizer = optimization.StochasticOptimizer(self._objective_function)
+        # self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
         self._placement_volume = None
         self._env = env
-        self._parameters = {'cart_branching': 3, 'max_depth': 4}  # TODO update
+        self._parameters = {'cart_branching': 3, 'max_depth': 4, 'num_iterations': 100}  # TODO update
         self._initialized = False
 
     def set_placement_volume(self, workspace_volume):
@@ -294,10 +297,13 @@ class PlacementGoalPlanner:
         if not self._initialized:
             self._initialize()
         current_node = self.get_root()
-        for depth in range(min(depth_limit, self._hierarchy.get_depth())):
-            obj_val, best_node = self._optimizer.run(current_node, 1000)
+        num_iterations = self._parameters['num_iterations']
+        best_val = None
+        best_node = None
+        for depth in xrange(min(depth_limit, self.get_max_depth())):
+            best_val, best_node = self._optimizer.run(current_node, num_iterations)
             current_node = best_node
-        return best_node
+        return best_node, best_val
 
     def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):
         """ Samples a placement configuration from the given node on. """
@@ -322,12 +328,10 @@ class PlacementGoalPlanner:
         self._initialized = False
 
     def set_max_iter(self, iterations):
-        # TODO update number of iterations
-        pass
+        self._parameters['num_iterations']= iterations
 
     def get_max_depth(self):
-        # TODO get hierarchy depth
-        pass
+        return self._hierarchy.get_depth()
 
     def get_root(self):
         if not self._initialized:
@@ -335,9 +339,8 @@ class PlacementGoalPlanner:
         return self._hierarchy.get_root()
 
     def set_parameters(self, **kwargs):
-        # TODO set parameters
         self._initialized = False
-        for (key, value) in kwargs.iteritems:
+        for (key, value) in kwargs.iteritems():
             self._parameters[key] = value
 
     def _initialize(self):

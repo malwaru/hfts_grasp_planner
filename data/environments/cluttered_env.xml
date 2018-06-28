@@ -54,4 +54,14 @@
             </Geom>
         </Body>
     </KinBody>
+
+    <KinBody name="stick">
+        <Translation>0.3 0.5 0.5</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../stick/objectModel.stl</Data>
+                <Render>../stick/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
 </Environment> 

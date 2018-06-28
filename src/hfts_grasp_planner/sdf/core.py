@@ -12,9 +12,11 @@ import itertools
 import skfmm
 import numpy as np
 import openravepy as orpy
-from itertools import izip
-from openravepy.misc import ComputeBoxMesh
+import scipy.ndimage.morphology
+from itertools import izip, product
 from hfts_grasp_planner.utils import inverse_transform
+# from mayavi import mlab
+# from openravepy.misc import ComputeBoxMesh
 
 
 class VoxelGrid(object):
@@ -60,29 +62,47 @@ class VoxelGrid(object):
             """
             self._grid.set_cell_value(self._idx, value)
 
-
-    def __init__(self, workspace_aabb, cell_size=0.02, base_transform=None):
+    def __init__(self, workspace_aabb, cell_size=0.02, base_transform=None, dtype=np.float_):
         """
             Creates a new voxel grid covering the specified workspace volume.
             @param workspace_aabb - bounding box of the workspace as numpy array of form
-                                    [min_x, min_y, min_z, max_x, max_y, max_z]
+                                    [min_x, min_y, min_z, max_x, max_y, max_z] or a tuple
+                                    ([x, y, z], [wx, wy, wz]), where x,y,z are the position of the center
+                                    and wx, wy, wz are the dimensions of the box
             @param cell_size - cell size of the voxel grid (in meters)
             @param base_transform - if not None, any query point is transformed by base_transform
         """
         self._cell_size = cell_size
-        dimensions = workspace_aabb[3:] - workspace_aabb[:3]
-        self._num_cells = np.array([int(math.ceil(x)) for x in dimensions / cell_size])
-        self._base_pos = workspace_aabb[:3]  # position of the bottom left corner with respect the local frame
+        if isinstance(workspace_aabb, tuple):
+            dimensions = workspace_aabb[1]
+            pos = workspace_aabb[0] - dimensions / 2.0
+        else:
+            dimensions = workspace_aabb[3:] - workspace_aabb[:3]
+            pos = workspace_aabb[:3]
+        self._num_cells = np.ceil(dimensions / cell_size).astype(int)
+        # self._num_cells = np.array([int(math.ceil(x)) for x in dimensions / cell_size])
+        self._base_pos = pos  # position of the bottom left corner with respect the local frame
         self._transform = np.eye(4)
         if base_transform is not None:
             self._transform = base_transform
         self._inv_transform = inverse_transform(self._transform)
-        self._cells = np.zeros(self._num_cells)
+        self._cells = np.zeros(self._num_cells + 2, dtype=dtype)  # first and last element per dimension is a dummy element for trilinear interpolation
         self._aabb = workspace_aabb
         self._homogeneous_point = np.ones(4)
 
     def __iter__(self):
         return self.get_cell_generator()
+
+    def _fill_border_cells(self):
+        """
+            Fills the border cells with the values at the border of the interior of the cells.
+        """
+        self._cells[0, :, :] = self._cells[1, :, :]
+        self._cells[-1, :, :] = self._cells[-2, :, :]
+        self._cells[:, 0, :] = self._cells[:, 1, :]
+        self._cells[:, -1, :] = self._cells[:, -2, :]
+        self._cells[:, :, 0] = self._cells[:, :, 1]
+        self._cells[:, :, -1] = self._cells[:, :, -2]
 
     def save(self, file_name):
         """
@@ -92,12 +112,13 @@ class VoxelGrid(object):
         """
         data_file_name = file_name + '.data.npy'
         meta_file_name = file_name + '.meta.npy'
-        np.save(data_file_name, self._cells)
+        np.save(data_file_name, self._cells[1:-1, 1:-1, 1:-1]) # first and last element per dimension are dummy elements
         np.save(meta_file_name, np.array([self._base_pos, self._cell_size, self._aabb, self._transform]))
 
-    def load(self, file_name, b_restore_transform=False):
+    @staticmethod
+    def load(file_name, b_restore_transform=False):
         """
-            Loads a grid from the given file.
+            Load a grid from the given file.
             - :file_name: - as the name suggests
             - :b_restore_transform: (optional) - If true, the transform is loaded as well, else identity transform is set
         """
@@ -105,16 +126,21 @@ class VoxelGrid(object):
         meta_file_name = file_name + '.meta.npy'
         if not os.path.exists(data_file_name) or not os.path.exists(meta_file_name):
             raise IOError("Could not load grid for filename prefix " + file_name)
-        self._cells = np.load(data_file_name)
+        grid = VoxelGrid(np.array([0, 0, 0, 0, 0, 0]))
+        interior_cells = np.load(data_file_name)
+        grid._num_cells = np.array(np.array(interior_cells.shape))
+        grid._cells = np.empty(grid._num_cells + 2)
+        grid._cells[1:-1, 1:-1, 1:-1] = interior_cells
+        grid._fill_border_cells()
         meta_data = np.load(meta_file_name)
-        self._base_pos = meta_data[0]
-        self._num_cells = np.array(self._cells.shape)
-        self._cell_size = meta_data[1]
-        self._aabb = meta_data[2]
+        grid._base_pos = meta_data[0]
+        grid._cell_size = meta_data[1]
+        grid._aabb = meta_data[2]
         if b_restore_transform:
-            self._transform = meta_data[3]
+            grid._transform = meta_data[3]
         else:
-            self._transform = np.eye(4)
+            grid._transform = np.eye(4)
+        return grid
 
     def get_index_generator(self):
         """
@@ -144,26 +170,40 @@ class VoxelGrid(object):
         local_pos /= self._cell_size
         return map(int, local_pos)
 
-    def map_to_grid(self, pos):
+    def get_workspace(self):
+        """
+            Return the workspace that this VoxelGrid represents.
+            DO NOT MODIFY!
+        """
+        return self._aabb
+
+    def map_to_grid(self, pos, index_type=np.int):
         """
             Maps the given global position to local frame and returns both the local point
             and the index (None if out of bounds).
+            @param index_type - Denotes what type the returned index should be. Should either be
+                np.int or np.float_. By default integer indices are returned, if np.float_ is passed
+                the returned index is a real number, which allows trilinear interpolation between grid points.
         """
         self._homogeneous_point[:3] = pos
         local_pos = np.dot(self._inv_transform, self._homogeneous_point)[:3]
         idx = None
         if (local_pos >= self._aabb[:3]).all() and (local_pos < self._aabb[3:]).all():
-            rel_pos = local_pos - self._base_pos
-            rel_pos /= self._cell_size
-            idx = map(int, rel_pos)
+            idx = local_pos - self._base_pos
+            idx /= self._cell_size
+            if index_type != np.float_:
+                idx = idx.astype(index_type)
         return local_pos, idx
 
-    def map_to_grid_batch(self, positions):
+    def map_to_grid_batch(self, positions, index_type=np.int):
         """
-            Maps the given global positions to local frame an return both the local points
+            Map the given global positions to local frame and return both the local points
             and the indices (None if out of bounds).
             @param positions is assumed to be a numpy matrix of shape (n, 4) where n is the number of query
                     points and the last row are 1s.
+            @param index_type - Denotes what type the returned index should be. Should either be
+                np.int or np.float_. By default integer indices are returned, if np.float_ is passed
+                the returned index is a real number, which allows trilinear interpolation between grid points.
             @return (local_positions, indices, mask) where
                 local_positions are the transformed points in a numpy array of shape (n, 4) where n
                     is the number of query points
@@ -178,7 +218,9 @@ class VoxelGrid(object):
         in_bounds_upper = (local_positions[:, :3] < self._aabb[3:]).all(axis=1)
         mask = np.logical_and(in_bounds_lower, in_bounds_upper)
         if mask.any():
-            indices = ((local_positions[mask, :3] - self._base_pos) / self._cell_size).astype(int)
+            indices = (local_positions[mask, :3] - self._base_pos) / self._cell_size
+            if index_type != np.float_:
+                indices = indices.astype(index_type)
         else:
             indices = None
         return local_positions, indices, mask
@@ -200,17 +242,59 @@ class VoxelGrid(object):
 
     def get_cell_value(self, idx):
         """
-            Returns the value of the specified cell
+            Returns the value of the specified cell.
+            If the elements of idx are of type float, the cell value is computed
+            using trilinear interpolation.
         """
         idx = self.sanitize_idx(idx)
-        return self._cells[idx[0], idx[1], idx[2]]
+        if (isinstance(idx[0], np.float_) or isinstance(idx[0], float)) and self._cells.dtype.type == np.float_:
+            return self.get_interpolated_values(np.array([idx]))[0]
+        return self._cells[idx[0] + 1, idx[1] + 1, idx[2] + 1]
 
     def get_cell_values(self, indices):
         """
             Returns value of the cells with the specified indices.
-            @param indices - a numpy array of type int with shape (n, 3), where n is the number of query indices.
+            If the elements of each index are of type float, the cell values are computed
+            using trilinear interpolation. The indices are not checked for bounds!
+            @param indices - a numpy array of type int or float with shape (n, 3), where n is the number of query indices.
         """
-        return self._cells[indices[:, 0], indices[:, 1], indices[:, 2]]
+        if indices.dtype.type == np.float_ and self._cells.dtype.type == np.float_:
+            return self.get_interpolated_values(indices)
+        return self._cells[indices[:, 0] + 1, indices[:, 1] + 1, indices[:, 2] + 1]
+
+    def get_interpolated_values(self, indices):
+        """
+            Return grid values for the given floating point indices. 
+            The values are interpolated using trilinear interpolation.
+            @param indices - numpy array of type np.float_ with shape (n, 3), where n is the number of query indices
+            @return values - numpy array of type np.float_ and shape (n,).
+        """
+        # first shift indices so that integer coordinates correspond to the center of the interior cells (substract 0.5)
+        centered_coords = indices - 0.5
+        # compute trilinear interpolation for each interior point
+        floor_coords = np.floor(centered_coords)  # rounded down coordinates
+        ceil_coords = np.ceil(centered_coords)  # rounded up coordinates
+        w = centered_coords - floor_coords  # fractional part of index, i.e. distance to rounded down integer
+        wm = 1.0 - w  # 1 - fractional part of index
+        values = np.empty((centered_coords.shape[0]))
+        # TODO improve performance of the following lines somehow?
+        # run over all points that we want to compute a value for
+        for idx in xrange(centered_coords.shape[0]):
+            # first compute the indices of the corners that centered_coords[idx] lies in
+            corner_indices = np.array([np.array((x, y, z), dtype=int)
+                                       for z in (floor_coords[idx, 2], ceil_coords[idx, 2])
+                                       for y in (floor_coords[idx, 1], ceil_coords[idx, 1])
+                                       for x in (floor_coords[idx, 0], ceil_coords[idx, 0])])
+            # retrieve these values
+            corner_values = self._cells[corner_indices[:, 0] + 1, corner_indices[:, 1] + 1, corner_indices[:, 2] + 1]
+            # reshape it to a 4 x 2 matrix, where the first column contains the values for z = floor_coords[idx,2] 
+            # and the second the values for z = ceil_coords[idx, 2]
+            corner_values = corner_values.reshape((2, 4)).transpose()
+            # perform bilinear interpolation in both planes 
+            bilinear_interp = np.dot(np.array((wm[idx, 1] * wm[idx, 0], wm[idx, 1] * w[idx, 0], w[idx, 1] * wm[idx, 0], w[idx, 1] * w[idx, 0])), corner_values)
+            # compute trilinear interpolation by linear interpolating between bilinearly interpolated values
+            values[idx] = np.dot(np.array((wm[idx, 2], w[idx, 2])), bilinear_interp)
+        return values
 
     def get_num_cells(self):
         """
@@ -224,7 +308,7 @@ class VoxelGrid(object):
             Returns a reference to the underlying cell data structure.
             Use with caution!
         """
-        return self._cells
+        return self._cells[1:-1, 1:-1, 1:-1]
 
     def set_raw_data(self, data):
         """
@@ -235,10 +319,11 @@ class VoxelGrid(object):
         if not isinstance(data, np.ndarray):
             raise ValueError('The type of the provided data is invalid.' +
                              ' Must be numpy.ndarray, but it is %s' % str(type(data)))
-        if data.shape != self._cells.shape:
+        if data.shape != tuple(self._num_cells):
             raise ValueError("The shape of the provided data differs from this grid's shape." +
-                             " Input shape is %s, required shape %s" % (str(data.shape), str(self._cells.shape)))
-        self._cells = data
+                             " Input shape is %s, required shape %s" % (str(data.shape), str(self._num_cells)))
+        self._cells[1:-1, 1:-1, 1:-1] = data
+        self._fill_border_cells()
 
     def get_cell_size(self):
         """
@@ -246,13 +331,27 @@ class VoxelGrid(object):
         """
         return self._cell_size
 
-    def sanitize_idx(self, idx):
+    def sanitize_idx(self, idx, cast_type=None):
         """
             Ensures that the provided index is a valid index type.
+            @param idx - index to sanitize
+            @param cast_type - may be either None, float or int. If not None, the index is cast 
+                to this type.
         """
         if len(idx) != 3:
             raise ValueError("Provided index has invalid length (%i)" % len(idx))
-        return map(int, idx)
+
+        def check_type(x):
+            return isinstance(x, float) or isinstance(x, int) or isinstance(x, np.float_)
+        valid_type = reduce(operator.and_, map(check_type, idx), True)
+        if not valid_type:
+            raise ValueError("Indices must either be int or float. Instead, the types are: %s, %s, %s" % tuple(map(type, idx)))
+        if cast_type is not None:
+            if cast_type == int:
+                idx = map(int, idx)
+            elif cast_type == float or cast_type == np.float_:
+                idx = map(float, idx)
+        return np.array(idx)
 
     def set_cell_value(self, idx, value):
         """
@@ -260,30 +359,42 @@ class VoxelGrid(object):
             @param idx - tuple (ix, iy, iz)
             @param value - value to set the cell to
         """
-        idx = self.sanitize_idx(idx)
-        self._cells[idx[0], idx[1], idx[2]] = value
+        idx = self.sanitize_idx(idx, cast_type=int)
+        self._cells[idx[0] + 1, idx[1] + 1, idx[2] + 1] = value
 
     def fill(self, min_idx, max_idx, value):
         """
             Fills all cells in the block min_idx, max_idx with value
         """
-        min_idx = self.sanitize_idx(min_idx)
-        max_idx = self.sanitize_idx(max_idx)
+        min_idx = self.sanitize_idx(min_idx, cast_type=int) + 1
+        max_idx = self.sanitize_idx(max_idx, cast_type=int) + 1
         self._cells[min_idx[0]:max_idx[0], min_idx[1]:max_idx[1], min_idx[2]:max_idx[2]] = value
 
-    def get_max_value(self):
+    def get_max_value(self, min_idx=None, max_idx=None):
         """
-            Returns the maximal value in this grid.
+            Return the maximal value in this grid.
+            Optionally, a subset of the grid can be specified by setting min_idx and max_idx.
+            @param min_idx - minimal cell index to check for maximum value (default 0, 0, 0)
+            @param max_idx - exclusive maximal cell index to check for maximum value (default get_num_cells())
         """
-        values = [x.get_value() for x in self]
-        return max(values)
+        if min_idx is None:
+            min_idx = np.zeros(3, dtype=int)
+        if max_idx is None:
+            max_idx = self._num_cells
+        return np.max(self._cells[min_idx[0] + 1:max_idx[0] + 1, min_idx[1] + 1:max_idx[1] + 1, min_idx[2] + 1:max_idx[2] + 1])
 
-    def get_min_value(self):
+    def get_min_value(self, min_idx=None, max_idx=None):
         """
-            Returns the minimal value in this grid.
+            Return the minimal value in this grid.
+            Optionally, a subset of the grid can be specified by setting min_idx and max_idx.
+            @param min_idx - minimal cell index to check for minimal value (default 0, 0, 0)
+            @param max_idx - exclusive maximal cell index to check for minimal value (default get_num_cells())
         """
-        values = [x.get_value() for x in self]
-        return min(values)
+        if min_idx is None:
+            min_idx = np.zeros(3, dtype=int)
+        if max_idx is None:
+            max_idx = self._num_cells
+        return np.min(self._cells[min_idx[0] + 1:max_idx[0] + 1, min_idx[1] + 1:max_idx[1] + 1, min_idx[2] + 1:max_idx[2] + 1])
 
     def get_aabb(self):
         """
@@ -433,15 +544,19 @@ class SDF(object):
         # the point is out of range of our grid, we need to approximate the distance
         return self._get_heuristic_distance_local(local_point)
 
-    def get_distances(self, positions):
+    def get_distances(self, positions, b_interpolate=True):
         """
             Returns the shortest distance of the given points to the closest obstacle surface respectively.
-            @param positions - a numpy matrix of shape (n, 4), where n is the number of query points.
-                               The positions are expected to be given in homogeneous world coordinates,
-                               i.e. the last column is expected to be 1s.
+
+            Arguments:
+            positions - a numpy matrix of shape (n, 4), where n is the number of query points.
+                        The positions are expected to be given in homogeneous world coordinates,
+                        i.e. the last column is expected to be 1s.
+            b_interpolate - if true, values are interpolated, otherwise nearest neighbor lookup is used
         """
         distances = np.zeros(positions.shape[0])
-        local_points, grid_indices, valid_mask = self._grid.map_to_grid_batch(positions)
+        index_type = np.float_ if b_interpolate else np.int
+        local_points, grid_indices, valid_mask = self._grid.map_to_grid_batch(positions, index_type=index_type)
         # retrieve the distances for which we have a valid index
         if grid_indices is not None:  # in case we have any valid points
             distances[valid_mask] = self._grid.get_cell_values(grid_indices)
@@ -483,9 +598,8 @@ class SDF(object):
             return None
         meta_data = np.load(meta_data_filename)
         approximation_box = meta_data[0]
-        grid = VoxelGrid(np.array([0, 0, 0, 0, 0, 0]))
         try:
-            grid.load(filename + '.grid')
+            grid = VoxelGrid.load(filename + '.grid')
         except IOError as io_err:
             logging.warning("Could not load SDF because:" + str(io_err))
             return None
@@ -512,15 +626,17 @@ class SDF(object):
         self._approximation_box = box
 
 
-class SDFBuilder(object):
+class OccupancyGridBuilder(object):
     """
-        An SDF builder builds a signed distance field for a given environment.
-        If you intend to construct multiple SDFs with the same cell size, it is recommended to use a single
-        SDFBuilder as this saves resource generation. It only checks collisions with enabled bodies.
+        An OccupancyGridBuilder builds a occupancy grid (a binary collision map) 
+        in R^3. If you intend to construct multiple occupancy grids with the same cell size,
+        it is recommended to use a single OccupancyGridBuilder as this saves resources generation.
+        Note that the occupancy grid is constructed only considering collisions with the enabled bodies
+        in a given OpenRAVE environment.
     """
     class BodyManager(object):
         """
-            Internal helper class for creating binary collision maps
+            Internal helper class for managing box-shaped bodies for collision checking.
         """
         def __init__(self, env, cell_size):
             """
@@ -575,16 +691,16 @@ class SDFBuilder(object):
                 self._env.Remove(body)
                 body.Destroy()
             self._bodies = {}
-
+    ################################### Methods ###################################
     def __init__(self, env, cell_size):
         """
-            Creates a new SDFBuilder object.
+            Creates a new OccupancyGridBuilder object.
             @param env - OpenRAVE environment this builder operates on.
             @param cell_size - The cell size of the signed distance field.
         """
         self._env = env
         self._cell_size = cell_size
-        self._body_manager = SDFBuilder.BodyManager(env, cell_size)
+        self._body_manager = OccupancyGridBuilder.BodyManager(env, cell_size)
 
     def __del__(self):
         self._body_manager.clear()
@@ -595,11 +711,11 @@ class SDFBuilder(object):
             INVARIANT: This function is only called if there is a collision for a box ranging from min_idx to max_idx
             @param min_idx - numpy array [min_x, min_y, min_z] cell indices
             @param max_idx - numpy array [max_x, max_y, max_z] cell indices (the box excludes these)
-            @param grid - the grid to operate on
+            @param grid - the grid to operate on. should be of type bool
         """
         # Base case, we are looking at only one cell
         if (min_idx + 1 == max_idx).all():
-            grid.set_cell_value(min_idx, -1.0)
+            grid.set_cell_value(min_idx, True)
             return covered_volume + 1
         # else we need to split this cell up and see which child ranges are in collision
         box_size = max_idx - min_idx  # the number of cells along each axis in this box
@@ -626,22 +742,91 @@ class SDFBuilder(object):
                 if self._env.CheckCollision(cell_body):
                     covered_volume = self._compute_bcm_rec(child_min_idx, child_max_idx, grid, covered_volume)
                 else:
-                    grid.fill(child_min_idx, child_max_idx, 1.0)
+                    grid.fill(child_min_idx, child_max_idx, False)
                     covered_volume += volume
         # total_volme = reduce(operator.mul, self._grid.get_num_cells())
         # print("Covered %i / %i cells" % (covered_volume, total_volme))
         return covered_volume
 
-    def _compute_bcm(self, grid):
+    def compute_grid(self, grid):
+        """
+            Fill the given grid with bool values. Each cell in the grid will be set to True, if there this
+            cell is in collision with an obstacle in the current state of the environment.
+            Otherwise, a cell has value False. 
+            *NOTE*: If you do not intend to continue creating more SDFs using this builder, call clear() afterwards.
+            
+            Arguments
+            ---------
+            grid - 3d numpy array of type bool, will be modified
+        """
         # compute for each cell whether it collides with anything
         self._compute_bcm_rec(np.array([0, 0, 0]), grid.get_num_cells(), grid, 0)
+        # The above function can not detect the interior of meshes, therefore we need to fill holes
+        filled_holes = scipy.ndimage.morphology.binary_fill_holes(grid.get_raw_data().astype(bool))
+        grid.set_raw_data(filled_holes)
+        self._body_manager.disable_bodies()
+
+    def clear(self):
+        """
+            Clear all cached resources.
+        """
+        self._body_manager.clear()
+    
+
+class SDFBuilder(object):
+    """
+        An SDF builder builds a signed distance field for a given environment.
+        If you intend to construct multiple SDFs with the same cell size, it is recommended to use a single
+        SDFBuilder as this saves resource generation. It only checks collisions with enabled bodies.
+    """
+    def __init__(self, env, cell_size):
+        """
+            Creates a new SDFBuilder object.
+            @param env - OpenRAVE environment this builder operates on.
+            @param cell_size - The cell size of the signed distance field.
+        """
+        self._cell_size = cell_size
+        self._occupancy_builder = OccupancyGridBuilder(env, cell_size)
 
     def _compute_sdf(self, grid):
-        # TODO find a good solution for the problem that we get an exception if there are no collisions at all
-        min_value = grid.get_min_value()
-        if min_value > 0:
-            grid.set_cell_value((0, 0, 0), -1.0)
-        grid.set_raw_data(skfmm.distance(grid.get_raw_data(), dx=grid.get_cell_size()))
+        """
+            Compute a signed distance field from the given occupancy grid.
+            
+            Arguments
+            ---------
+            grid - VoxelGrid that is an occupancy map. The cell type must be bool
+
+            Return
+            ---------
+            distance grid - VoxelGrid with cells of type float. Each cell contains the signed 
+                distance to the closest obstacle surface point
+        """
+        # the grid is a binary collision map: 1 - collision, 0 - no collision
+        # before calling skfmm we need to transform this map
+        # raw_grid = grid.get_raw_data()
+        # raw_grid *= -2.0
+        # raw_grid += 1.0
+        # min_value = grid.get_min_value()
+        # if min_value > 0:  # there is no collision
+        #     raw_grid[:, :, :] = float('Inf')
+        # else:
+        #     grid.set_raw_data(skfmm.distance(raw_grid, dx=grid.get_cell_size()))
+        raw_grid = grid.get_raw_data()
+        inverse_collision_map = np.invert(raw_grid)
+        # compute the distances to surface of collision space
+        outside_distances = scipy.ndimage.morphology.distance_transform_edt(inverse_collision_map,
+                                                                            sampling=grid.get_cell_size())
+        # compute the interior of the collision space (remove the surface, because that's where the distance shall be 0)
+        interior_collision_map = scipy.ndimage.morphology.binary_erosion(raw_grid)
+        inside_distances = scipy.ndimage.morphology.distance_transform_edt(interior_collision_map,
+                                                                           sampling=grid.get_cell_size())
+        print('min inside', np.min(inside_distances))
+        print('max inisde', np.max(inside_distances))
+        print('min outside', np.min(outside_distances))
+        print('max outside', np.max(outside_distances))
+        sdf_grid = VoxelGrid(grid.get_workspace(), cell_size=self._cell_size, dtype=np.float_)
+        sdf_grid.set_raw_data(outside_distances - inside_distances)
+        return sdf_grid
 
     def create_sdf(self, workspace_aabb):
         """
@@ -650,24 +835,23 @@ class SDFBuilder(object):
             NOTE: If you do not intend to continue creating more SDFs using this builder, call clear() afterwards.
             @param workspace_aabb - bounding box of the sdf in form of [min_x, min_y, min_z, max_x, max_y, max_z]
         """
-        grid = VoxelGrid(workspace_aabb, cell_size=self._cell_size)
+        occupancy_grid = VoxelGrid(workspace_aabb, cell_size=self._cell_size, dtype=bool)
         # First compute binary collision map
         start_time = time.time()
-        self._compute_bcm(grid)
+        self._occupancy_builder.compute_grid(occupancy_grid)
         print ('Computation of collision binary map took %f s' % (time.time() - start_time))
         # next compute sdf
         start_time = time.time()
-        self._compute_sdf(grid)
+        distance_grid = self._compute_sdf(occupancy_grid)  
         print ('Computation of sdf took %f s' % (time.time() - start_time))
-        self._body_manager.disable_bodies()
-        return SDF(grid=grid)
+        return SDF(grid=distance_grid)
 
     def clear(self):
         """
-            Clears all cached resources.
+            Clear all used resources.
         """
-        self._body_manager.clear()
-
+        self._occupancy_builder.clear()
+        
     @staticmethod
     def compute_sdf_size(aabb, approx_error, radius=0.0):
         """
@@ -686,6 +870,7 @@ class SDFBuilder(object):
         lower_point = aabb.pos() - scaled_extents
         return np.array([lower_point[0], lower_point[1], lower_point[2],
                          upper_point[0], upper_point[1], upper_point[2]])
+
 
 class SceneSDF(object):
     """
@@ -717,7 +902,7 @@ class SceneSDF(object):
         self._static_sdf = None
         self._body_sdfs = {}
         self._sdf_paths = sdf_paths
-        self._radii = None
+        self._radii = radii
 
     def _enable_body(self, name, b_enabled):
         """
@@ -907,6 +1092,7 @@ class SceneSDF(object):
             if '__static_sdf__' not in available_sdfs and len(self._movable_body_names) < len(self._env.GetBodies()):
                 raise IOError("Could not load sdf for static environment")
 
+
 class ORSDFVisualization(object):
     """
         This class allows to visualize an SDF using an OpenRAVE environment.
@@ -953,12 +1139,19 @@ class ORSDFVisualization(object):
 
         blue_color = np.array([0.0, 0.0, 1.0, alpha])
         red_color = np.array([1.0, 0.0, 0.0, alpha])
+        zero_color = np.array([0.0, 0.0, 0.0, alpha])
+
         def compute_color(value):
             """
                 Computes the color for the given value
             """
-            rel_value = np.clip((value - min_sat_value) / (max_sat_value - min_sat_value), 0.0, 1.0)
-            return (1.0 - rel_value) * red_color + rel_value * blue_color
+            # rel_value = np.clip((value - min_sat_value) / (max_sat_value - min_sat_value), 0.0, 1.0)
+            # return (1.0 - rel_value) * red_color + rel_value * blue_color
+            base_color = blue_color if value > 0.0 else red_color
+            sat_value = max_sat_value if value > 0.0 else min_sat_value
+            rel_value = np.clip(value / sat_value, 0.0, 1.0)
+            return rel_value * base_color + (1.0 - rel_value) * zero_color
+
         colors = np.array([compute_color(v) for v in values])
         if style == 'sprites':
             handle = self._env.plot3(positions[:, :3], 10, colors)  # size is in pixel
@@ -993,3 +1186,23 @@ class ORSDFVisualization(object):
             Clear visualization
         """
         self._handles = []
+
+
+# def visualize_grid(grid, min_sat_value=None, max_sat_value=None):
+#     """
+#         Visualize the given grid using mlab.
+#         @param grid - the grid to visualize
+#         @param min_sat_value (optional) - all points with distance smaller than this will have the same color
+#         @param max_sat_value (optional) - all point with distance larger than this will have the same color
+#     """
+#     if min_sat_value is None:
+#         min_sat_value = np.min(grid.get_raw_data())
+#     if max_sat_value is None:
+#         max_sat_value = np.max(grid.get_raw_data())
+#     mlab.pipeline.volume(mlab.pipeline.scalar_field(grid.get_raw_data()), vmin=min_sat_value, vmax=max_sat_value)
+
+# def clear_visualization():
+#     """
+#         Clear visualization.
+#     """
+#     mlab.clf()

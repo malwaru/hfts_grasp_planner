@@ -7,7 +7,6 @@ import std_msgs.msg
 import rospy
 from sklearn.cluster import KMeans as KMeans
 import math, copy, os, itertools
-import matplotlib.pyplot as plt
 from sklearn.neighbors import KDTree
 from stl import mesh as stl_mesh_module
 from abc import ABCMeta, abstractmethod
