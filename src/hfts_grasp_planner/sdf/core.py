@@ -20,6 +20,8 @@ from hfts_grasp_planner.utils import inverse_transform
 
 
 class VoxelGrid(object):
+    _rel_grid_neighbor_mask = np.array([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0),
+                                        (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)], dtype=int)
     """"
         A voxel grid is a 3D discretization of a robot's workspace.
         For each voxel in this grid, this voxel grid saves a single floating point number.
@@ -264,37 +266,30 @@ class VoxelGrid(object):
 
     def get_interpolated_values(self, indices):
         """
-            Return grid values for the given floating point indices. 
+            Return grid values for the given floating point indices.
             The values are interpolated using trilinear interpolation.
             @param indices - numpy array of type np.float_ with shape (n, 3), where n is the number of query indices
             @return values - numpy array of type np.float_ and shape (n,).
         """
         # first shift indices so that integer coordinates correspond to the center of the interior cells (substract 0.5)
         centered_coords = indices - 0.5
-        # compute trilinear interpolation for each interior point
+        # we are going to compute trilinear interpolation for each interior point
         floor_coords = np.floor(centered_coords)  # rounded down coordinates
-        ceil_coords = np.ceil(centered_coords)  # rounded up coordinates
         w = centered_coords - floor_coords  # fractional part of index, i.e. distance to rounded down integer
         wm = 1.0 - w  # 1 - fractional part of index
-        values = np.empty((centered_coords.shape[0]))
-        # TODO improve performance of the following lines somehow?
-        # run over all points that we want to compute a value for
-        for idx in xrange(centered_coords.shape[0]):
-            # first compute the indices of the corners that centered_coords[idx] lies in
-            corner_indices = np.array([np.array((x, y, z), dtype=int)
-                                       for z in (floor_coords[idx, 2], ceil_coords[idx, 2])
-                                       for y in (floor_coords[idx, 1], ceil_coords[idx, 1])
-                                       for x in (floor_coords[idx, 0], ceil_coords[idx, 0])])
-            # retrieve these values
-            corner_values = self._cells[corner_indices[:, 0] + 1, corner_indices[:, 1] + 1, corner_indices[:, 2] + 1]
-            # reshape it to a 4 x 2 matrix, where the first column contains the values for z = floor_coords[idx,2] 
-            # and the second the values for z = ceil_coords[idx, 2]
-            corner_values = corner_values.reshape((2, 4)).transpose()
-            # perform bilinear interpolation in both planes 
-            bilinear_interp = np.dot(np.array((wm[idx, 1] * wm[idx, 0], wm[idx, 1] * w[idx, 0], w[idx, 1] * wm[idx, 0], w[idx, 1] * w[idx, 0])), corner_values)
-            # compute trilinear interpolation by linear interpolating between bilinearly interpolated values
-            values[idx] = np.dot(np.array((wm[idx, 2], w[idx, 2])), bilinear_interp)
-        return values
+        # compute the indices of each corner
+        corner_indices = (floor_coords[:, np.newaxis, :] + VoxelGrid._rel_grid_neighbor_mask).astype(int) + 1
+        assert(corner_indices.shape == (indices.shape[0], 8, 3))
+        # retrieve values for each corner - dummy + 1 is already added to the indices
+        corner_values = self._cells[corner_indices[:, :, 0], corner_indices[:, :, 1], corner_indices[:, :, 2]]
+        assert(corner_values.shape == (indices.shape[0], 8))
+        # weights for bilinear interpolation - each row of this matrix has the weights for the 4 corners
+        bi_weight_matrix = np.array((wm[:, 1] * wm[:, 0], wm[:, 1] * w[:, 0],
+                                     w[:, 1] * wm[:, 0], w[:, 1] * w[:, 0])).transpose()
+        assert(bi_weight_matrix.shape == (indices.shape[0], 4))
+        # combine the bilinear interpolation results to trilinearly interpolated values
+        return wm[:, 2] * np.sum(bi_weight_matrix * corner_values[:, :4], axis=1) + \
+            w[:, 2] * np.sum(bi_weight_matrix * corner_values[:, 4:], axis=1)
 
     def get_num_cells(self):
         """

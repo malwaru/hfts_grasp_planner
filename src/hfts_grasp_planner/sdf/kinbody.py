@@ -99,7 +99,7 @@ class OccupancyOctree(object):
         nodes_to_refine = collections.deque([self._root])
         while nodes_to_refine:  # as long as there are nodes to refine
             current_node = nodes_to_refine.popleft()
-            handle = self.draw_cell(current_node)
+            # handle = self.draw_cell(current_node)
             min_idx = current_node.idx_box[:3]
             max_idx = current_node.idx_box[3:]
             idx_range = max_idx - min_idx  # the number of cells along each axis in this box
@@ -168,8 +168,9 @@ class OccupancyOctree(object):
         num_intersecting_leaves = 0
         distance_cost = 0.0
         layer_idx = 0
-        current_layer = [self._root]  # invariant current_layer items are occupied
-        next_layer = [] 
+        # current_layer = [self._root]  # invariant current_layer items are occupied
+        current_layer = collections.deque([self._root])  # invariant current_layer items are occupied
+        next_layer = collections.deque()
         # iterate through hierarchy layer by layer (bfs) - this way we can perform more efficient batch distance queries
         while current_layer:
             # first get the positions of all cells on the current layer
@@ -181,7 +182,7 @@ class OccupancyOctree(object):
             for idx, cell in enumerate(current_layer):
                 # radii and volume are cell dependent
                 radius = np.linalg.norm(cell.cart_dimensions / 2.0)  
-                handle = self.draw_cell(cell)
+                # handle = self.draw_cell(cell)
                 if distances[idx] > radius: # none of the points in this cell can be in collision
                     continue
                 elif distances[idx] < -1.0 * radius:  
@@ -198,8 +199,8 @@ class OccupancyOctree(object):
                         # subtracting the radius here guarantees that distance_cost is always negative
                         distance_cost += distances[idx] - radius  
             # switch to next layer
-            current_layer = next_layer
-            next_layer = []
+            current_layer, next_layer = next_layer, current_layer
+            next_layer.clear()
             layer_idx += 1
         intersection_volume = num_intersecting_leaves * np.power(self._grid.get_cell_size(), 3)
         relative_volume = num_intersecting_leaves / float(self._root.num_occupied_leaves)
