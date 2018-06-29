@@ -38,14 +38,9 @@ class OccupancyOctree(object):
             self.num_occupied_leaves = 0
             self.tree = tree
             self.cart_dimensions = (idx_box[3:] - idx_box[:3]) * tree._grid.get_cell_size()
+            self.radius = np.linalg.norm(self.cart_dimensions / 2.0)
             min_cell_pos = tree._grid.get_cell_position(self.idx_box[:3], b_center=False)
             self.cart_center = min_cell_pos + 0.5 * self.cart_dimensions
-
-        def is_leaf(self):
-            """
-                Return whether this cell is a leaf.
-            """
-            return len(self.children) == 0
 
     def __init__(self, cell_size, body):
         """
@@ -137,7 +132,7 @@ class OccupancyOctree(object):
         # lastly, update num_occupied_leaves flags
         def compute_num_occupied_leaves(node):
             # helper function to recursively compute the number of occupied leaves
-            if node.is_leaf():
+            if not node.children:
                 return node.num_occupied_leaves
             if not node.occupied:
                 assert(node.num_occupied_leaves == 0)
@@ -179,25 +174,23 @@ class OccupancyOctree(object):
             query_positions = np.dot(query_positions, tf.transpose())
             # query distances for all cells on this layer
             distances = scene_sdf.get_distances(query_positions)
-            for idx, cell in enumerate(current_layer):
-                # radii and volume are cell dependent
-                radius = np.linalg.norm(cell.cart_dimensions / 2.0)  
+            for dist, cell in itertools.izip(distances, current_layer):
                 # handle = self.draw_cell(cell)
-                if distances[idx] > radius: # none of the points in this cell can be in collision
+                if dist > cell.radius:  # none of the points in this cell can be in collision
                     continue
-                elif distances[idx] < -1.0 * radius:  
+                elif dist < -1.0 * cell.radius:  
                     # the cell lies so far inside of an obstacle, that it is completely in collision
                     num_intersecting_leaves += cell.num_occupied_leaves
                     # regarding the distance cost, assume the worst case, i.e. add the maximum distance 
                     # that any child might have for all children
-                    distance_cost += cell.num_occupied_leaves * (distances[idx] - radius)
+                    distance_cost += cell.num_occupied_leaves * (dist - cell.radius)
                 else:  # boundary, partly in collision
-                    if not cell.is_leaf():  # as long as there are children, we can descend
+                    if cell.children:  # as long as there are children, we can descend
                         next_layer.extend([child for child in cell.children if child.occupied])
                     else:
                         num_intersecting_leaves += cell.num_occupied_leaves
                         # subtracting the radius here guarantees that distance_cost is always negative
-                        distance_cost += distances[idx] - radius  
+                        distance_cost += dist - cell.radius
             # switch to next layer
             current_layer, next_layer = next_layer, current_layer
             next_layer.clear()
