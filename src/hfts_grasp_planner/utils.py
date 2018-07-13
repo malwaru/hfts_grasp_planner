@@ -38,6 +38,12 @@ class ObjectIO(object):
     @abstractmethod
     def get_openrave_file_name(self, obj_id):
         pass
+    
+    @abstractmethod
+    def get_placement_planes(self, obj_id):
+        pass
+
+    # TODO define all functions that ObjectIOs should have here
 
 
 class ObjectFileIO(ObjectIO):
@@ -221,6 +227,30 @@ class ObjectFileIO(ObjectIO):
         hfts_gen.save_hfts(hfts_file=hfts_file, hfts_param_file=hfts_param_file,
                            com_file=obj_com_file)
         return True
+
+    def get_placement_planes(self, obj_id):
+        """
+            Return the placement planes for the kinbody with the given name.
+            ---------
+            Arguments
+            ---------
+            obj_id (string) - name of the object
+
+            --------
+            Returns
+            --------
+            placement_planes - a list of numpy arrays of shape (3, n_i + 1) representing the normal
+                and all placement points of the plane i. placement_planes[i][:, 0] is the normal,
+                and placement_planes[i][:, 1:] the n_i points of plane i.
+                All coordinates are in local object frame.
+        """
+        filename = self._data_path + '/' + obj_id + '/placement_planes.npz'
+        with np.load(filename) as data:
+            outputs = []
+            for key in data:
+                outputs.append(data[key]) 
+            return outputs
+        return None
 
 
 def extract_hfts_gen_parameter(param_dict, name):

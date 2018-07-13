@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+
 class StochasticOptimizer(object):
     def __init__(self, objective_fn):
         """

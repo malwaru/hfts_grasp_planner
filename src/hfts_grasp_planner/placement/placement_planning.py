@@ -1,12 +1,385 @@
 #!/usr/bin/env python
 import logging
 import itertools
+import collections
 import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
+import hfts_grasp_planner.utils as utils
 import numpy as np
+import scipy.spatial
 import math
+import openravepy as orpy
+
+
+class SimplePlacementQuality(object):
+    """
+        Implements a simple quality function for a placement.
+        This quality function is based on quasi-static analysis of contact stability.
+        Assumes that gravity is pulling in direction -z = (0, 0, -1).
+    """
+    def __init__(self, object_io_interface, parameters=None):
+        """
+            Create a new SimplePlacementQuality function object.
+            ---------
+            Arguments
+            ---------
+            object_io_interface - Object of class ObjectIO that allows reading
+                in object specific contact points.
+            parameters - dictionary with parameters. Available parameters are:
+                min_com_distance, float - minimal distance for center of mass from convex hull boundary TODO better description
+                min_normal_similarity, float - minimal value for dot product between similar faces TODO better description
+                falling_height_tolerance, float - tolerance for computing virtual contact points
+        """
+        self._object_io_interface = object_io_interface
+        self._env = None
+        self._cloned_body = None
+        self._placement_planes = None
+        self._max_ray_length = 2.0
+        self._dir_gravity = np.array([0.0, 0.0, -1.0])
+        self._x_dir = np.array([1.0, 0.0, 0.0])
+        self._y_dir = np.array([0.0, 1.0, 0.0])
+        self._parameters = {"min_com_distance": 0.01, "min_normal_similarity": 0.97, "falling_height_tolerance": 0.005}
+        if parameters:
+            for (key, value) in parameters:
+                self._parameters[key] = value
+
+    # TODO move this function to utils or so
+    @staticmethod
+    def merge_faces(chull, min_normal_similarity=0.97):
+        """
+            Merge adjacent faces of the convex hull if they have similar normals.
+            ---------
+            Arguments
+            ---------
+            chull - convex hull computed by scipy.spatial.ConvexHull
+            min_normal_similarity - minimal value that the pairwise dot product of the normals
+                of two faces need to have to be merged.
+            ---------
+            Returns
+            ---------
+            A tuple (clusters, face_clusters, num_clusters):
+                - clusters, a list of tuples (normal, vertices) - describes all clusters.
+                    normal is a numpy array of length 3 describing the normal of a cluster (merged faces)
+                    vertices is the set of vertex indices, which compose the cluster
+                - face_cluster - numpy array of length num_clusters, which stores for each original face
+                    of chull which cluster it belongs to
+                - num_clusters, int - the total number of clusters
+        """
+        clusters = []
+        face_clusters = np.ones(chull.simplices.shape[0], dtype=int)
+        face_clusters *= -1
+        face_idx = 0
+        cluster_id = 0
+        cluster_candidates = collections.deque()
+        # run over all faces
+        while face_idx < chull.simplices.shape[0]:
+            if face_clusters[face_idx] == -1:  # we have not assigned this face to a cluster yet
+                cluster_normal = chull.equations[face_idx, :3]
+                current_cluster = (cluster_normal, set(chull.simplices[face_idx]))  # create a new cluster
+                clusters.append(current_cluster)
+                face_clusters[face_idx] = cluster_id  # assign this face to the new cluster
+                # grow cluster to include adjacent unclustered faces that have a similar normal
+                cluster_candidates.extend(chull.neighbors[face_idx])
+                while cluster_candidates:
+                    candidate_idx = cluster_candidates.popleft()
+                    # check if this face belongs to the same cluster, it does so, if the normal is almost the same
+                    if np.dot(chull.equations[candidate_idx, :3], cluster_normal) >= min_normal_similarity:
+                        if face_clusters[candidate_idx] == -1:  # check if candidate is unclustered yet
+                            # add the vertices of this face to the cluster
+                            current_cluster[1].update(chull.simplices[candidate_idx]) 
+                            face_clusters[candidate_idx] = cluster_id  # assign the cluster to the face
+                            # add its neighbors to our extension candidates
+                            cluster_candidates.extend(chull.neighbors[candidate_idx])  
+                cluster_id += 1
+            face_idx += 1
+        return clusters, face_clusters, cluster_id
+
+    def _visualize_clusters(self, convex_hull, clusters, face_clusters, arrow_length=0.01, arrow_width=0.002):
+        handles = []
+        tf = self._cloned_body.GetTransform()
+        world_points = np.dot(convex_hull.points, tf[:3, :3]. transpose())
+        world_points += tf[:3, 3]
+        # for plane in self._placement_planes:
+        for cluster_idx in range(len(clusters)):
+            color = np.random.random(3)
+            faces = face_clusters == cluster_idx
+            # render faces 
+            handles.append(self._env.drawtrimesh(world_points, convex_hull.simplices[faces], color))
+            # for pidx in range(1, len(tf_plane)):
+            #     handles.append(self._env.drawarrow(tf_plane[pidx], tf_plane[pidx] + arrow_length * tf_plane[0], arrow_width, color))
+        return handles
+
+    def _visualize_boundary(self, boundary, linewidth=0.002):
+        assert(len(boundary.shape) == 2 and boundary.shape[1] == 3)
+        if boundary.shape[0] < 2: 
+            return None
+        linelist_input = np.empty((2 * boundary.shape[0], 3))
+        linelist_input[0] = boundary[0]
+        lidx = 0
+        for point in boundary[1:]:
+            linelist_input[2 * lidx + 1] = point
+            linelist_input[2 * lidx + 2] = point
+            lidx += 1
+        linelist_input[-1] = boundary[0]
+        return self._env.drawlinelist(linelist_input, linewidth=linewidth)
+
+    def _visualize_placement_plane(self, plane, arrow_length=0.01, arrow_width=0.002):
+        handles = []
+        tf = self._cloned_body.GetTransform()
+        tf_plane = np.dot(plane, tf[:3, :3].transpose())
+        tf_plane[1:] += tf[:3, 3]
+        color = np.random.random(3)
+        for pidx in range(1, len(tf_plane)):
+            handles.append(self._env.drawarrow(tf_plane[pidx], tf_plane[pidx] + arrow_length * tf_plane[0],
+                                               arrow_width, color))
+        # handles.append(self._visualize_boundary(tf_plane[1:]))
+        return handles
+
+    def _visualize_placement_planes(self, arrow_length=0.01, arrow_width=0.002):
+        handles = []
+        for plane in self._placement_planes:
+            handles.extend(self._visualize_placement_plane(plane, arrow_length, arrow_width))
+        return handles
+
+    # TODO move this to some utils 
+    @staticmethod
+    def _compute_hull_distance(convex_hull, point):
+        """
+            Compute the signed distance of the given point
+            to the closest edge of the given 2d convex hull.
+        """
+        # min_distance = 0.0
+        assert(convex_hull.points[0].shape == point.shape)
+        assert(point.shape == (2,))
+        interior_distance = float('-inf')
+        exterior_distance = float('inf')
+        for idx, edge in enumerate(convex_hull.simplices):
+            rel_point = point - convex_hull.points[edge[0]]
+            # there are 3 cases: the point is closest to edge[0], to edge[1] or to 
+            # its orthogonal projection onto the edge
+            edge_dir = convex_hull.points[edge[1]] - convex_hull.points[edge[0]]
+            edge_length = np.linalg.norm(edge_dir) 
+            assert(edge_length > 0.0)
+            edge_dir /= edge_length
+            # in any case we need the orthogonal distance to compute the sign
+            orthogonal_distance = np.dot(convex_hull.equations[idx, :2], rel_point)
+            # now check the different cases
+            directional_distance = np.dot(edge_dir, rel_point) 
+            if directional_distance >= edge_length:
+                # closest distance is to edge[1]
+                edge_distance = np.linalg.norm(point - convex_hull.points[edge[1]])
+            elif directional_distance <= 0.0: 
+                # closest distance is to edge[0]
+                edge_distance = np.linalg.norm(point - convex_hull.points[edge[0]])
+            else:
+                edge_distance = np.abs(orthogonal_distance)
+            if orthogonal_distance < 0.0:  # point is inside w.r.t to this edge
+                interior_distance = max(-1.0 * edge_distance, interior_distance)
+            else:
+                exterior_distance = min(edge_distance, exterior_distance)
+        if exterior_distance == float('inf'):  # the point is inside the convex hull
+            return interior_distance
+        return exterior_distance  # the point is outside the convex hull
+
+    def _is_stable_placement_plane(self, plane):
+        """
+            Return whether the specified plane can be used to stably place the 
+            current kinbody.
+            ---------
+            Arguments
+            ---------
+            plane - the plane to test
+            -------
+            Returns
+            -------
+            true or false depending on whether it is stable or not
+        """
+        # handles = self._visualize_placement_plane(plane) # TODO remove
+        # due to our tolerance value when clustering faces, the points may not be co-planar.
+        # hence, project them
+        mean_point = np.mean(plane[1:], axis=0)
+        rel_points = plane[1:] - mean_point
+        projected_points = rel_points - np.dot(rel_points, plane[0].transpose())[:, np.newaxis] * plane[0]
+        axes = np.empty((3, 2))
+        axes[:, 0] = projected_points[1] - projected_points[0]
+        axes[:, 0] /= np.linalg.norm(axes[:, 0])
+        axes[:, 1] = np.cross(plane[0], axes[:, 0])
+        points_2d = np.dot(projected_points, axes)
+        # project the center of mass also on this plane
+        tf = self._cloned_body.GetTransform()
+        inv_tf = utils.inverse_transform(tf)
+        com = np.dot(inv_tf[:3, :3], self._cloned_body.GetCenterOfMass()) + inv_tf[:3, 3]
+        projected_com = com - mean_point - np.dot(com - mean_point, plane[0].transpose()) * plane[0]
+        com2d = np.dot(projected_com, axes)
+        # although I'm pretty sure that these projected points should describe a convex polynom,
+        # compute their convex hull so that we are sure and have all edge normals
+        convex_hull = scipy.spatial.ConvexHull(points_2d)
+        # ##### DRAW CONVEX HULL ###### TODO remove
+        # boundary = points_2d[convex_hull.vertices]
+        # # compute 3d boundary from bases and mean point
+        # boundary3d = boundary[:, 0, np.newaxis] * axes[:, 0] + boundary[:, 1, np.newaxis] * axes[:, 1] + mean_point
+        # # transform it to world frame
+        # boundary3d = np.dot(boundary3d, tf[:3, :3]) + tf[:3, 3]
+        # handles.append(self._visualize_boundary(boundary3d))
+        # ##### DRAW CONVEX HULL - END ######
+        # ##### DRAW PROJECTED COM ######
+        # handles.append(self._env.drawbox(projected_com + mean_point, np.array([0.005, 0.005, 0.005]), 
+        #                                  np.array([0.29, 0, 0.5]), tf))
+        # ##### DRAW PROJECTED COM - END ######
+        # accept the point if the projected center of mass is inside of the convex hull
+        return self._compute_hull_distance(convex_hull, com2d) < -1.0 * self._parameters["min_com_distance"]
+
+    def _compute_placement_planes(self, user_filters):
+        # first compute the convex hull of the body
+        links = self._cloned_body.GetLinks()
+        assert(len(links) == 1)  # the object is assumed to be a rigid body
+        meshes = [geom.GetCollisionMesh() for geom in links[0].GetGeometries()]
+        all_points_shape = (sum([mesh.vertices.shape[0] for mesh in meshes]), 3)
+        vertices = np.empty(all_points_shape)
+        offset = 0
+        for mesh in meshes:
+            vertices[offset:mesh.vertices.shape[0] + offset] = mesh.vertices
+            offset += mesh.vertices.shape[0]
+        convex_hull = scipy.spatial.ConvexHull(vertices)  # TODO do we need to add any flags?
+        # merge faces
+        clusters, face_clusters, _ = SimplePlacementQuality.merge_faces(convex_hull, self._parameters["min_normal_similarity"])
+        # handles = self._visualize_clusters(convex_hull, clusters, face_clusters)
+        # handles = None
+        self._placement_planes = []
+        # retrieve clusters to store placement faces
+        for (normal, vertices) in clusters:
+            plane = np.empty((len(vertices) + 1, 3), dtype=float)
+            plane[0] = normal
+            plane[1:] = convex_hull.points[list(vertices)]
+            # filter faces based on object specific filters - TODO define filter interface? load filter from file
+            if user_filters:
+                for user_filter in user_filters:
+                    if not user_filter.accept_plane(plane):
+                        continue
+            # filter based on stability
+            if not self._is_stable_placement_plane(plane):
+                continue
+            # if this plane passed all filters, we accept it
+            self._placement_planes.append(plane)
+        if not self._placement_planes:
+            raise ValueError("Failed to compute placement planes for body %s." % self._cloned_body.GetName())
+        handles = self._visualize_placement_planes()
+        return
+
+    def set_target_object(self, body, model_name=None):
+        """
+            Set the target object.
+            ---------
+            Arguments
+            ---------
+            body, OpenRAVE Kinbody - target object
+            model_name (string, optional) - name of the kinbody model if it is different from the kinbody's name
+        """
+        self._env = body.GetEnv().CloneSelf(orpy.CloningOptions.Bodies)
+        self._cloned_body = self._env.GetKinBody(body.GetName())
+        assert(self._cloned_body)
+        if model_name is None:
+            model_name = body.GetName()
+        # self._placement_planes = self._object_io_interface.get_placement_planes(model_name)
+        col_checker = orpy.RaveCreateCollisionChecker(self._env, 'ode')  # Bullet is not working properly
+        self._env.SetCollisionChecker(col_checker)
+        self._env.SetViewer('qtcoin')
+        # user_filters = self._object_io_interface.load_placement_filters(model_name) # TODO implement this function
+        user_filters = None
+        self._compute_placement_planes(user_filters)
+
+    def set_placement_volume(self, workspace_volume):
+        """
+            Set the placement volume.
+            @param workspace_volume - (min_point, max_point), where both are np.arrays of length 3
+        """
+        self._max_ray_length = workspace_volume[1][2] - workspace_volume[0][2]  # maximal height of the placement volume
+
+    def _compute_placement_quality(self, placement_plane, pose):
+        """
+            Compute the placement quality for the given placement_plane at the given pose.
+            ---------
+            Arugments
+            ---------
+            placement_plane - numpy array of shape (3, n+1), where n is the number of points 
+                on the placement plane and placement_plane[:, 0] is the normal of the plane
+            pose - numpy array of shape (4, 4) describing the pose (transformation matrix)
+                of the body set in set_target_object(..)
+        """
+        # first transform the placement plane to global frame
+        tf_plane = np.dot(placement_plane, pose[:3, :3])
+        tf_plane[1:] += pose[:3, 3]
+        assert(tf_plane.shape[0] >= 4)
+        # TODO check whether placement plane is orthogonal to direction of gravity or upside down and
+        # TODO act accordingly 
+        # perform ray tracing to compute projected contact points
+        rays = np.zeros((tf_plane.shape[0] - 1, 6))
+        rays[:, 3:] = self._max_ray_length * self._dir_gravity
+        rays[:, :3] = tf_plane[1:]
+        self._cloned_body.Enable(False)
+        collisions, virtual_contacts = self._env.CheckCollisionRays(rays)
+        self._cloned_body.Enable(True)
+        ##### DRAW CONTACT ARROWS ###### TODO remove
+        handles = []
+        for idx, contact in enumerate(virtual_contacts):
+            if collisions[idx]:
+                handles.append(self._env.drawarrow(tf_plane[idx + 1], contact, linewidth=0.002))
+        ##### DRAW CONTACT ARROWS - END ######
+        distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
+        distances[np.invert(collisions)] = np.inf
+        # compute virtual contact plane
+        # TODO do not do any of the following, if there are no virtual contacts
+        ## first, sort virtual contact points by falling distance
+        contact_distance_tuples = zip(distances[collisions], virtual_contacts[collisions])
+        contact_distance_tuples.sort(key=lambda x: x[0])
+        ### second, select the first three contact points plus some additional if they have a similar ray distance
+        max_falling_height = contact_distance_tuples[2][0] + self._parameters["falling_height_tolerance"]
+        top_virtual_contacts = virtual_contacts[distances <= max_falling_height]
+        #### third, fit a plane into these virtual contact points
+        mean_point = np.mean(top_virtual_contacts[:, :3], axis=0)
+        top_virtual_contacts[:, :3] -= mean_point
+        u, s, v = np.linalg.svd(top_virtual_contacts[:, :3])
+        ##### DRAW CONTACT PLANE ###### TODO remove
+        handles = []
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 0], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 1], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
+        ##### DRAW CONTACT ARROWS - END ######
+        # check whether all virtual contact points are in a line
+        if s[1]**2 <= 10e-9:  # TODO what threshold is making sense here? Related to TODOs above
+            # all virtual contact points form essentially a line
+            # thus compute as com distance simply the distance between the center of mass
+            # and the placemeht plane
+            rel_com = self._cloned_body.GetCenterOfMass() - tf_plane[1]
+            com_distance = np.linalg.norm(rel_com - np.dot(rel_com, tf_plane[0]) * tf_plane[0])  # TODO sign?
+            # TODO what about angle between direction of gravity and virtual placement plane?
+        else:
+            virtual_plane_normal = np.cross(v[:, 0], v[:, 1])
+            vp_alignment = np.dot(virtual_plane_normal, self._dir_gravity)  # is minimized if vp normal points up
+            # next, compute a virtual com_distance by computing the convex hull of virtual contacts projected into the x-y plane
+            virtual_2d_boundary = np.dot(top_virtual_contacts[:, :3], v[:, :2])  # projects virtual contacts onto 2d-plane
+            convex_hull = scipy.spatial.ConvexHull(virtual_2d_boundary)
+            ##### DRAW CONVEX HULL ###### TODO remove
+            boundary = top_virtual_contacts[convex_hull.vertices, :3]
+            handles.append(self._env.drawlinelist(boundary, linewidth=0.002, color=[1.0, 0, 0, 1.0]))
+            handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 1], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
+            ##### DRAW CONTACT ARROWS - END ######
+            rel_com = self._cloned_body.GetCenterOfMass() - mean_point
+            projected_com = np.dot(rel_com, v[:, :2])
+            # TODO should reuse self._is_stable_placement_plane here
+            dist_to_boundary = self._compute_hull_distance(convex_hull, projected_com)
+            import IPython
+            IPython.embed()
+        # TODO angle between virtual plane and placement plane normal
+        # TODO variance in normal
+        # TODO clean up! documentation! capture edge cases!
+        return 0.0
+
+    def compute_quality(self, pose):
+        self._cloned_body.SetTransform(pose)
+        placement_values = map(self._compute_placement_quality, self._placement_planes, itertools.repeat(pose, len(self._placement_planes)))
+        return max(placement_values)
 
 
 class PlacementObjectiveFn(object):
@@ -14,7 +387,7 @@ class PlacementObjectiveFn(object):
         Implements an objective function for object placement.
         #TODO: should this class be in a different module?
     """
-    def __init__(self, env, scene_sdf, vol_approx=0.005):
+    def __init__(self, env, scene_sdf, object_io_interface, vol_approx=0.005):
         """
             Creates a new PlacementObjectiveFn
             @param env - openrave environment
@@ -26,6 +399,7 @@ class PlacementObjectiveFn(object):
         self._kinbody = None
         self._scene_sdf = scene_sdf
         self._kinbody_octree = None
+        self._stability_function = SimplePlacementQuality(object_io_interface)  # TODO make settable as parameter
         self._vol_approx = vol_approx
 
     def set_target_object(self, obj_name, model_name=None):
@@ -40,6 +414,14 @@ class PlacementObjectiveFn(object):
         if not self._kinbody:
             raise ValueError("Could not set target object " + obj_name + " because it does not exist")
         self._kinbody_octree = kinbody_sdf.OccupancyOctree(self._vol_approx, self._kinbody)
+        self._stability_function.set_target_object(self._kinbody, model_name)
+
+    def set_placement_volume(self, workspace_volume):
+        """
+            Sets the placement volume.
+            @param workspace_volume - (min_point, max_point), where both are np.arrays of length 3
+        """
+        self._stability_function.set_placement_volume(workspace_volume)
 
     def get_target_object(self):
         """
@@ -59,10 +441,14 @@ class PlacementObjectiveFn(object):
         self._kinbody.SetTransform(representative)
         # compute the collision cost for this pose
         _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
-        # preference_val = np.dot(representative[:3, 1], np.array([0, 0, 1]))
-        preference_val = 0.0
+        # if col_val < 0:
+            # return col_val
+        # preference_val = np.dot(representative[:3, 1], np.array([0, 0, 1])) - representative[2, 3]
+        preference_val = self._stability_function.compute_quality(representative)
+        # preference_val = 0.0
         #TODO return proper objective
-        return col_val + preference_val
+        return preference_val + col_val
+        # return preference_val
 
     @staticmethod
     def is_better(val_1, val_2):
@@ -275,7 +661,7 @@ class PlacementGoalPlanner:
         self._hierarchy = None
         self._object_io_interface = object_io_interface
         self._env = env
-        self._objective_function = PlacementObjectiveFn(env, scene_sdf)
+        self._objective_function = PlacementObjectiveFn(env, scene_sdf, object_io_interface)
         self._optimizer = optimization.StochasticOptimizer(self._objective_function)
         # self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
         self._placement_volume = None
@@ -289,6 +675,7 @@ class PlacementGoalPlanner:
             @param workspace_volume - (min_point, max_point), where both are np.arrays of length 3
         """
         self._placement_volume = workspace_volume
+        self._objective_function.set_placement_volume(workspace_volume)
         self._initialized = False
 
     def sample(self, depth_limit, post_opt=True):
