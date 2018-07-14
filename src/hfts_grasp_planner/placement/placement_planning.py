@@ -39,8 +39,8 @@ class SimplePlacementQuality(object):
         self._dir_gravity = np.array([0.0, 0.0, -1.0])
         self._x_dir = np.array([1.0, 0.0, 0.0])
         self._y_dir = np.array([0.0, 1.0, 0.0])
-        self._parameters = {"min_com_distance": 0.01, "min_normal_similarity": 0.97, "falling_height_tolerance": 0.005,
-                            "max_ray_length": 2.0}
+        self._parameters = {"min_com_distance": 0.01, "min_normal_similarity": 0.97, "falling_height_tolerance": 0.005}
+        self._plcmt_vol_height = 2.0
         if parameters:
             for (key, value) in parameters:
                 self._parameters[key] = value
@@ -88,10 +88,10 @@ class SimplePlacementQuality(object):
                     if np.dot(chull.equations[candidate_idx, :3], cluster_normal) >= min_normal_similarity:
                         if face_clusters[candidate_idx] == -1:  # check if candidate is unclustered yet
                             # add the vertices of this face to the cluster
-                            current_cluster[1].update(chull.simplices[candidate_idx]) 
+                            current_cluster[1].update(chull.simplices[candidate_idx])
                             face_clusters[candidate_idx] = cluster_id  # assign the cluster to the face
                             # add its neighbors to our extension candidates
-                            cluster_candidates.extend(chull.neighbors[candidate_idx])  
+                            cluster_candidates.extend(chull.neighbors[candidate_idx])
                 cluster_id += 1
             face_idx += 1
         return clusters, face_clusters, cluster_id
@@ -105,7 +105,7 @@ class SimplePlacementQuality(object):
         for cluster_idx in range(len(clusters)):
             color = np.random.random(3)
             faces = face_clusters == cluster_idx
-            # render faces 
+            # render faces
             handles.append(self._env.drawtrimesh(world_points, convex_hull.simplices[faces], color))
             # for pidx in range(1, len(tf_plane)):
             #     handles.append(self._env.drawarrow(tf_plane[pidx], tf_plane[pidx] + arrow_length * tf_plane[0], arrow_width, color))
@@ -113,7 +113,7 @@ class SimplePlacementQuality(object):
 
     def _visualize_boundary(self, boundary, linewidth=0.002):
         assert(len(boundary.shape) == 2 and boundary.shape[1] == 3)
-        if boundary.shape[0] < 2: 
+        if boundary.shape[0] < 2:
             return None
         linelist_input = np.empty((2 * boundary.shape[0], 3))
         linelist_input[0] = boundary[0]
@@ -143,7 +143,7 @@ class SimplePlacementQuality(object):
             handles.extend(self._visualize_placement_plane(plane, arrow_length, arrow_width))
         return handles
 
-    # TODO move this to some utils 
+    # TODO move this to some utils
     @staticmethod
     def _compute_hull_distance(convex_hull, point):
         """
@@ -157,20 +157,20 @@ class SimplePlacementQuality(object):
         exterior_distance = float('inf')
         for idx, edge in enumerate(convex_hull.simplices):
             rel_point = point - convex_hull.points[edge[0]]
-            # there are 3 cases: the point is closest to edge[0], to edge[1] or to 
+            # there are 3 cases: the point is closest to edge[0], to edge[1] or to
             # its orthogonal projection onto the edge
             edge_dir = convex_hull.points[edge[1]] - convex_hull.points[edge[0]]
-            edge_length = np.linalg.norm(edge_dir) 
+            edge_length = np.linalg.norm(edge_dir)
             assert(edge_length > 0.0)
             edge_dir /= edge_length
             # in any case we need the orthogonal distance to compute the sign
             orthogonal_distance = np.dot(convex_hull.equations[idx, :2], rel_point)
             # now check the different cases
-            directional_distance = np.dot(edge_dir, rel_point) 
+            directional_distance = np.dot(edge_dir, rel_point)
             if directional_distance >= edge_length:
                 # closest distance is to edge[1]
                 edge_distance = np.linalg.norm(point - convex_hull.points[edge[1]])
-            elif directional_distance <= 0.0: 
+            elif directional_distance <= 0.0:
                 # closest distance is to edge[0]
                 edge_distance = np.linalg.norm(point - convex_hull.points[edge[0]])
             else:
@@ -185,7 +185,7 @@ class SimplePlacementQuality(object):
 
     def _is_stable_placement_plane(self, plane):
         """
-            Return whether the specified plane can be used to stably place the 
+            Return whether the specified plane can be used to stably place the
             current kinbody.
             ---------
             Arguments
@@ -225,7 +225,7 @@ class SimplePlacementQuality(object):
         # handles.append(self._visualize_boundary(boundary3d))
         # ##### DRAW CONVEX HULL - END ######
         # ##### DRAW PROJECTED COM ######
-        # handles.append(self._env.drawbox(projected_com + mean_point, np.array([0.005, 0.005, 0.005]), 
+        # handles.append(self._env.drawbox(projected_com + mean_point, np.array([0.005, 0.005, 0.005]),
         #                                  np.array([0.29, 0, 0.5]), tf))
         # ##### DRAW PROJECTED COM - END ######
         # accept the point if the projected center of mass is inside of the convex hull
@@ -295,7 +295,7 @@ class SimplePlacementQuality(object):
             Set the placement volume.
             @param workspace_volume - (min_point, max_point), where both are np.arrays of length 3
         """
-        self._max_ray_length = workspace_volume[1][2] - workspace_volume[0][2]  # maximal height of the placement volume
+        self._plcmt_vol_height = workspace_volume[1][2] - workspace_volume[0][2]  # maximal height of the placement volume
 
     def _compute_virtual_contact_plane(self, placement_plane, pose):
         """
@@ -314,15 +314,15 @@ class SimplePlacementQuality(object):
                 first impact points. First impact points are the three points of the placement_plane
                 that have the minimal distance along the direction of gravity towards the surface.
                 If there are more virtual contact points that have a similar distance (how similar is determined by
-                the parameter self._parameters["first_impact_tolerance"]) as the three impact points, 
+                the parameter self._parameters["first_impact_tolerance"]) as the three impact points,
                 these are also included in this array (thus k >= 3). The number of first impact points
                 might, however, also be smaller than k, if there is no surface below the object (or the surface
-                is more than self._parameters["max_ray_length"] below the object.)
+                is more than self._plcmt_vol_height below the object.)
             virtual_plane_axes, numpy array of shape (3, 3). The first two columns span a plane fitted into
                 the virtual contact points. The third column is the normal of this plane (only defined if k >= 3).
             distances, numpy array of shape (n,) where n is the total number of point in the placement plane.
                 Note that some of these distances may be infinity, if there is no surface within
-                self._parameters["max_ray_length"] below this body. Distances are in the order of placement_plane points.
+                self._plcmt_vol_height below this body. Distances are in the order of placement_plane points.
         """
         # first transform the placement plane to global frame
         tf_plane = np.dot(placement_plane, pose[:3, :3])
@@ -330,7 +330,7 @@ class SimplePlacementQuality(object):
         assert(tf_plane.shape[0] >= 4)
         # perform ray tracing to compute projected contact points
         rays = np.zeros((tf_plane.shape[0] - 1, 6))
-        rays[:, 3:] = self._parameters["max_ray_length"] * self._dir_gravity
+        rays[:, 3:] = self._plcmt_vol_height] * self._dir_gravity
         rays[:, :3] = tf_plane[1:]
         self._cloned_body.Enable(False)
         collisions, virtual_contacts = self._env.CheckCollisionRays(rays)
@@ -374,7 +374,7 @@ class SimplePlacementQuality(object):
             ---------
             Arugments
             ---------
-            placement_plane - numpy array of shape (n+1, 3), where n is the number of points 
+            placement_plane - numpy array of shape (n+1, 3), where n is the number of points
                 on the placement plane and placement_plane[0, :] is the normal of the plane
             pose - numpy array of shape (4, 4) describing the pose (transformation matrix)
                 of the body set in set_target_object(..)
@@ -411,19 +411,28 @@ class SimplePlacementQuality(object):
 
     def compute_quality(self, pose):
         self._cloned_body.SetTransform(pose)
+        best_score = float('inf')
         # TODO can we skip some placement planes? based on their normals?
         for plane in self._placement_planes:
             virtual_contacts, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
             # TODO implement compute_footprint (footprint is compute by projecting along z axis onto mean point and then computing convex hull)
             contact_footprint, projected_com = self._compute_footprint(virtual_contacts)
             # TODO update compute_hull_distance to also return the closest edge and where on the edge the closest point lies
-            min_distance, closest_edge, line_segment = self._compute_hull_distance(contact_footprint, projected_com)
-            # TODO use this information to compute the point around which the object would rotate
-            # TODO alternatively we might be able to compute the radius using pythagoras
-            closest_point3d = 
-            score = (1.0 * beta) * max(distances)
+            c_min, closest_edge, line_segment = self._compute_hull_distance(contact_footprint, projected_com)
+            # compute c_height = distance along z axis from closest_point3d to center of mass
+            closest_point3d = (1.0 - line_segment) * virtual_contacts[closest_edge[1]] + line_segment * virtual_contacts[closest_edge[0]]
+            c_height = np.dot(-1.0 * self._dir_gravity, (_self._cloned_body.GetCenterOfMass() - closest_point3d))
+            max_d = max(distances)
+            # compute the following expressions:
+            beta = math.atan(c_min / c_height) - math.pi / 2.0
+            # we want to minimize the following score
+            normal = np.dot(pose[:3, :3], plane[0, :])
+            score = (2 - 2.0 / math.pi * beta) * max_d + min(np.dot(self._dir_gravity, normal) * self._plcmt_vol_height, 0)
+            best_score = min(score, best_score)
+            # the first part drives the placement plane downwards and such that the center of mass is low and within
+            # the footprint. The second part penalizes upside down faces.
             # TODO update best score
-        return max(placement_values)
+        return best_score
 
 
 class PlacementObjectiveFn(object):
@@ -522,7 +531,7 @@ class SE3Hierarchy(object):
             """
             self._global_id = global_id
             if self._global_id is None:
-                self._global_id = ((), (), (), (), ()) 
+                self._global_id = ((), (), (), (), ())
             self._relative_id = SE3Hierarchy.extract_relative_id(self._global_id)
             self._cartesian_box = cartesian_box
             self._so3_key = so3_key
@@ -592,7 +601,7 @@ class SE3Hierarchy(object):
             min_point = self._cartesian_box[0] + offset
             max_point = min_point + self._child_dimensions
             global_child_id = SE3Hierarchy.construct_id(self._global_id, child_id_key)
-            child_node = SE3Hierarchy.SE3HierarchyNode((min_point, max_point), 
+            child_node = SE3Hierarchy.SE3HierarchyNode((min_point, max_point),
                                                         (global_child_id[3], global_child_id[4]),
                                                         self._depth + 1, self._hierarchy,
                                                         global_id=global_child_id)
@@ -633,7 +642,7 @@ class SE3Hierarchy(object):
             if relative_to_parent:
                 return SE3Hierarchy.extract_relative_id(self._global_id)
             return self._global_id
-        
+
         def get_so3_key(self):
             return self._so3_key
 
@@ -660,7 +669,7 @@ class SE3Hierarchy(object):
     @staticmethod
     def extract_relative_id(global_id):
         """
-            Extracts the local id from the given global id. 
+            Extracts the local id from the given global id.
             Note that a local is a tuple (a,b,c,d,e,f) where all elements are integers.
             This is different from a global id!
         """
@@ -684,7 +693,7 @@ class SE3Hierarchy(object):
 
     def get_root(self):
         return self._root
-    
+
     def get_depth(self):
         return self._max_depth
 
