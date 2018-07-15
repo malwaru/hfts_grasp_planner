@@ -11,9 +11,9 @@ import numpy as np
 import hfts_grasp_planner.placement.placement_planning as pp_module
 from hfts_grasp_planner.utils import ObjectFileIO
 
-ENV_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/environments/cluttered_env.xml'
-SDF_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/sdfs/cluttered_test_env.sdf'
-DATA_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data'
+ENV_PATH = '/home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/environments/cluttered_env.xml'
+SDF_PATH = '/home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/sdfs/cluttered_test_env.sdf'
+DATA_PATH = '/home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data'
 # ROBOT_BALL_PATH = '/home/joshua/projects/grasping_catkin/src/hfts_grasp_planner/models/r850_robotiq/ball_description.yaml'
 
 def draw_volume(env, volume):

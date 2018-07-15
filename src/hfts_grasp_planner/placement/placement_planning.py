@@ -37,9 +37,9 @@ class SimplePlacementQuality(object):
         self._cloned_body = None
         self._placement_planes = None
         self._dir_gravity = np.array([0.0, 0.0, -1.0])
-        self._x_dir = np.array([1.0, 0.0, 0.0])
-        self._y_dir = np.array([0.0, 1.0, 0.0])
-        self._parameters = {"min_com_distance": 0.01, "min_normal_similarity": 0.97, "falling_height_tolerance": 0.005}
+        self._local_com = None
+        self._parameters = {"min_com_distance": 0.01, "min_normal_similarity": 0.97, "falling_height_tolerance": 0.005,
+                            "slopiness_weight": 1.6 / math.pi}
         self._plcmt_vol_height = 2.0
         if parameters:
             for (key, value) in parameters:
@@ -208,10 +208,7 @@ class SimplePlacementQuality(object):
         axes[:, 1] = np.cross(plane[0], axes[:, 0])
         points_2d = np.dot(projected_points, axes)
         # project the center of mass also on this plane
-        tf = self._cloned_body.GetTransform()
-        inv_tf = utils.inverse_transform(tf)
-        com = np.dot(inv_tf[:3, :3], self._cloned_body.GetCenterOfMass()) + inv_tf[:3, 3]
-        projected_com = com - mean_point - np.dot(com - mean_point, plane[0].transpose()) * plane[0]
+        projected_com = self._local_com - mean_point - np.dot(self._local_com - mean_point, plane[0].transpose()) * plane[0]
         com2d = np.dot(projected_com, axes)
         # although I'm pretty sure that these projected points should describe a convex polynom,
         # compute their convex hull so that we are sure and have all edge normals
@@ -288,6 +285,9 @@ class SimplePlacementQuality(object):
         self._env.SetViewer('qtcoin')
         # user_filters = self._object_io_interface.load_placement_filters(model_name) # TODO implement this function
         user_filters = None
+        tf = self._cloned_body.GetTransform()
+        tf_inv = utils.inverse_transform(tf)
+        self._local_com = np.dot(tf_inv[:3,:3], self._cloned_body.GetCenterOfMass()) + tf_inv[:3, 3]
         self._compute_placement_planes(user_filters)
 
     def set_placement_volume(self, workspace_volume):
@@ -316,8 +316,10 @@ class SimplePlacementQuality(object):
                 If there are more virtual contact points that have a similar distance (how similar is determined by
                 the parameter self._parameters["first_impact_tolerance"]) as the three impact points,
                 these are also included in this array (thus k >= 3). The number of first impact points
-                might, however, also be smaller than k, if there is no surface below the object (or the surface
+                might, however, also be smaller than 3, if there is no surface below the object (or the surface
                 is more than self._plcmt_vol_height below the object.)
+            vidx, numpy array of shape (k,). Store for each virtual_contact_point what index in placement_plane it
+                originates from.
             virtual_plane_axes, numpy array of shape (3, 3). The first two columns span a plane fitted into
                 the virtual contact points. The third column is the normal of this plane (only defined if k >= 3).
             distances, numpy array of shape (n,) where n is the total number of point in the placement plane.
@@ -330,7 +332,7 @@ class SimplePlacementQuality(object):
         assert(tf_plane.shape[0] >= 4)
         # perform ray tracing to compute projected contact points
         rays = np.zeros((tf_plane.shape[0] - 1, 6))
-        rays[:, 3:] = self._plcmt_vol_height] * self._dir_gravity
+        rays[:, 3:] = self._plcmt_vol_height * self._dir_gravity
         rays[:, :3] = tf_plane[1:]
         self._cloned_body.Enable(False)
         collisions, virtual_contacts = self._env.CheckCollisionRays(rays)
@@ -345,15 +347,29 @@ class SimplePlacementQuality(object):
         distances[np.invert(collisions)] = np.inf
         # compute virtual contact plane
         ## first, sort virtual contact points by falling distance
-        contact_distance_tuples = zip(distances[collisions], virtual_contacts[collisions])
+        contact_distance_tuples = zip(distances[collisions], np.where(collisions))
         ## if we have less than three contacts, there is nothing we can do
         if len(contact_distance_tuples) <= 3:
-            return virtual_contacts[collisions], None, distances
+            return virtual_contacts[collisions], np.where(collisions), None, distances
         ## do the actual sorting
         contact_distance_tuples.sort(key=lambda x: x[0])
-        ### second, select the first three contact points plus some additional if they have a similar ray distance
-        max_falling_height = contact_distance_tuples[2][0] + self._parameters["falling_height_tolerance"]
-        top_virtual_contacts = virtual_contacts[distances <= max_falling_height]
+        sorted_indices = [cdt[1] for cdt in contact_distance_tuples]
+        ### second, select the minimal number of contact points such that they span a plane in x, y
+        points_in_line = True
+        for idx in xrange(3, len(contact_distance_tuples)):
+            top_virtual_contacts = virtual_contacts[sorted_indices[:idx]]
+            _, s, _ = np.linalg.svd(top_virtual_contacts[:, :2])
+            if s[1]**2 > 10e-4:
+                points_in_line = False
+                break
+        if points_in_line:
+            # TODO should we return a special flag if all virtual contacts are in a line?
+            return virtual_contacts[collisions], np.where(collisions), None, distances
+        #### Getting here means not all points lie in a line, so we can actually fit a plane
+        #### Add some additional points if they are close
+        max_falling_height = contact_distance_tuples[idx - 1][0] + self._parameters["falling_height_tolerance"]
+        vidx = np.where(distances <= max_falling_height)
+        top_virtual_contacts = virtual_contacts[vidx]
         #### third, fit a plane into these virtual contact points
         mean_point = np.mean(top_virtual_contacts[:, :3], axis=0)
         top_virtual_contacts[:, :3] -= mean_point
@@ -363,76 +379,80 @@ class SimplePlacementQuality(object):
         handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 0], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
         handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 1], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
         ##### DRAW CONTACT ARROWS - END ######
-        # TODO should we return a special flag if all virtual contacts are in a line?
-        return top_virtual_contacts + mean_point, v, distances
+        return top_virtual_contacts + mean_point, vidx, v, distances
 
-
-    def _compute_virtual_contact_quality(self, placement_plane, pose):
-        """
-            Compute the placement quality for the given placement_plane at the given pose
-            by projecting it along the direction of gravity onto the environment's surface.
-            ---------
-            Arugments
-            ---------
-            placement_plane - numpy array of shape (n+1, 3), where n is the number of points
-                on the placement plane and placement_plane[0, :] is the normal of the plane
-            pose - numpy array of shape (4, 4) describing the pose (transformation matrix)
-                of the body set in set_target_object(..)
-        """
-        # check whether all virtual contact points are in a line
-        if s[1]**2 <= 10e-9:  # TODO what threshold is making sense here? Related to TODOs above
-            # all virtual contact points form essentially a line
-            # thus compute as com distance simply the distance between the center of mass
-            # and the placemeht plane
-            rel_com = self._cloned_body.GetCenterOfMass() - tf_plane[1]
-            com_distance = np.linalg.norm(rel_com - np.dot(rel_com, tf_plane[0]) * tf_plane[0])  # TODO sign?
-            # TODO what about angle between direction of gravity and virtual placement plane?
-        else:
-            virtual_plane_normal = np.cross(v[:, 0], v[:, 1])
-            vp_alignment = np.dot(virtual_plane_normal, self._dir_gravity)  # is minimized if vp normal points up
-            # next, compute a virtual com_distance by computing the convex hull of virtual contacts projected into the x-y plane
-            virtual_2d_boundary = np.dot(top_virtual_contacts[:, :3], v[:, :2])  # projects virtual contacts onto 2d-plane
-            convex_hull = scipy.spatial.ConvexHull(virtual_2d_boundary)
-            ##### DRAW CONVEX HULL ###### TODO remove
-            boundary = top_virtual_contacts[convex_hull.vertices, :3]
-            handles.append(self._env.drawlinelist(boundary, linewidth=0.002, color=[1.0, 0, 0, 1.0]))
-            handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 1], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
-            ##### DRAW CONTACT ARROWS - END ######
-            rel_com = self._cloned_body.GetCenterOfMass() - mean_point
-            projected_com = np.dot(rel_com, v[:, :2])
-            # TODO should reuse self._is_stable_placement_plane here
-            dist_to_boundary = self._compute_hull_distance(convex_hull, projected_com)
-            import IPython
-            IPython.embed()
-        # TODO angle between virtual plane and placement plane normal
-        # TODO variance in normal
-        # TODO clean up! documentation! capture edge cases!
-        return 0.0
+    # def _compute_virtual_contact_quality(self, placement_plane, pose):
+    #     """
+    #         Compute the placement quality for the given placement_plane at the given pose
+    #         by projecting it along the direction of gravity onto the environment's surface.
+    #         ---------
+    #         Arugments
+    #         ---------
+    #         placement_plane - numpy array of shape (n+1, 3), where n is the number of points
+    #             on the placement plane and placement_plane[0, :] is the normal of the plane
+    #         pose - numpy array of shape (4, 4) describing the pose (transformation matrix)
+    #             of the body set in set_target_object(..)
+    #     """
+    #     # check whether all virtual contact points are in a line
+    #     if s[1]**2 <= 10e-9:  # TODO what threshold is making sense here? Related to TODOs above
+    #         # all virtual contact points form essentially a line
+    #         # thus compute as com distance simply the distance between the center of mass
+    #         # and the placemeht plane
+    #         rel_com = self._cloned_body.GetCenterOfMass() - tf_plane[1]
+    #         com_distance = np.linalg.norm(rel_com - np.dot(rel_com, tf_plane[0]) * tf_plane[0])  # TODO sign?
+    #         # TODO what about angle between direction of gravity and virtual placement plane?
+    #     else:
+    #         virtual_plane_normal = np.cross(v[:, 0], v[:, 1])
+    #         vp_alignment = np.dot(virtual_plane_normal, self._dir_gravity)  # is minimized if vp normal points up
+    #         # next, compute a virtual com_distance by computing the convex hull of virtual contacts projected into the x-y plane
+    #         virtual_2d_boundary = np.dot(top_virtual_contacts[:, :3], v[:, :2])  # projects virtual contacts onto 2d-plane
+    #         convex_hull = scipy.spatial.ConvexHull(virtual_2d_boundary)
+    #         ##### DRAW CONVEX HULL ###### TODO remove
+    #         boundary = top_virtual_contacts[convex_hull.vertices, :3]
+    #         handles.append(self._env.drawlinelist(boundary, linewidth=0.002, color=[1.0, 0, 0, 1.0]))
+    #         handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 1], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
+    #         ##### DRAW CONTACT ARROWS - END ######
+    #         rel_com = self._cloned_body.GetCenterOfMass() - mean_point
+    #         projected_com = np.dot(rel_com, v[:, :2])
+    #         # TODO should reuse self._is_stable_placement_plane here
+    #         dist_to_boundary = self._compute_hull_distance(convex_hull, projected_com)
+    #         import IPython
+    #         IPython.embed()
+    #     # TODO angle between virtual plane and placement plane normal
+    #     # TODO variance in normal
+    #     # TODO clean up! documentation! capture edge cases!
+    #     return 0.0
 
     def compute_quality(self, pose):
         self._cloned_body.SetTransform(pose)
         best_score = float('inf')
         # TODO can we skip some placement planes? based on their normals?
         for plane in self._placement_planes:
-            virtual_contacts, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
-            # TODO implement compute_footprint (footprint is compute by projecting along z axis onto mean point and then computing convex hull)
-            contact_footprint, projected_com = self._compute_footprint(virtual_contacts)
-            # TODO update compute_hull_distance to also return the closest edge and where on the edge the closest point lies
-            c_min, closest_edge, line_segment = self._compute_hull_distance(contact_footprint, projected_com)
-            # compute c_height = distance along z axis from closest_point3d to center of mass
-            closest_point3d = (1.0 - line_segment) * virtual_contacts[closest_edge[1]] + line_segment * virtual_contacts[closest_edge[0]]
-            c_height = np.dot(-1.0 * self._dir_gravity, (_self._cloned_body.GetCenterOfMass() - closest_point3d))
-            max_d = max(distances)
-            # compute the following expressions:
-            beta = math.atan(c_min / c_height) - math.pi / 2.0
+            # TODO deal with edge cases when we do not receive any virtual contacts
+            virtual_contacts, vidx, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
+            # project the virtual contacts to the x, y plane and compute their convex hull
+            contact_footprint = scipy.spatial.ConvexHull(virtual_contacts[:, :2])
+            # retrieve the distance to the closest edge
+            chull_distance = self._compute_hull_distance(contact_footprint, self._cloned_body.GetCenterOfMass()[:2])
+            # rerieve the largest distance between a placement point and its virtual contact
+            d_head = np.max(distances)
+            # angle between virtual placement plane and z-axis
+            alpha = np.arccos(np.dot(virtual_plane_axes[:, 2], np.abs(self._dir_gravity)))
+            # angle between the placement plane and the virtual placement plane. Our stability estimate
+            # is only somehow accurate if these two align. It's completely nonsense if the plane is upside down
+            gamma = np.arccos(np.dot(virtual_plane_axes[:, 2], -1.0 * np.dot(pose[:3, :3], plane[0])))
+            # thus penalize invalid angles through the following score
+            interpolation_value = 1.0 / (1.0 + np.exp(-4.0 / np.pi * (gamma - np.pi))) # TODO maybe choose a different formula here
+            placement_value = interpolation_value * chull_distance + (1.0 - interpolation_value) * self._plcmt_vol_height
             # we want to minimize the following score
-            normal = np.dot(pose[:3, :3], plane[0, :])
-            score = (2 - 2.0 / math.pi * beta) * max_d + min(np.dot(self._dir_gravity, normal) * self._plcmt_vol_height, 0)
+            # minimizing d_head drives the placement plane downwards and aligns the placement plane with the surface
+            # minimizing the placement_value leads to rotating the object (fixes upside down planes) so that the
+            # placement plane gets aligned with the surface, or if the plane is already aligned, maximizes the
+            # stability by minizing the chull_distance (which is negative inside of the hull).
+            # Minimizing alpha prefers placements on planar surfaces rather than on slopes.
+            score = d_head + placement_value + self._parameters["slopiness_weight"] * alpha
             best_score = min(score, best_score)
-            # the first part drives the placement plane downwards and such that the center of mass is low and within
-            # the footprint. The second part penalizes upside down faces.
-            # TODO update best score
-        return best_score
+        return -1.0 * best_score  # externally we want to maximize
 
 
 class PlacementObjectiveFn(object):

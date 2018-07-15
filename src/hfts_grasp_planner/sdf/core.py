@@ -78,9 +78,13 @@ class VoxelGrid(object):
         if isinstance(workspace_aabb, tuple):
             dimensions = workspace_aabb[1]
             pos = workspace_aabb[0] - dimensions / 2.0
+            self._aabb = np.empty(6)
+            self._aabb[:3] = pos
+            self._aabb[3:] = pos + dimensions
         else:
             dimensions = workspace_aabb[3:] - workspace_aabb[:3]
             pos = workspace_aabb[:3]
+            self._aabb = workspace_aabb
         self._num_cells = np.ceil(dimensions / cell_size).astype(int)
         # self._num_cells = np.array([int(math.ceil(x)) for x in dimensions / cell_size])
         self._base_pos = pos  # position of the bottom left corner with respect the local frame
@@ -89,7 +93,6 @@ class VoxelGrid(object):
             self._transform = base_transform
         self._inv_transform = inverse_transform(self._transform)
         self._cells = np.zeros(self._num_cells + 2, dtype=dtype)  # first and last element per dimension is a dummy element for trilinear interpolation
-        self._aabb = workspace_aabb
         self._homogeneous_point = np.ones(4)
 
     def __iter__(self):
@@ -330,7 +333,7 @@ class VoxelGrid(object):
         """
             Ensures that the provided index is a valid index type.
             @param idx - index to sanitize
-            @param cast_type - may be either None, float or int. If not None, the index is cast 
+            @param cast_type - may be either None, float or int. If not None, the index is cast
                 to this type.
         """
         if len(idx) != 3:
@@ -623,7 +626,7 @@ class SDF(object):
 
 class OccupancyGridBuilder(object):
     """
-        An OccupancyGridBuilder builds a occupancy grid (a binary collision map) 
+        An OccupancyGridBuilder builds a occupancy grid (a binary collision map)
         in R^3. If you intend to construct multiple occupancy grids with the same cell size,
         it is recommended to use a single OccupancyGridBuilder as this saves resources generation.
         Note that the occupancy grid is constructed only considering collisions with the enabled bodies
@@ -747,9 +750,9 @@ class OccupancyGridBuilder(object):
         """
             Fill the given grid with bool values. Each cell in the grid will be set to True, if there this
             cell is in collision with an obstacle in the current state of the environment.
-            Otherwise, a cell has value False. 
+            Otherwise, a cell has value False.
             *NOTE*: If you do not intend to continue creating more SDFs using this builder, call clear() afterwards.
-            
+
             Arguments
             ---------
             grid - 3d numpy array of type bool, will be modified
@@ -766,7 +769,7 @@ class OccupancyGridBuilder(object):
             Clear all cached resources.
         """
         self._body_manager.clear()
-    
+
 
 class SDFBuilder(object):
     """
@@ -786,14 +789,14 @@ class SDFBuilder(object):
     def _compute_sdf(self, grid):
         """
             Compute a signed distance field from the given occupancy grid.
-            
+
             Arguments
             ---------
             grid - VoxelGrid that is an occupancy map. The cell type must be bool
 
             Return
             ---------
-            distance grid - VoxelGrid with cells of type float. Each cell contains the signed 
+            distance grid - VoxelGrid with cells of type float. Each cell contains the signed
                 distance to the closest obstacle surface point
         """
         # the grid is a binary collision map: 1 - collision, 0 - no collision
@@ -837,7 +840,7 @@ class SDFBuilder(object):
         print ('Computation of collision binary map took %f s' % (time.time() - start_time))
         # next compute sdf
         start_time = time.time()
-        distance_grid = self._compute_sdf(occupancy_grid)  
+        distance_grid = self._compute_sdf(occupancy_grid)
         print ('Computation of sdf took %f s' % (time.time() - start_time))
         return SDF(grid=distance_grid)
 
@@ -846,7 +849,7 @@ class SDFBuilder(object):
             Clear all used resources.
         """
         self._occupancy_builder.clear()
-        
+
     @staticmethod
     def compute_sdf_size(aabb, approx_error, radius=0.0):
         """
