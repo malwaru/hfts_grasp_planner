@@ -11,9 +11,9 @@ import numpy as np
 import hfts_grasp_planner.placement.placement_planning as pp_module
 from hfts_grasp_planner.utils import ObjectFileIO
 
-ENV_PATH = '/home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/environments/cluttered_env.xml'
-SDF_PATH = '/home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/sdfs/cluttered_test_env.sdf'
-DATA_PATH = '/home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data'
+ENV_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/environments/cluttered_env.xml'
+SDF_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/sdfs/cluttered_test_env.sdf'
+DATA_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data'
 # ROBOT_BALL_PATH = '/home/joshua/projects/grasping_catkin/src/hfts_grasp_planner/models/r850_robotiq/ball_description.yaml'
 
 def draw_volume(env, volume):
@@ -27,7 +27,6 @@ def execute_placement_planner(placement_planner, body):
 if __name__=="__main__":
     env = orpy.Environment()
     env.Load(ENV_PATH)
-    # env.SetViewer('qtcoin')
     object_io_interface = ObjectFileIO(DATA_PATH)
     robot_name = env.GetRobots()[0].GetName()
     scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=[robot_name, 'stick', 'bunny', 'crayola'])
@@ -45,13 +44,14 @@ if __name__=="__main__":
         scene_sdf.create_sdf(volume, resolution, resolution)
         scene_sdf.save(SDF_PATH)
     vis_volume = np.array([0.15, 0.48, 0.65, 0.35, 0.8, 0.8])
-    target_obj_name = 'crayola'
+    target_obj_name = 'stick'
     placement_planner = pp_module.PlacementGoalPlanner(object_io_interface, env, scene_sdf)
-    placement_volume = (np.array([-0.35, 0.55, 0.64]), np.array([0.53, 0.9, 0.75]))
+    placement_volume = (np.array([-0.35, 0.55, 0.66]), np.array([0.53, 0.9, 0.77]))
     # placement_volume = (np.array([0.24, 0.58, 0.73]), np.array([0.29, 0.8, 0.8]))  # volume in small gap
     placement_planner.set_placement_volume(placement_volume)
     placement_planner.set_object(target_obj_name)
     body = env.GetKinBody(target_obj_name)
+    # env.SetViewer('qtcoin')
     handle = draw_volume(env, placement_volume)
     print "Check the placement volume!", placement_volume
     IPython.embed()

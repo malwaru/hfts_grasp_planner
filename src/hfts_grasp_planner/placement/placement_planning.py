@@ -19,12 +19,13 @@ class SimplePlacementQuality(object):
         This quality function is based on quasi-static analysis of contact stability.
         Assumes that gravity is pulling in direction -z = (0, 0, -1).
     """
-    def __init__(self, object_io_interface, parameters=None):
+    def __init__(self, env, object_io_interface, parameters=None):
         """
             Create a new SimplePlacementQuality function object.
             ---------
             Arguments
             ---------
+            env - fully initialized OpenRAVE environment. Note that the environment is cloned.
             object_io_interface - Object of class ObjectIO that allows reading
                 in object specific contact points.
             parameters - dictionary with parameters. Available parameters are:
@@ -33,14 +34,17 @@ class SimplePlacementQuality(object):
                 falling_height_tolerance, float - tolerance for computing virtual contact points
         """
         self._object_io_interface = object_io_interface
-        self._env = None
-        self._cloned_body = None
+        self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
+        col_checker = orpy.RaveCreateCollisionChecker(self._env, 'ode')  # Bullet is not working properly
+        self._env.SetCollisionChecker(col_checker)
+        self._env.SetViewer('qtcoin')  # for debug only
+        self._body = None
         self._placement_planes = None
         self._dir_gravity = np.array([0.0, 0.0, -1.0])
         self._local_com = None
-        self._parameters = {"min_com_distance": 0.01, "min_normal_similarity": 0.97, "falling_height_tolerance": 0.005,
-                            "slopiness_weight": 1.6 / math.pi}
-        self._plcmt_vol_height = 2.0
+        self._parameters = {"min_com_distance": 0.001, "min_normal_similarity": 0.97,
+                            "falling_height_tolerance": 0.005, "slopiness_weight": 1.6 / math.pi}
+        self._max_ray_length = 2.0
         if parameters:
             for (key, value) in parameters:
                 self._parameters[key] = value
@@ -98,7 +102,7 @@ class SimplePlacementQuality(object):
 
     def _visualize_clusters(self, convex_hull, clusters, face_clusters, arrow_length=0.01, arrow_width=0.002):
         handles = []
-        tf = self._cloned_body.GetTransform()
+        tf = self._body.GetTransform()
         world_points = np.dot(convex_hull.points, tf[:3, :3]. transpose())
         world_points += tf[:3, 3]
         # for plane in self._placement_planes:
@@ -127,7 +131,7 @@ class SimplePlacementQuality(object):
 
     def _visualize_placement_plane(self, plane, arrow_length=0.01, arrow_width=0.002):
         handles = []
-        tf = self._cloned_body.GetTransform()
+        tf = self._body.GetTransform()
         tf_plane = np.dot(plane, tf[:3, :3].transpose())
         tf_plane[1:] += tf[:3, 3]
         color = np.random.random(3)
@@ -230,7 +234,7 @@ class SimplePlacementQuality(object):
 
     def _compute_placement_planes(self, user_filters):
         # first compute the convex hull of the body
-        links = self._cloned_body.GetLinks()
+        links = self._body.GetLinks()
         assert(len(links) == 1)  # the object is assumed to be a rigid body
         meshes = [geom.GetCollisionMesh() for geom in links[0].GetGeometries()]
         all_points_shape = (sum([mesh.vertices.shape[0] for mesh in meshes]), 3)
@@ -261,41 +265,52 @@ class SimplePlacementQuality(object):
             # if this plane passed all filters, we accept it
             self._placement_planes.append(plane)
         if not self._placement_planes:
-            raise ValueError("Failed to compute placement planes for body %s." % self._cloned_body.GetName())
-        handles = self._visualize_placement_planes()
-        return
+            raise ValueError("Failed to compute placement planes for body %s." % self._body.GetName())
+        # handles = self._visualize_placement_planes()
 
+    def _synch_env(self, env):
+        with env:
+            with self._env:
+                bodies = env.GetBodies()
+                for body in bodies:
+                    my_body = self._env.GetKinBody(body.GetName())
+                    if not my_body:
+                        raise RuntimeError("Could not find body with name " + body.GetName() + " in cloned environment")
+                    my_body.SetTransform(body.GetTransform())
+        
     def set_target_object(self, body, model_name=None):
         """
-            Set the target object.
+            Set the target object. 
+            Synchronizes the underlying OpenRAVE environment with the environment of this body.
+            If the environment of body has more kinbodies than the underlying environment, 
+            a RuntimeError is thrown. This is due to a bug in OpenRAVE, that doesn't allow
+            us to load additional kinbodies into any environment after a viewer has been set.
             ---------
             Arguments
             ---------
             body, OpenRAVE Kinbody - target object
             model_name (string, optional) - name of the kinbody model if it is different from the kinbody's name
         """
-        self._env = body.GetEnv().CloneSelf(orpy.CloningOptions.Bodies)
-        self._cloned_body = self._env.GetKinBody(body.GetName())
-        assert(self._cloned_body)
-        if model_name is None:
-            model_name = body.GetName()
-        # self._placement_planes = self._object_io_interface.get_placement_planes(model_name)
-        col_checker = orpy.RaveCreateCollisionChecker(self._env, 'ode')  # Bullet is not working properly
-        self._env.SetCollisionChecker(col_checker)
-        self._env.SetViewer('qtcoin')
+        self._body = self._env.GetKinBody(body.GetName())
+        if not self._body:
+            raise RuntimeError("Could not find body " + body.GetName() + " in cloned environment.")
+        self._synch_env(body.GetEnv())
         # user_filters = self._object_io_interface.load_placement_filters(model_name) # TODO implement this function
         user_filters = None
-        tf = self._cloned_body.GetTransform()
+        tf = self._body.GetTransform()
         tf_inv = utils.inverse_transform(tf)
-        self._local_com = np.dot(tf_inv[:3,:3], self._cloned_body.GetCenterOfMass()) + tf_inv[:3, 3]
+        self._local_com = np.dot(tf_inv[:3,:3], self._body.GetCenterOfMass()) + tf_inv[:3, 3]
         self._compute_placement_planes(user_filters)
+        object_diameter = 2.0 * np.linalg.norm(self._body.ComputeAABB().extents())
+        self._max_ray_length = self._workspace_volume[1][2] - self._workspace_volume[0][2] \
+            + 2.0 * object_diameter
 
     def set_placement_volume(self, workspace_volume):
         """
             Set the placement volume.
             @param workspace_volume - (min_point, max_point), where both are np.arrays of length 3
         """
-        self._plcmt_vol_height = workspace_volume[1][2] - workspace_volume[0][2]  # maximal height of the placement volume
+        self._workspace_volume = np.array(workspace_volume)
 
     def _compute_virtual_contact_plane(self, placement_plane, pose):
         """
@@ -317,133 +332,126 @@ class SimplePlacementQuality(object):
                 the parameter self._parameters["first_impact_tolerance"]) as the three impact points,
                 these are also included in this array (thus k >= 3). The number of first impact points
                 might, however, also be smaller than 3, if there is no surface below the object (or the surface
-                is more than self._plcmt_vol_height below the object.)
-            vidx, numpy array of shape (k,). Store for each virtual_contact_point what index in placement_plane it
+                is more than self._max_ray_length below the object.)
+            vidx, numpy array of shape (k,). Stores for each virtual_contact_point what index in placement_plane it
                 originates from.
             virtual_plane_axes, numpy array of shape (3, 3). The first two columns span a plane fitted into
                 the virtual contact points. The third column is the normal of this plane (only defined if k >= 3).
             distances, numpy array of shape (n,) where n is the total number of point in the placement plane.
                 Note that some of these distances may be infinity, if there is no surface within
-                self._plcmt_vol_height below this body. Distances are in the order of placement_plane points.
+                self._max_ray_length below this body. Distances are in the order of placement_plane points.
         """
         # first transform the placement plane to global frame
-        tf_plane = np.dot(placement_plane, pose[:3, :3])
+        tf_plane = np.dot(placement_plane, pose[:3, :3].transpose())
         tf_plane[1:] += pose[:3, 3]
         assert(tf_plane.shape[0] >= 4)
         # perform ray tracing to compute projected contact points
         rays = np.zeros((tf_plane.shape[0] - 1, 6))
-        rays[:, 3:] = self._plcmt_vol_height * self._dir_gravity
+        rays[:, 3:] = self._max_ray_length * self._dir_gravity
         rays[:, :3] = tf_plane[1:]
-        self._cloned_body.Enable(False)
+        self._body.Enable(False)
         collisions, virtual_contacts = self._env.CheckCollisionRays(rays)
-        self._cloned_body.Enable(True)
+        self._body.Enable(True)
         ##### DRAW CONTACT ARROWS ###### TODO remove
         handles = []
         for idx, contact in enumerate(virtual_contacts):
             if collisions[idx]:
-                handles.append(self._env.drawarrow(tf_plane[idx + 1], contact, linewidth=0.002))
+                handles.append(self._env.drawarrow(tf_plane[idx + 1], contact[:3], linewidth=0.002))
         ##### DRAW CONTACT ARROWS - END ######
         distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
         distances[np.invert(collisions)] = np.inf
         # compute virtual contact plane
         ## first, sort virtual contact points by falling distance
-        contact_distance_tuples = zip(distances[collisions], np.where(collisions))
+        contact_distance_tuples = zip(distances[collisions], np.where(collisions)[0])
         ## if we have less than three contacts, there is nothing we can do
-        if len(contact_distance_tuples) <= 3:
-            return virtual_contacts[collisions], np.where(collisions), None, distances
+        if len(contact_distance_tuples) < 3:
+            return virtual_contacts[collisions, :3], np.where(collisions)[0], None, distances
         ## do the actual sorting
         contact_distance_tuples.sort(key=lambda x: x[0])
         sorted_indices = [cdt[1] for cdt in contact_distance_tuples]
         ### second, select the minimal number of contact points such that they span a plane in x, y
         points_in_line = True
-        for idx in xrange(3, len(contact_distance_tuples)):
-            top_virtual_contacts = virtual_contacts[sorted_indices[:idx]]
-            _, s, _ = np.linalg.svd(top_virtual_contacts[:, :2])
-            if s[1]**2 > 10e-4:
+        for idx in xrange(2, len(contact_distance_tuples)):
+            top_virtual_contacts = virtual_contacts[sorted_indices[:idx + 1], :3]
+            _, s, _ = np.linalg.svd(top_virtual_contacts[:, :2] - np.mean(top_virtual_contacts[:, :2], axis=0))
+            std_dev = s[1] / np.sqrt(idx) 
+            if std_dev > 10e-3:  # std deviation should not be larger than some value
                 points_in_line = False
                 break
         if points_in_line:
             # TODO should we return a special flag if all virtual contacts are in a line?
-            return virtual_contacts[collisions], np.where(collisions), None, distances
+            return virtual_contacts[collisions, :3], np.where(collisions)[0], None, distances
         #### Getting here means not all points lie in a line, so we can actually fit a plane
         #### Add some additional points if they are close
-        max_falling_height = contact_distance_tuples[idx - 1][0] + self._parameters["falling_height_tolerance"]
-        vidx = np.where(distances <= max_falling_height)
+        max_falling_height = contact_distance_tuples[idx][0] + self._parameters["falling_height_tolerance"]
+        vidx = np.where(distances <= max_falling_height)[0]
         top_virtual_contacts = virtual_contacts[vidx]
         #### third, fit a plane into these virtual contact points
         mean_point = np.mean(top_virtual_contacts[:, :3], axis=0)
         top_virtual_contacts[:, :3] -= mean_point
-        u, s, v = np.linalg.svd(top_virtual_contacts[:, :3])
+        _, s, v = np.linalg.svd(top_virtual_contacts[:, :3])
+        # flip the normal of the virtual placement plane such that it points upwards
+        if v[2, 2] < 0.0:
+            v[2, :] *= -1.0
         ##### DRAW CONTACT PLANE ###### TODO remove
-        handles = []
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 0], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 1], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[0, :], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[1, :], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[2, :], linewidth=0.002, color=[0.0, 0.0, 1.0, 1.0]))
         ##### DRAW CONTACT ARROWS - END ######
-        return top_virtual_contacts + mean_point, vidx, v, distances
-
-    # def _compute_virtual_contact_quality(self, placement_plane, pose):
-    #     """
-    #         Compute the placement quality for the given placement_plane at the given pose
-    #         by projecting it along the direction of gravity onto the environment's surface.
-    #         ---------
-    #         Arugments
-    #         ---------
-    #         placement_plane - numpy array of shape (n+1, 3), where n is the number of points
-    #             on the placement plane and placement_plane[0, :] is the normal of the plane
-    #         pose - numpy array of shape (4, 4) describing the pose (transformation matrix)
-    #             of the body set in set_target_object(..)
-    #     """
-    #     # check whether all virtual contact points are in a line
-    #     if s[1]**2 <= 10e-9:  # TODO what threshold is making sense here? Related to TODOs above
-    #         # all virtual contact points form essentially a line
-    #         # thus compute as com distance simply the distance between the center of mass
-    #         # and the placemeht plane
-    #         rel_com = self._cloned_body.GetCenterOfMass() - tf_plane[1]
-    #         com_distance = np.linalg.norm(rel_com - np.dot(rel_com, tf_plane[0]) * tf_plane[0])  # TODO sign?
-    #         # TODO what about angle between direction of gravity and virtual placement plane?
-    #     else:
-    #         virtual_plane_normal = np.cross(v[:, 0], v[:, 1])
-    #         vp_alignment = np.dot(virtual_plane_normal, self._dir_gravity)  # is minimized if vp normal points up
-    #         # next, compute a virtual com_distance by computing the convex hull of virtual contacts projected into the x-y plane
-    #         virtual_2d_boundary = np.dot(top_virtual_contacts[:, :3], v[:, :2])  # projects virtual contacts onto 2d-plane
-    #         convex_hull = scipy.spatial.ConvexHull(virtual_2d_boundary)
-    #         ##### DRAW CONVEX HULL ###### TODO remove
-    #         boundary = top_virtual_contacts[convex_hull.vertices, :3]
-    #         handles.append(self._env.drawlinelist(boundary, linewidth=0.002, color=[1.0, 0, 0, 1.0]))
-    #         handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[:, 1], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
-    #         ##### DRAW CONTACT ARROWS - END ######
-    #         rel_com = self._cloned_body.GetCenterOfMass() - mean_point
-    #         projected_com = np.dot(rel_com, v[:, :2])
-    #         # TODO should reuse self._is_stable_placement_plane here
-    #         dist_to_boundary = self._compute_hull_distance(convex_hull, projected_com)
-    #         import IPython
-    #         IPython.embed()
-    #     # TODO angle between virtual plane and placement plane normal
-    #     # TODO variance in normal
-    #     # TODO clean up! documentation! capture edge cases!
-    #     return 0.0
+        return top_virtual_contacts[:, :3] + mean_point, vidx, v.transpose(), distances
 
     def compute_quality(self, pose):
-        self._cloned_body.SetTransform(pose)
+        """
+            Compute the placement quality for the given pose. 
+            The larger the returned value, the more suitable a pose is for placement.
+            Note that this function is merely a heuristic.
+            ---------
+            Arguments
+            ---------
+            pose, numpy array of shape (4, 4) - describes the pose of the currently
+                set kinbody
+            ---------
+            Returns
+            ---------
+            score, float - the larger the better the pose is
+        """
+        self._body.SetTransform(pose)
         best_score = float('inf')
         # TODO can we skip some placement planes? based on their normals?
         for plane in self._placement_planes:
-            # TODO deal with edge cases when we do not receive any virtual contacts
-            virtual_contacts, vidx, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
-            # project the virtual contacts to the x, y plane and compute their convex hull
-            contact_footprint = scipy.spatial.ConvexHull(virtual_contacts[:, :2])
-            # retrieve the distance to the closest edge
-            chull_distance = self._compute_hull_distance(contact_footprint, self._cloned_body.GetCenterOfMass()[:2])
-            # rerieve the largest distance between a placement point and its virtual contact
-            d_head = np.max(distances)
-            # angle between virtual placement plane and z-axis
-            alpha = np.arccos(np.dot(virtual_plane_axes[:, 2], np.abs(self._dir_gravity)))
-            # angle between the placement plane and the virtual placement plane. Our stability estimate
-            # is only somehow accurate if these two align. It's completely nonsense if the plane is upside down
-            gamma = np.arccos(np.dot(virtual_plane_axes[:, 2], -1.0 * np.dot(pose[:3, :3], plane[0])))
-            # thus penalize invalid angles through the following score
-            interpolation_value = 1.0 / (1.0 + np.exp(-4.0 / np.pi * (gamma - np.pi))) # TODO maybe choose a different formula here
-            placement_value = interpolation_value * chull_distance + (1.0 - interpolation_value) * self._plcmt_vol_height
+            virtual_contacts, _, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
+            if virtual_contacts.size > 0:
+                # we have some virtual contacts and thus finite distances
+                # rerieve the largest distance between a placement point and its virtual contact
+                finite_distances = [d for d in distances if d < float('inf')]
+                d_head = np.max(finite_distances)
+                if virtual_plane_axes is not None:
+                    # we have a virtual contact plane and can compute the full heuristic
+                    # project the virtual contacts to the x, y plane and compute their convex hull
+                    contact_footprint = scipy.spatial.ConvexHull(virtual_contacts[:, :2])
+                    # retrieve the distance to the closest edge
+                    chull_distance = self._compute_hull_distance(contact_footprint, self._body.GetCenterOfMass()[:2])
+                    # angle between virtual placement plane and z-axis
+                    dot_product = np.dot(virtual_plane_axes[:, 2], np.abs(self._dir_gravity))
+                    alpha = np.arccos(np.clip(dot_product, -1.0, 1.0))
+                    # angle between the placement plane and the virtual placement plane. Our stability estimate
+                    # is only somehow accurate if these two align. It's completely nonsense if the plane is upside down
+                    dot_product = np.dot(virtual_plane_axes[:, 2], -1.0 * np.dot(pose[:3, :3], plane[0]))
+                    gamma = np.arccos(np.clip(dot_product, -1.0, 1.0))
+                    # thus penalize invalid angles through the following score
+                    # TODO maybe choose a different formula for this weight here
+                    weight = 1.0 / (1.0 + np.exp(-8.0 / np.pi * (gamma - np.pi / 2.0)))
+                    placement_value = (1.0 - weight) * chull_distance + weight * self._max_ray_length
+                else:
+                    # we have contacts, but insufficiently many to fit a plane, so give it bad
+                    # scores for anything related to the virtual placement plane
+                    placement_value = self._max_ray_length
+                    alpha = 1.57
+            else:
+                # we have no contacts, so there isn't anything we can say
+                d_head = float('inf')
+                placement_value = float('inf')
+                alpha = float('inf')
             # we want to minimize the following score
             # minimizing d_head drives the placement plane downwards and aligns the placement plane with the surface
             # minimizing the placement_value leads to rotating the object (fixes upside down planes) so that the
@@ -472,7 +480,7 @@ class PlacementObjectiveFn(object):
         self._kinbody = None
         self._scene_sdf = scene_sdf
         self._kinbody_octree = None
-        self._stability_function = SimplePlacementQuality(object_io_interface)  # TODO make settable as parameter
+        self._stability_function = SimplePlacementQuality(env, object_io_interface)  # TODO make settable as parameter
         self._vol_approx = vol_approx
 
     def set_target_object(self, obj_name, model_name=None):
