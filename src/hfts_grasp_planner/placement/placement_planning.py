@@ -137,6 +137,7 @@ class SimplePlacementQuality(object):
                 # rerieve the largest distance between a placement point and its virtual contact
                 finite_distances = [d for d in distances if d < float('inf')]
                 d_head = np.max(finite_distances)
+                # d_head = np.min(finite_distances)
                 if virtual_plane_axes is not None:
                     # we have a virtual contact plane and can compute the full heuristic
                     # project the virtual contacts to the x, y plane and compute their convex hull
@@ -456,7 +457,7 @@ class SimplePlacementQuality(object):
             top_virtual_contacts = virtual_contacts[sorted_indices[:idx + 1], :3]
             _, s, _ = np.linalg.svd(top_virtual_contacts[:, :2] - np.mean(top_virtual_contacts[:, :2], axis=0))
             std_dev = s[1] / np.sqrt(idx) 
-            if std_dev > 10e-3:  # std deviation should not be larger than some value
+            if std_dev > 5e-3:  # std deviation should not be larger than some value
                 points_in_line = False
                 break
         if points_in_line:
