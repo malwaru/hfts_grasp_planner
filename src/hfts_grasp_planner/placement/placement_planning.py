@@ -1,7 +1,10 @@
 #!/usr/bin/env python
+import os
+import math
 import logging
 import itertools
 import collections
+import functools
 import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
@@ -9,8 +12,6 @@ import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
 import hfts_grasp_planner.utils as utils
 import numpy as np
 import scipy.spatial
-import math
-import os
 import openravepy as orpy
 
 
@@ -434,14 +435,14 @@ class SimplePlacementQuality(object):
         self._body.Enable(False)
         collisions, virtual_contacts = self._env.CheckCollisionRays(rays)
         self._body.Enable(True)
+        distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
+        distances[np.invert(collisions)] = np.inf
         ##### DRAW CONTACT ARROWS ###### TODO remove
         handles = []
         for idx, contact in enumerate(virtual_contacts):
-            if collisions[idx]:
+            if collisions[idx] and distances[idx] > 0.001:  # distances shouldn't be too small, otherwise the viewer crashes
                 handles.append(self._env.drawarrow(tf_plane[idx + 1], contact[:3], linewidth=0.002))
         ##### DRAW CONTACT ARROWS - END ######
-        distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
-        distances[np.invert(collisions)] = np.inf
         # compute virtual contact plane
         ## first, sort virtual contact points by falling distance
         contact_distance_tuples = zip(distances[collisions], np.where(collisions)[0])
@@ -531,14 +532,15 @@ class SimplePlacementQuality(object):
         return handles
 
 
-class PlacementObjectiveFn(object):
+class PlacementHeuristic(object):
     """
-        Implements an objective function for object placement.
-        #TODO: should this class be in a different module?
+        Implements a heuristic for placement. It consists of two components: a collision cost and a stability cost.
+        The collision cost punishes nodes that are in collision. The stability cost
+        evaluates whether a given node is suitable for releasing an object so that it fall towards a good placement pose.
     """
     def __init__(self, env, scene_sdf, object_base_path, vol_approx=0.005):
         """
-            Creates a new PlacementObjectiveFn
+            Creates a new PlacementHeuristic
             ---------
             Arguments
             ---------
@@ -584,25 +586,35 @@ class PlacementObjectiveFn(object):
         """
         return self._obj_name
 
+    def evaluate_stability(self, pose):
+        """
+            Evalute the stability cost function for the given pose.
+        """
+        self._kinbody.SetTransform(pose)
+        return self._stability_function.compute_quality(pose)
+
+    def evaluate_collision(self, pose):
+        """
+            Evalute the collision cost function for the given pose.
+        """
+        self._kinbody.SetTransform(pose)
+        _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
+        return col_val
+
     def evaluate(self, node):
         """
-            Evalutes the objective function for the given node (must be SE3HierarchyNode)
+            Evalutes the objective function for the given node (must be SE3HierarchyNode).
+            The evaluation of the node is performed based on its representative.
         """
         assert(self._kinbody_octree)
         assert(self._scene_sdf)
         # set the transform to the pose to evaluate
         representative = node.get_representative_value()
-        self._kinbody.SetTransform(representative)
         # compute the collision cost for this pose
-        _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
-        # if col_val < 0:
-            # return col_val
-        # preference_val = np.dot(representative[:3, 1], np.array([0, 0, 1])) - representative[2, 3]
-        preference_val = self._stability_function.compute_quality(representative)
-        # preference_val = 0.0
-        #TODO return proper objective
-        return preference_val + col_val
-        # return preference_val
+        col_val = self.evaluate_collision(representative)
+        stability_val = self.evaluate_stability(representative)
+        #TODO add weights? different combination of different costs?
+        return stability_val + col_val
 
     @staticmethod
     def is_better(val_1, val_2):
@@ -638,7 +650,6 @@ class SE3Hierarchy(object):
             self._so3_key = so3_key
             self._depth = depth
             self._hierarchy = hierarchy
-            self._so3_hierarchy = hierarchy._so3_hierarchy
             self._cartesian_range = cartesian_box[1] - cartesian_box[0]
             self._child_dimensions = self._cartesian_range / self._hierarchy._cart_branching
             self._child_cache = {}
@@ -658,7 +669,7 @@ class SE3Hierarchy(object):
             """
             if self._depth == self._hierarchy._max_depth:
                 return None
-            bfs = self._so3_hierarchy.get_branching_factors(self._depth)
+            bfs = so3hierarchy.get_branching_factors(self._depth)
             random_child = np.array([np.random.randint(self._hierarchy._cart_branching),
                                      np.random.randint(self._hierarchy._cart_branching),
                                      np.random.randint(self._hierarchy._cart_branching),
@@ -682,7 +693,7 @@ class SE3Hierarchy(object):
             # TODO respect blacklist
             neighbor_id = np.zeros(5, np.int)
             neighbor_id[:3] = np.clip(child_id[:3] + random_dir, 0, max_ids)
-            so3_key = self._so3_hierarchy.get_random_neighbor(node.get_so3_key())
+            so3_key = so3hierarchy.get_random_neighbor(node.get_so3_key())
             neighbor_id[3] = so3_key[0][-1]
             neighbor_id[4] = so3_key[1][-1]
             return self.get_child_node(neighbor_id)
@@ -703,17 +714,23 @@ class SE3Hierarchy(object):
             max_point = min_point + self._child_dimensions
             global_child_id = SE3Hierarchy.construct_id(self._global_id, child_id_key)
             child_node = SE3Hierarchy.SE3HierarchyNode((min_point, max_point),
-                                                        (global_child_id[3], global_child_id[4]),
-                                                        self._depth + 1, self._hierarchy,
-                                                        global_id=global_child_id)
+                                                       (global_child_id[3], global_child_id[4]),
+                                                       self._depth + 1, self._hierarchy,
+                                                       global_id=global_child_id)
             self._child_cache[tuple(child_id_key)] = child_node
             return child_node
+
+        def get_depth(self):
+            """
+                Return the depth of this node.
+            """
+            return self._depth
 
         def get_children(self):
             """
                 Return a generator that allows to iterate over all children.
             """
-            bfs = self._so3_hierarchy.get_branching_factors(self._depth)
+            bfs = so3hierarchy.get_branching_factors(self._depth)
             local_keys = itertools.product(range(self._hierarchy._cart_branching),
                                            range(self._hierarchy._cart_branching),
                                            range(self._hierarchy._cart_branching),
@@ -725,14 +742,20 @@ class SE3Hierarchy(object):
         def get_representative_value(self, rtype=0):
             """
                 Returns a point in SE(3) that represents this cell, i.e. the center of this cell
-                @param rtype - Type to represent point (0 = 4x4 matrix)
+                @param rtype - Type to represent point (0 = 4x4 matrix,
+                                                        1 = [x, y, z, theta, phi, psi] (Hopf coordinates),)
             """
             position = self._cartesian_box[0] + self._cartesian_range / 2.0
-            quaternion = self._so3_hierarchy.get_quaternion(self._so3_key)
             if rtype == 0:  # return a matrix
+                quaternion = so3hierarchy.get_quaternion(self._so3_key)
                 matrix = transformations.quaternion_matrix(quaternion)
                 matrix[:3, 3] = position
                 return matrix
+            elif rtype == 1: # return array with position and hopf coordinates
+                result = np.empty(6)
+                result[:3] = position
+                result[3:] = so3hierarchy.get_hopf_coordinates(self._so3_key)
+                return result
             raise RuntimeError("Return types different from matrix are not implemented yet!")
 
         def get_id(self, relative_to_parent=False):
@@ -747,9 +770,26 @@ class SE3Hierarchy(object):
         def get_so3_key(self):
             return self._so3_key
 
-    """
-        Implements a hierarchical grid on SE3.
-    """
+        def get_bounds(self):
+            """
+                Return workspace range represented by this node. 
+                -------
+                Returns
+                -------
+                bounds, numpy array of shape (6, 2) - each row represents min and max value for [x, y, z, theta, phi, psi]
+            """
+            bounds = np.empty((6, 2))
+            bounds[:3, 0] = self._cartesian_box[0]
+            bounds[:3, 1] = self._cartesian_box[1]
+            bounds[3:, :] = so3hierarchy.get_hopf_coordinate_range(self._so3_key)
+            return bounds
+
+        def is_leaf(self):
+            """
+                Return whether this node is a leaf or not.
+            """
+            return self._depth == self._hierarchy.get_depth()
+
     def __init__(self, bounding_box, cart_branching, depth):
         """
             Creates a new hierarchical grid on SE(3), i.e. R^3 x SO(3)
@@ -759,10 +799,9 @@ class SE3Hierarchy(object):
             @param depth - maximal depth of the hierarchy (can be an integer in {1, 2, 3, 4})
         """
         self._cart_branching = cart_branching
-        self._so3_hierarchy = so3hierarchy.SO3Hierarchy()
-        self._max_depth = max(0, min(depth, self._so3_hierarchy.max_depth()))
+        self._max_depth = depth
         self._root = self.SE3HierarchyNode(cartesian_box=bounding_box,
-                                           so3_key=self._so3_hierarchy.get_root_key(),
+                                           so3_key=so3hierarchy.get_root_key(),
                                            depth=0,
                                            hierarchy=self)
         self._blacklist = None  # TODO need some data structure to blacklist nodes
@@ -799,10 +838,71 @@ class SE3Hierarchy(object):
         return self._max_depth
 
 
+def default_leaf_stage(objective_fn, collision_cost, plcmt_result):
+    """
+        Locally optimize the objective_fn in the domain of the plcmt_result's node
+        using scikit's constrained optimization by linear approximation function.
+        ---------
+        Arguments
+        ---------
+        objective_fn - The function to maximize.
+        collision_cost - Contstraint that needs to be positive.
+    """
+    def to_matrix(x):
+        quat = so3hierarchy.hopf_to_quaternion(x[3:])
+        pose = transformations.quaternion_matrix(quat)
+        pose[:3, 3] = x[:3]
+        return pose
+
+    def pose_wrapper_fn(fn, x, multiplier=1.0):
+        # extract pose from x and pass it to fn
+        val = multiplier * fn(to_matrix(x))
+        if val == float('inf'):
+            val = 10e9  # TODO this is a hack
+        return val
+
+    # get the initial value
+    x0 = plcmt_result.hierarchy_node.get_representative_value(rtype=1)
+    # get bounds
+    bounds = plcmt_result.hierarchy_node.get_bounds()
+    constraints = [
+        {
+            'type': 'ineq',
+            'fun': functools.partial(pose_wrapper_fn, collision_cost),
+        },
+        {
+            'type': 'ineq',
+            'fun': lambda x: x - bounds[:, 0]  # TODO replace with real bounds
+        },
+        {
+            'type': 'ineq',
+            'fun': lambda x: bounds[:, 1] - x  # TODO replace with real bounds
+        }
+    ]
+    opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, objective_fn, multiplier=-1.0),
+                                         x0, method='COBYLA', constraints=constraints)
+    sol = opt_result.x
+    plcmt_result.obj_pose = to_matrix(sol)
+
+
 class PlacementGoalPlanner:
     """This class allows to search for object placements in combination with
         the FreeSpaceProximitySampler.
     """
+    class PlacementResult(object): # TODO define interface for GoalSampling result
+        """
+            Represents the result of a placement call. 
+            TODO: implement all functions that the goal sampler needs.
+        """
+        def __init__(self, hierarchy_node, quality_value):
+            self.hierarchy_node = hierarchy_node
+            self.quality_value = quality_value
+            self.arm_configuration = None
+            self.obj_pose = hierarchy_node.get_representative_value()
+        
+        def is_leaf(self):
+            return self.hierarchy_node.is_leaf()
+        
     def __init__(self, base_path,
                  env, scene_sdf, visualize=False):
         """
@@ -814,9 +914,13 @@ class PlacementGoalPlanner:
         """
         self._hierarchy = None
         self._env = env
-        self._objective_function = PlacementObjectiveFn(env, scene_sdf, base_path)
-        self._optimizer = optimization.StochasticOptimizer(self._objective_function)
+        self._placement_heuristic = PlacementHeuristic(env, scene_sdf, base_path)
+        self._optimizer = optimization.StochasticOptimizer(self._placement_heuristic)
         # self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
+        # TODO replace the leaf_stage with BayesOpt on Physics?
+        self._leaf_stage = functools.partial(default_leaf_stage,
+                                             self._placement_heuristic.evaluate_stability,
+                                             self._placement_heuristic.evaluate_collision) 
         self._placement_volume = None
         self._env = env
         self._parameters = {'cart_branching': 3, 'max_depth': 4, 'num_iterations': 100}  # TODO update
@@ -828,27 +932,31 @@ class PlacementGoalPlanner:
             @param workspace_volume - (min_point, max_point), where both are np.arrays of length 3
         """
         self._placement_volume = workspace_volume
-        self._objective_function.set_placement_volume(workspace_volume)
+        self._placement_heuristic.set_placement_volume(workspace_volume)
         self._initialized = False
 
     def sample(self, depth_limit, post_opt=True):
         """ Samples a placement configuration from the root level. """
-        #TODO
         if not self._initialized:
             self._initialize()
-        current_node = self.get_root()
-        num_iterations = self._parameters['num_iterations']
-        best_val = None
-        best_node = None
-        for depth in xrange(min(depth_limit, self.get_max_depth())):
-            best_val, best_node = self._optimizer.run(current_node, num_iterations)
-            current_node = best_node
-        return best_node, best_val
+        return self.sample_warm_start(self.get_root(), depth_limit, post_opt=post_opt)
 
     def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):
         """ Samples a placement configuration from the given node on. """
-        #TODO
-        pass
+        if not self._initialized:
+            self._initialize()
+        num_iterations = self._parameters['num_iterations']
+        best_val = None
+        best_node = None
+        current_node = hierarchy_node
+        for depth in xrange(current_node.get_depth(), min(depth_limit, self.get_max_depth())):
+            logging.debug("Searching for placement pose on depth %i" % depth)
+            best_val, best_node = self._optimizer.run(current_node, num_iterations)
+            current_node = best_node
+        placement_result = PlacementGoalPlanner.PlacementResult(best_node, best_val) 
+        if post_opt and placement_result.is_leaf():
+            self._leaf_stage(placement_result)
+        return placement_result
 
     def is_goal(self, sampling_result):
         """ Returns whether the given node is a goal or not. """
@@ -857,6 +965,8 @@ class PlacementGoalPlanner:
 
     def load_hand(self, hand_path, hand_cache_file, hand_config_file, hand_ball_file):
         """ Does nothing. """
+        # TODO The placement model (physics engine) will take the hand into account, so it will have
+        # TODO to be set here.
         pass
 
     def set_object(self, obj_id, model_id=None):
@@ -864,7 +974,7 @@ class PlacementGoalPlanner:
             @param obj_id String identifying the object.
             @param model_id (optional) Name of the model data. If None, it is assumed to be identical to obj_id
         """
-        self._objective_function.set_target_object(obj_id, model_id)
+        self._placement_heuristic.set_target_object(obj_id, model_id)
         self._initialized = False
 
     def set_max_iter(self, iterations):
@@ -886,7 +996,7 @@ class PlacementGoalPlanner:
     def _initialize(self):
         if self._placement_volume is None:
             raise ValueError("Could not intialize as there is no placement volume available")
-        if self._objective_function.get_target_object() is None:
+        if self._placement_heuristic.get_target_object() is None:
             raise ValueError("Could not intialize as there is no placement target object available")
         self._hierarchy = SE3Hierarchy(self._placement_volume,
                                        self._parameters['cart_branching'],  # TODO it makes more sense to provide a resolution instead
