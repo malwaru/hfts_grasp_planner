@@ -38,7 +38,7 @@
 
     <KinBody name="crayola">
         <Translation>-0.16 0.78 1.0</Translation>
-        <Body type="static">
+        <Body type="dynamic">
             <Geom type="trimesh">
                 <Data>../crayola/objectModel.ply</Data>
                 <Render>../crayola/objectModel.ply</Render>
@@ -47,7 +47,7 @@
     </KinBody>
     <KinBody name="bunny">
         <Translation>-0.16 0.78 1.5</Translation>
-        <Body type="static">
+        <Body type="dynamic">
             <Geom type="trimesh">
                 <Data>../bunny/objectModel.ply</Data>
                 <Render>../bunny/objectModel.ply</Render>
@@ -57,7 +57,7 @@
 
     <KinBody name="stick">
         <Translation>0.3 0.5 0.5</Translation>
-        <Body type="static">
+        <Body type="dynamic">
             <Geom type="trimesh">
                 <Data>../stick/objectModel.stl</Data>
                 <Render>../stick/objectModel.stl</Render>
