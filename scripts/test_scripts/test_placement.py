@@ -20,14 +20,14 @@ def draw_volume(env, volume):
     return env.drawbox(0.5 * (volume[0] + volume[1]), 0.5 * (volume[1] - volume[0]), np.array([0.3, 0.3, 0.3, 0.3]))
 
 def execute_placement_planner(placement_planner, body):
-    best_node, best_val = placement_planner.sample(10)
-    print 'Best val is ', best_val
-    body.SetTransform(best_node.get_representative_value())
+    result = placement_planner.sample(10)
+    print 'Best val is ', result.quality_value
+    pose = result.obj_pose
+    body.SetTransform(pose)
 
 if __name__=="__main__":
     env = orpy.Environment()
     env.Load(ENV_PATH)
-    object_io_interface = ObjectFileIO(DATA_PATH)
     robot_name = env.GetRobots()[0].GetName()
     scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=[robot_name, 'stick', 'bunny', 'crayola'])
     if os.path.exists(SDF_PATH):
@@ -43,10 +43,10 @@ if __name__=="__main__":
         IPython.embed()
         scene_sdf.create_sdf(volume, resolution, resolution)
         scene_sdf.save(SDF_PATH)
-    vis_volume = np.array([0.15, 0.48, 0.65, 0.35, 0.8, 0.8])
-    target_obj_name = 'stick'
-    placement_planner = pp_module.PlacementGoalPlanner(object_io_interface, env, scene_sdf)
-    placement_volume = (np.array([-0.35, 0.55, 0.66]), np.array([0.53, 0.9, 0.77]))
+    target_obj_name = 'bunny'
+    placement_planner = pp_module.PlacementGoalPlanner(DATA_PATH, env, scene_sdf)
+    placement_volume = (np.array([-0.35, 0.55, 0.86]), np.array([0.53, 0.9, 0.97]))  # on top of shelf
+    # placement_volume = (np.array([-0.35, 0.55, 0.66]), np.array([0.53, 0.9, 0.77]))  # inside shelf
     # placement_volume = (np.array([0.24, 0.58, 0.73]), np.array([0.29, 0.8, 0.8]))  # volume in small gap
     placement_planner.set_placement_volume(placement_volume)
     placement_planner.set_object(target_obj_name)

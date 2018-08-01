@@ -7,9 +7,9 @@ import hfts_grasp_planner.sdf.costs as costs_module
 import openravepy as orpy
 import numpy as np
 
-ENV_PATH = '/home/joshua/projects/grasping_catkin/src/hfts_grasp_planner/data/environments/table_r850.xml'
-SDF_PATH = '/home/joshua/projects/grasping_catkin/src/hfts_grasp_planner/data/sdfs/table_r850.sdf'
-ROBOT_BALL_PATH = '/home/joshua/projects/grasping_catkin/src/hfts_grasp_planner/models/r850_robotiq/ball_description.yaml'
+ENV_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/environments/table_r850.xml'
+SDF_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/sdfs/table_r850.sdf'
+ROBOT_BALL_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/models/r850_robotiq/ball_description.yaml'
 # ENV_PATH = '/home/joshua/projects/gpmp2_catkin/src/orgpmp2/examples/data/envs/lab.env.xml'
 # ROBOT_PATH = '/home/joshua/projects/gpmp2_catkin/src/orgpmp2/examples/data/robots/barrettwam_gpmp2spheres.robot.xml'
 
@@ -49,17 +49,17 @@ if __name__=="__main__":
     # for body_name in bodies_to_remove:
     #     body = env.GetKinBody(body_name)
     #     env.Remove(body)
-    movable_names = ['crayola', 'bunny']
+    movable_names = ['crayola']
     robot_name = 'r850_robotiq'
     robot = env.GetRobot(robot_name)
-    scene_sdf = sdf_module.SceneSDF(env, movable_names, excluded_bodies=[robot_name])
+    scene_sdf = sdf_module.SceneSDF(env, movable_names, excluded_bodies=[robot_name, 'bunny'])
     volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
     scene_sdf.load(SDF_PATH)
     # scene_sdf.create_sdf(volume, 0.02, 0.01)
+    # scene_sdf.save(SDF_PATH)
     sdf_vis = sdf_module.ORSDFVisualization(env)
-    # scene_sdf.load('/home/joshua/projects/grasping_catkin/src/hfts_grasp_planner/data/sdfs/test.sdf')
-    # sdf_vis.visualize(scene_sdf, volume, resolution=0.05, max_sat_value=0.7)
-    robot_sdf = robot_sdf_module.RobotSDF(robot, scene_sdf)
-    robot_sdf.load_approximation(ROBOT_BALL_PATH)
-    distance_fn = costs_module.DistanceToFreeSpace(robot, robot_sdf)
+    sdf_vis.visualize(scene_sdf, volume, resolution=0.05, max_sat_value=0.7, style='sprites')
+    # robot_sdf = robot_sdf_module.RobotSDF(robot, scene_sdf)
+    # robot_sdf.load_approximation(ROBOT_BALL_PATH)
+    # distance_fn = costs_module.DistanceToFreeSpace(robot, robot_sdf)
     IPython.embed()
