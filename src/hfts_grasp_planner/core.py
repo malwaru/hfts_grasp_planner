@@ -858,4 +858,3 @@ class HFTSNode:
 
     def get_quality(self):
         return self._quality
-
