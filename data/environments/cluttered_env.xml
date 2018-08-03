@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Environment>
-    <Robot file="../../models/r850_robotiq/r850_robotiq.xml"/>
+    <Robot file="../../models/r850/r850_robotiq.xml"/>
  
     <KinBody name="floor">
       <Translation>0.3   0.0   -0.5</Translation>
@@ -26,7 +26,7 @@
     </KinBody>
 
     <KinBody name="cluttered_shelf">
-      <Translation>0.58   0.96   0.67</Translation> 
+      <Translation>0.58   0.96   0.44</Translation> 
       <RotationAxis>0 0 1 180</RotationAxis>
       <Body type="static">
         <Geom type="trimesh">

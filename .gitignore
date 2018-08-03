@@ -91,4 +91,5 @@ ENV/
 #Some more
 *~
 *.pyc
-*.npy
+data/*.npy
+.vscode/*

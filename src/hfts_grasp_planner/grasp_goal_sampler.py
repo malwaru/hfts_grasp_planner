@@ -3,7 +3,7 @@
 """This module contains a wrapper class of the HFTS Grasp Sampler."""
 
 from hfts_grasp_planner.core import HFTSSampler, HFTSNode
-from sampler import SamplingResult
+from sampler import GoalHierarchy
 import logging
 import numpy
 
@@ -16,8 +16,83 @@ class HFTSNodeDataExtractor:
         return numpy.copy
 
 
-class GraspGoalSampler:
+# TODO this module is unnecessary overhead, we should let HFTS Grasp planner simply implement the required
+# TODO interface itself.
+class GraspGoalSampler(GoalHierarchy):
     """ Wrapper class for the HFTS Grasp Planner/Sampler that allows a full black box usage."""
+    class GraspGoalNode(GoalHierarchy.GoalHierarchyNode):
+        """
+            Implementation of GoalHierarchyNode for HFTS grasp planner.
+        """
+
+        def __init__(self, hfts_node):
+            self._hfts_node = hfts_node
+            config = hfts_node.get_arm_configuration()
+            if config is not None:
+                config = numpy.concatenate((config, hfts_node.get_pre_grasp_config()))
+            super(GraspGoalSampler.GraspGoalNode, self).__init__(config, data_extractor=HFTSNodeDataExtractor())
+
+        def is_valid(self):
+            return self._hfts_node.is_valid()
+
+        def is_goal(self):
+            """
+                Return whether this node represents a goal. 
+                In addition to being valid, a goal must represent a configuration that is 
+                fulfilling all goal criteria.
+            """
+            return self._hfts_node.is_goal()
+
+        def hierarchy_info_str(self):
+            """
+                Return a string representation of the hierarchy information for debugging and printing.
+            """
+            return str(self._hfts_node.get_labels())
+
+        def get_num_possible_children(self):
+            """
+                Return the number of possible children of this node.
+            """
+            return self._hfts_node.get_num_possible_children()
+
+        def get_num_possible_leaves(self):
+            """
+                Return the number of possible leaves in the subranch rooted at this node.
+            """
+            return self._hfts_node.get_num_possible_leaves()
+
+        def get_hashable_label(self):
+            """
+                Return a unique and hashable identifier for this node.
+            """
+            return self._hfts_node.get_unique_label()
+
+        def get_label(self):
+            """
+                Return a unique identifier for this node.
+            """
+            return self._hfts_node.get_labels()
+
+        def get_depth(self):
+            """
+                Return the depth of this node.
+            """
+            return self._hfts_node.get_depth()
+
+        def get_additional_data(self):
+            """
+                Return optional additional data associated with this node.
+                This may be any python object that stores additional information that an external
+                caller may be interested in, such as the hand configuration of a grasp, or a hand-opening
+                policy for dropping an object, etc.
+            """
+            return self._hfts_node.get_hand_config()
+
+        def is_extendible(self):
+            """
+                Return whether this node is extendible, i.e. it has children.
+            """
+            return self._hfts_node.is_extendible()
 
     def __init__(self, object_io_interface, hand_path, hand_cache_file, hand_config_file, hand_ball_file,
                  planning_scene_interface, visualize=False, open_hand_offset=0.1):
@@ -39,7 +114,7 @@ class GraspGoalSampler:
                                          vis=visualize, scene_interface=planning_scene_interface)
         self.grasp_planner.set_max_iter(100)
         self.open_hand_offset = open_hand_offset
-        self.root_node = self.grasp_planner.get_root_node()
+        self.root_node = GraspGoalSampler.GraspGoalNode(self.grasp_planner.get_root_node())
         self.load_hand(hand_path, hand_cache_file, hand_config_file, hand_ball_file)
 
     def sample(self, depth_limit, post_opt=True):
@@ -50,18 +125,11 @@ class GraspGoalSampler:
         """ Samples a grasp from the given node on. """
         logging.debug('[GoalSamplerWrapper] Sampling a grasp from hierarchy depth ' +
                       str(hierarchy_node.get_depth()))
-        sampled_node = self.grasp_planner.sample_grasp(node=hierarchy_node, depth_limit=depth_limit,
+        sampled_node = self.grasp_planner.sample_grasp(node=hierarchy_node._hfts_node, depth_limit=depth_limit,
                                                        post_opt=post_opt,
                                                        label_cache=label_cache,
                                                        open_hand_offset=self.open_hand_offset)
-        config = sampled_node.get_arm_configuration()
-        if config is not None:
-            config = numpy.concatenate((config, sampled_node.get_pre_grasp_config()))
-        return SamplingResult(configuration=config, hierarchy_info=sampled_node, data_extractor=HFTSNodeDataExtractor())
-
-    def is_goal(self, sampling_result):
-        """ Returns whether the given node is a goal or not. """
-        return sampling_result.hierarchyInfo.is_goal()
+        return GraspGoalSampler.GraspGoalNode(sampled_node)
 
     def load_hand(self, hand_path, hand_cache_file, hand_config_file, hand_ball_file):
         """ Reset the hand being used. @see __init__ for parameter description. """
@@ -76,7 +144,7 @@ class GraspGoalSampler:
             @param model_id (optional) Name of the model data. If None, it is assumed to be identical to obj_id
         """
         self.grasp_planner.load_object(obj_id=obj_id, model_id=model_id)
-        self.root_node = self.grasp_planner.get_root_node()
+        self.root_node = GraspGoalSampler.GraspGoalNode(self.grasp_planner.get_root_node())
 
     def set_max_iter(self, iterations):
         self.grasp_planner.set_max_iter(iterations)

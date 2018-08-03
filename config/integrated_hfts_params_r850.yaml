@@ -4,7 +4,7 @@ visualize_hfts: False
 show_trajectory: False
 show_search_tree: False
 environment_file_name: data/environments/test_env_r850.xml
-hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
+hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s.xml
 hand_config_file: models/robotiq/hand_config.yaml
 hand_ball_file: models/robotiq/ball_description.yaml
 hand_cache_file: data/cache/robotiq_hand.npy

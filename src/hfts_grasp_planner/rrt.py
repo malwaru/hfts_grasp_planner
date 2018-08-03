@@ -575,7 +575,7 @@ class RRT:
         self.stats_logger.num_goal_nodes_sampled = self.goal_sampler.get_num_goal_nodes_sampled()
         self.stats_logger.runtime = timer_function() - start_time
         if path is not None:
-            self.stats_logger.final_grasp_quality = self.goal_sampler.get_quality(path[-1])
+            # self.stats_logger.final_grasp_quality = self.goal_sampler.get_quality(path[-1])
             self.stats_logger.success = 1
         return self.shortcut(path, shortcut_time)
 

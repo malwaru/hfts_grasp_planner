@@ -4,7 +4,9 @@ import argparse
 import sys
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create an ikfast model for the given robot.")
+    desc = "Create an ikfast model for the given robot. Run this script in an environment" +\
+        " with sympy 0.7.1 installed."
+    parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('robot_file_name', type=str, help='Path to an OpenRAVE robot')
     parser.add_argument('--manipulator_name', type=str, help='Name of the manipulator to create the IK for')
     args = parser.parse_args()

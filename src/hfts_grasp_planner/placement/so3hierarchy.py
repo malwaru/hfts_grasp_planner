@@ -23,8 +23,8 @@ from itertools import izip, product
 
 
 S2_ROOT_NEIGHBORS = [[3, 4, 5, 1], [0, 5, 6, 2], [1, 6, 7, 3], [2, 7, 4, 0],
-                        [3, 11, 8, 0], [0, 8, 9, 1], [1, 9, 10, 2], [2, 10, 11, 3],
-                        [4, 11, 5, 9], [8, 5, 6, 10], [9, 6, 7, 11], [10, 7, 4, 8]]
+                     [3, 11, 8, 0], [0, 8, 9, 1], [1, 9, 10, 2], [2, 10, 11, 3],
+                     [4, 11, 5, 9], [8, 5, 6, 10], [9, 6, 7, 11], [10, 7, 4, 8]]
 
 
 def hopf_to_quaternion(hopf):
@@ -64,6 +64,8 @@ def key_to_indices(key):
         healpix_idx, int - index of the healpix
         s1_idx, int - index of the inteval in S1
         level, int - level of the hierarchy (order for healpix)
+
+        Note: If key is ((), ()) then 0, 0, -1 is returned
     """
     assert(len(key) == 2)
     s2_key, s1_key = key[0], key[1]  # extract keys for both hierarchies
@@ -73,7 +75,7 @@ def key_to_indices(key):
     healpix_idx = 0  # index of this healpix on this level, a value within [0, 12 * 4^level)
     s1_idx = 0  # s1 index, an integer within [0, 6 * 2^level)
     for d in xrange(len(s2_key)):  # compute offsets
-        healpix_idx += s2_key[d] * pow(4, level - d)  
+        healpix_idx += s2_key[d] * pow(4, level - d)
         s1_idx += s1_key[d] * pow(2, level - d)
     return healpix_idx, s1_idx, level
 
@@ -145,9 +147,9 @@ def get_random_neighbor(key):
     # first select a random S^2 neighbor
     s2_key = list(key[0])
     s1_key = list(key[1])
-    if len(s2_key) == 0: # just return in case we have an empty key
+    if len(s2_key) == 0:  # just return in case we have an empty key
         return ()
-    if len(s2_key) == 1: # in case we are on the root level, we have specific choices
+    if len(s2_key) == 1:  # in case we are on the root level, we have specific choices
         s2_key[-1] = np.random.choice(S2_ROOT_NEIGHBORS[s2_key[-1]])
         rdir = np.random.randint(-1, 2)
         s1_key[-1] = np.clip(s1_key[-1] + rdir, 0, 5)

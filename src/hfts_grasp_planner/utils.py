@@ -6,7 +6,11 @@ from geometry_msgs.msg import Point32
 import std_msgs.msg
 import rospy
 from sklearn.cluster import KMeans as KMeans
-import math, copy, os, itertools
+import math
+import copy
+import os
+import operator
+import itertools
 from sklearn.neighbors import KDTree
 from stl import mesh as stl_mesh_module
 from abc import ABCMeta, abstractmethod
@@ -38,7 +42,7 @@ class ObjectIO(object):
     @abstractmethod
     def get_openrave_file_name(self, obj_id):
         pass
-    
+
     @abstractmethod
     def get_placement_planes(self, obj_id):
         pass
@@ -167,7 +171,8 @@ class ObjectFileIO(ObjectIO):
 
     def set_hfts_generation_parameters(self, params):
         if type(params) is not dict:
-            raise TypeError('ObjectFileIO::set_hfts_generation_parameters] Expected a dictionary, received ' + str(type(params)))
+            raise TypeError(
+                'ObjectFileIO::set_hfts_generation_parameters] Expected a dictionary, received ' + str(type(params)))
         self._hfts_generation_params = params
 
     def show_hfts(self, level, or_drawer, object_transform=None, b_normals=False):
@@ -248,7 +253,7 @@ class ObjectFileIO(ObjectIO):
         with np.load(filename) as data:
             outputs = []
             for key in data:
-                outputs.append(data[key]) 
+                outputs.append(data[key])
             return outputs
         return None
 
@@ -291,7 +296,7 @@ def read_stl_file(file_id):
             stl_mesh.update_normals()
             normal_length = np.linalg.norm(stl_mesh.normals[face_idx])
             if normal_length == 0.0:
-                raise IOError('[utils.py::read_stl_file] Could not extract valid normals from the given file ' \
+                raise IOError('[utils.py::read_stl_file] Could not extract valid normals from the given file '
                               + str(file_id))
         points[face_idx, 3:6] = stl_mesh.normals[face_idx] / normal_length
     return points
@@ -316,7 +321,7 @@ def vec_angel_diff(v0, v1):
     if l0 == 0 or l1 == 0:
         return 0
     x = np.dot(v0, v1) / (l0*l1)
-    x = min(1.0, max(-1.0, x)) # fixing math precision error
+    x = min(1.0, max(-1.0, x))  # fixing math precision error
     angel = math.acos(x)
     return angel
 
@@ -330,6 +335,15 @@ def inverse_transform(transform):
     inv_transform[:3, :3] = np.transpose(transform[:3, :3])
     inv_transform[:3, 3] = np.dot(-1.0 * inv_transform[:3, :3], transform[:3, 3])
     return inv_transform
+
+
+def is_dynamic_body(body):
+    """
+        Return whether the given body is dynamic or static by checking its links.
+        all dynamic -> True, all static -> False, mixed -> False
+    """
+    links = body.GetLinks()
+    return reduce(operator.and_, [not link.IsStatic() for link in links])
 
 
 def dist_in_range(d, r):
@@ -382,8 +396,8 @@ def generate_wrench_cone(contact, normal, mu, center, face_n):
             r_mat = np.identity(3, float)
         else:
             r_mat = np.identity(3, float)
-            r_mat[1,1] = -1.
-            r_mat[2,2] = -1.
+            r_mat[1, 1] = -1.
+            r_mat[2, 2] = -1.
 
     forces = np.dot(r_mat, np.transpose(forces))
     forces = np.transpose(forces)
@@ -438,11 +452,11 @@ class OpenRAVEDrawer:
         self._node_ids = {}
 
     def get_eef_pose(self, config):
-        orig_config = self.robot.GetDOFValues()
-        self.robot.SetDOFValues(config)
+        orig_config = self.robot.GetActiveDOFValues()
+        self.robot.SetActiveDOFValues(config)
         manip = self.robot.GetActiveManipulator()
         eef_pose = manip.GetEndEffectorTransform()
-        self.robot.SetDOFValues(orig_config)
+        self.robot.SetActiveDOFValues(orig_config)
         return eef_pose
 
     def draw_tree(self, tree, color):
@@ -541,4 +555,3 @@ class OpenRAVEDrawer:
         edges.extend(points[1])
         edges.extend(points[5])
         self.handles.append(self.or_env.drawlinelist(edges, width, color))
-

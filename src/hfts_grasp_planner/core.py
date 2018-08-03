@@ -8,7 +8,7 @@ import logging
 import copy
 from scipy.spatial import KDTree
 import openravepy as orpy
-import hfts_grasp_planner.transformations
+import hfts_grasp_planner.external.transformations
 from hfts_grasp_planner.sdf.core import SceneSDF
 from hfts_grasp_planner.sdf.robot import RobotSDF
 from hfts_grasp_planner.sdf.costs import DistanceToFreeSpace
@@ -25,6 +25,7 @@ class PlanningSceneInterface(object):
         A PlanningSceneInterface provides access to a planning scene that contains
         a full robot (arm + hand) and any obstacles in the environment of the robot.
     """
+
     def __init__(self, or_env, robot_name):
         """ Sets scene information for grasp planning that considers the whole robot.
             @param or_env OpenRAVE environment containing the whole planning scene and robot
@@ -60,34 +61,35 @@ class PlanningSceneInterface(object):
                         is collision free hand-arm configuration, arm_conf is the arm configuration,
                         pre_grasp_conf the hand configuration. If there is no IK, arm_conf is None
         """
-        with self._or_env:
-            # compute target pose in world frame
-            object_pose = self._object.GetTransform()
-            hand_pose_scene = np.dot(object_pose, hand_pose_object)
-            # save current state
-            dof_values = self._robot.GetDOFValues()
-            # if we have a seed set it
-            arm_dofs = self._manip.GetArmIndices()
-            hand_dofs = self._manip.GetGripperIndices()
-            if seed is not None:
-                self._robot.SetDOFValues(seed, dofindices=arm_dofs)
-            # Compute a pre-grasp hand configuration and set it
-            pre_grasp_conf = np.asarray(grasp_conf) - open_hand_offset
-            lower_limits, upper_limits = self._robot.GetDOFLimits(hand_dofs)
-            pre_grasp_conf = np.asarray(clamp(pre_grasp_conf, lower_limits, upper_limits))
-            self._robot.SetDOFValues(pre_grasp_conf, dofindices=hand_dofs)
-            # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
-            sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
-            # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
-            # If that didn't work, try to compute a solution that is in collision (may be useful anyways)
-            if sol is None:
-                # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
-                sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
-                b_sol_col_free = False
-            else:
-                b_sol_col_free = True
-            # Restore original dof values
-            self._robot.SetDOFValues(dof_values)
+        # with self._or_env:
+        # compute target pose in world frame
+        object_pose = self._object.GetTransform()
+        hand_pose_scene = np.dot(object_pose, hand_pose_object)
+        # save current state
+        dof_values = self._robot.GetDOFValues()
+        # if we have a seed set it
+        arm_dofs = self._manip.GetArmIndices()
+        hand_dofs = self._manip.GetGripperIndices()
+        if seed is not None:
+            self._robot.SetDOFValues(seed, dofindices=arm_dofs)
+        # Compute a pre-grasp hand configuration and set it
+        pre_grasp_conf = np.asarray(grasp_conf) - open_hand_offset
+        lower_limits, upper_limits = self._robot.GetDOFLimits(hand_dofs)
+        pre_grasp_conf = np.asarray(clamp(pre_grasp_conf, lower_limits, upper_limits))
+        self._robot.SetDOFValues(pre_grasp_conf, dofindices=hand_dofs)
+        # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
+        sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
+        # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
+        # If that didn't work, try to compute a solution that is in collision (may be useful anyways)
+        if sol is None:
+            # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
+            sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
+            b_sol_col_free = False
+        else:
+            self._robot.SetDOFValues(sol, range(6))
+            b_sol_col_free = True
+        # Restore original dof values
+        self._robot.SetDOFValues(dof_values)
         return b_sol_col_free, sol, pre_grasp_conf
 
 
@@ -97,6 +99,7 @@ class HFTSSampler(object):
         hierarchical object surface representation (HFTS). The algorithm performs stochastic
         optimization of a grasp stability and reachability function on each level of the hierarchy.
     """
+
     def __init__(self, object_io_interface, scene_interface=None, verbose=False, num_hops=2, vis=False):
         """
             Creates a new HFTSSampler.
@@ -109,7 +112,7 @@ class HFTSSampler(object):
         """
         self._verbose = verbose
         self._b_visualize = vis
-        self._orEnv = orpy.Environment() # create openrave environment
+        self._orEnv = orpy.Environment()  # create openrave environment
         self._orEnv.SetDebugLevel(orpy.DebugLevel.Fatal)
         self._orEnv.GetCollisionChecker().SetCollisionOptions(orpy.CollisionOptions.Contacts)
         if vis:
@@ -164,7 +167,7 @@ class HFTSSampler(object):
                         pre_grasp_conf the hand configuration. If there is no IK, arm_conf is None
         """
         if self._scene_interface is None:
-            #TODO Think about what we should do in this case (planning with free-floating hand)
+            # TODO Think about what we should do in this case (planning with free-floating hand)
             return True, None, None
         object_hfts_pose = self._obj.GetTransform()  # pose in environment used for contact planning
         hand_pose_object_frame = np.dot(np.linalg.inv(object_hfts_pose), grasp_pose)
@@ -237,7 +240,7 @@ class HFTSSampler(object):
                                 the position and normal of the fingertip in configuration grasp_conf,
                                 normals point out of the hand
         """
-        contacts = [] # a list of contact positions and normals
+        contacts = []  # a list of contact positions and normals
         for i in range(self._num_contacts):
             p, n = self.get_cluster_repr(contact_labels[i])
             contacts.append(list(p) + list(n))
@@ -312,7 +315,7 @@ class HFTSSampler(object):
             Evaluate the grasp described by contact_label - a list of integer lists which describes a contact patch
             @return grasp quality, reachability, objective that has to be maximized
         """
-        contacts = [] # a list of contact positions and normals
+        contacts = []  # a list of contact positions and normals
         for i in range(self._num_contacts):
             p, n = self.get_cluster_repr(contact_label[i])
             contacts.append(list(p) + list(n))
@@ -363,7 +366,7 @@ class HFTSSampler(object):
         return possible_num_children, possible_num_leaves
 
     def get_cluster_repr(self, label):
-        level = len(label) - 1 # indexed from 0
+        level = len(label) - 1  # indexed from 0
         idx = np.where((self._data_labeled[:, 6:7 + level] == label).all(axis=1))
         points = [self._data_labeled[t, 0:3] for t in idx][0]
         normals = [self._data_labeled[t, 3:6] for t in idx][0]
@@ -535,7 +538,7 @@ class HFTSSampler(object):
             assert self._hops == 2
             allowed_finger_combos = self.compute_allowed_contact_combinations(node.get_depth(), label_cache)
             rospy.logdebug('[HFTSSampler::sample_grasp] We have %i allowed contacts' %
-                    allowed_finger_combos.shape[0])
+                           allowed_finger_combos.shape[0])
             if allowed_finger_combos.shape[0] == 0:
                 rospy.logwarn('[HFTSSampler::sample_grasp] We have no allowed contacts left! Aborting.')
                 return node
@@ -544,7 +547,7 @@ class HFTSSampler(object):
 
         # Now, get a node to start stochastic optimization from
         seed_ik = None
-        if node.get_depth() == 0: # at root
+        if node.get_depth() == 0:  # at root
             contact_label = self.pick_new_start_node()
             # TODO shouldn't we initialize this with the quality of contact_label?
             best_o = -np.inf  # need to also consider non-root nodes
@@ -669,12 +672,14 @@ class HFTSSampler(object):
         return False, self._robot.GetDOFValues(), self._robot.GetTransform()
 
     def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False, swap_contacts=True):
-        b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
+        b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(
+            grasp_conf, hand_contacts, object_contacts, post_opt)
         if not b_grasp_valid and swap_contacts:
             for symmetry in self._robot.get_fingertip_symmetries():
                 self.swap_contacts(symmetry, object_contacts)
                 swapped_conf, swapped_hand_contacts = self.compute_hand_config_and_contacts(object_contacts)
-                b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(swapped_conf, swapped_hand_contacts, object_contacts, post_opt)
+                b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(
+                    swapped_conf, swapped_hand_contacts, object_contacts, post_opt)
                 if b_grasp_valid:
                     return b_grasp_valid, new_grasp_conf, grasp_pose
                 else:  # swap contacts back
@@ -708,10 +713,10 @@ class HFTSSampler(object):
         if not self._b_visualize:
             return
         self.cloud_plot = []
-        colors = [np.array((1,0,0)), np.array((0,1,0)), np.array((0,0,1))]
+        colors = [np.array((1, 0, 0)), np.array((0, 1, 0)), np.array((0, 0, 1))]
         for i in range(3):
             label = contact_labels[i]
-            level = len(label) - 1 # indexed from 0
+            level = len(label) - 1  # indexed from 0
             idx = np.where((self._data_labeled[:, 6:7 + level] == label).all(axis=1))
             points = [self._data_labeled[t, 0:3] for t in idx][0]
             points = np.asarray(points)
@@ -720,7 +725,7 @@ class HFTSSampler(object):
     def _post_optimization(self, grasp_contacts):
         logging.info('[HFTSSampler::_post_optimization] Performing post optimization.')
         transform = self._robot.GetTransform()
-        angle, axis, point = hfts_grasp_planner.transformations.rotation_from_matrix(transform)
+        angle, axis, point = hfts_grasp_planner.external.transformations.rotation_from_matrix(transform)
         # further optimize hand configuration and pose
         transform_params = axis.tolist() + [angle] + transform[:3, 3].tolist()
         robot_dofs = self._robot.GetDOFValues().tolist()
@@ -744,37 +749,40 @@ class HFTSSampler(object):
             #         return -1.0  # TODO we could replace this with SDF based values
             # return 0.0
 
-        collision_dist = DistanceToFreeSpace(self._robot, self._robot_sdf, safety_margin=0.005)
+        # collision_dist = DistanceToFreeSpace(self._robot, self._robot_sdf, safety_margin=0.005)
+        collision_dist = None
         x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
                                            [joint_limits_constraint],
                                            rhobeg=.1, rhoend=1e-4,
-                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot, collision_dist),
+                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:],
+                                                 self._robot, collision_dist),
                                            maxfun=int(1e8), iprint=0)
         num_dofs = self._robot.GetDOF()
         self._robot.SetDOFValues(x_min[:num_dofs])
         axis = x_min[num_dofs:num_dofs + 3]
         angle = x_min[num_dofs + 3]
         position = x_min[num_dofs + 4:]
-        transform = hfts_grasp_planner.transformations.rotation_matrix(angle, axis)
+        transform = hfts_grasp_planner.external.transformations.rotation_matrix(angle, axis)
         transform[:3, 3] = position
         self._robot.SetTransform(transform)
-        x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn2, robot_dofs,
-                                           [joint_limits_constraint],
-                                           rhobeg=.1, rhoend=1e-4,
-                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot, collision_dist),
-                                           maxfun=int(1e8), iprint=0)
-        self._robot.SetDOFValues(x_min[:num_dofs])
+        # x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn2, robot_dofs,
+        #                                    [joint_limits_constraint],
+        #                                    rhobeg=.1, rhoend=1e-4,
+        #                                    args=(grasp_contacts[:, :3], grasp_contacts[:, 3:],
+        #                                          self._robot, collision_dist),
+        #                                    maxfun=int(1e8), iprint=0)
+        # self._robot.SetDOFValues(x_min[:num_dofs])
 
     @staticmethod
     def _post_optimization_obj_fn(x, *params):
-        desired_contact_points, desired_contact_normals, robot, collision_dist = params
+        desired_contact_points, desired_contact_normals, robot, _ = params
         num_dofs = robot.GetDOF()
         dofs = x[:num_dofs]
         robot.SetDOFValues(dofs)
         axis = x[num_dofs:num_dofs + 3]
         angle = x[num_dofs + 3]
         position = x[num_dofs + 4:]
-        transform = hfts_grasp_planner.transformations.rotation_matrix(angle, axis)
+        transform = hfts_grasp_planner.external.transformations.rotation_matrix(angle, axis)
         transform[:3, 3] = position
         robot.SetTransform(transform)
         contacts = robot.get_tip_pn()
@@ -786,7 +794,7 @@ class HFTSSampler(object):
 
     @staticmethod
     def _post_optimization_obj_fn2(x, *params):
-        desired_contact_points, desired_contact_normals, robot, collision_dist = params
+        _, _, robot, collision_dist = params
         return collision_dist.get_distance_to_free_space(x[:robot.GetDOF()])
 
 

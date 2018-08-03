@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Environment>
-    <Robot file="../../models/r850_robotiq/r850_robotiq.xml"/>
+    <Robot file="../../models/r850/r850_robotiq.xml"/>
  
     <KinBody name="floor">
       <Translation>0.3   0.0   -0.5</Translation>

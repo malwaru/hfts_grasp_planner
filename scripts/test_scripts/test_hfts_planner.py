@@ -1,67 +1,36 @@
 #! /usr/bin/python
 
+import os
+import time
+import IPython
+import hfts_grasp_planner.utils
+from hfts_grasp_planner.core import HFTSSampler, HFTSNode
 
-import rospy
-import rospkg
-from HFTSPlanner.utils import *
-from HFTSPlanner.core import graspSampler
-from HFTSPlanner.core import HFTSNode
-from hfts_grasp_planner.srv import PlanGrasp
+PKG_PATH = os.path.abspath(os.path.dirname(__file__)) + "/../../"
+DATA_PATH = PKG_PATH + "data/"
+# HAND_FILE = PKG_PATH + "models/schunk-sdh/schunk-sdh.zae"
+# HAND_CONFIG_FILE = PKG_PATH + "models/schunk-sdh/hand_config.yaml"
+# HAND_BALL_FILE = PKG_PATH + "models/schunk-sdh/ball_description.yaml"
+# HAND_CACHE_FILE = DATA_PATH + "cache/schunk_hand.npy"
+
+HAND_FILE = PKG_PATH + "models/robotiq/urdf_openrave_conversion/robotiq_s.xml"
+HAND_CONFIG_FILE = PKG_PATH + "models/robotiq/hand_config.yaml"
+HAND_BALL_FILE = PKG_PATH + "models/robotiq/ball_description.yaml"
+HAND_CACHE_FILE = DATA_PATH + "cache/robotiq.npy"
 
 if __name__ == "__main__":
-    
-    rospy.init_node('testPlanner')
-    rospack = rospkg.RosPack()
-    packPath = rospack.get_path('hfts_grasp_planner')
-    objFile = rospy.get_param('/testObj')
-    
-    # objectIO = objectFileIO(packPath + '/data', objFile)
-    # objPoints = objectIO.getPoints()
-    # HFTS, HFTSParam = objectIO.getHFTS(forceNew = True)
-
-    # objectIO.showHFTS(len(HFTSParam)-1)
-    # while not rospy.is_shutdown():
-    #     rospy.sleep(1)
-    # objPointCloud = createPointCloud(objPoints)
-    # pointcloud_publisher = rospy.Publisher("/testPointCloud", PointCloud, queue_size=1)
-    # 
-    # while not rospy.is_shutdown():
-    #     pointcloud_publisher.publish(objPointCloud)
-    #     rospy.sleep(0.1)
-    # 
-    # planer = graspSampler()
-    # 
-    # handFile = packPath + rospy.get_param('/handFile')
-    # 
-    # planer.loadHand(handFile)
-    # robot = planer._robot
-    # handMani = robot.getHandMani()
-    # 
-    # while not rospy.is_shutdown():
-    #     robot.setRandomConf()
-    #     robot.plotFingertipContacts()
-    #     grasp = robot.getTipPN()
-    #     q = handMani.encodeGrasp(grasp)
-    #     raw_input('press to predict')
-    #     residual, conf = handMani.predictHandConf(q)
-    #     print residual
-    # 
-    #     robot.SetDOFValues(conf)
-    #     raw_input('press for next')
-    #     
-    #     
-    #     rospy.sleep(0.1)
-    
-    rootHFTSNode = HFTSNode()
-    planner = graspSampler(vis=True)
-    handFile = packPath + rospy.get_param('/handFile')
-    planner.load_hand(handFile)
-    planner.load_object(packPath + '/data', objFile)
+    object_name = 'crayola'
+    object_io = hfts_grasp_planner.utils.ObjectFileIO(DATA_PATH)
+    root_node = HFTSNode()
+    planner = HFTSSampler(object_io, num_hops=4, vis=True)
+    planner.load_hand(hand_file=HAND_FILE,
+                      hand_cache_file=HAND_CACHE_FILE,
+                      hand_config_file=HAND_CONFIG_FILE,
+                      hand_ball_file=HAND_BALL_FILE)
+    planner.load_object(object_name)
     finished = False
     while not finished:
-        retNode = planner.sample_grasp(rootHFTSNode, 5)
-        finished = retNode.is_goal()
-        rospy.sleep(0.2)
-    
-    rospy.spin()
-    
+        return_node = planner.sample_grasp(root_node, planner.get_maximum_depth(), post_opt=True)
+        finished = return_node.is_goal()
+
+    IPython.embed()

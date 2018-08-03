@@ -50,7 +50,7 @@ class IntegratedHFTSPlanner(object):
             connected configurations
          @param use_approximates Boolean, if True, the grasp sampler returns approximate grasps if it hasn't
             found a valid grasp yet
-         @param use_velocities Boolean, if True, compute a whole trajectory (with velocities), else just a path
+         @param compute_velocities Boolean, if True, compute a whole trajectory (with velocities), else just a path
          @param time_limit Runtime limit for the algorithm in seconds (float)
          @param open_hand_config - Numpy array representing an open hand configuration. If not provided initial configuration is used.
          """
@@ -178,6 +178,23 @@ class IntegratedHFTSPlanner(object):
         return traj
 
     def plan(self, start_configuration):
+        """
+            Plan a grasp and an approach motion from the given start configuration.
+            The target object has to be set before through load_target_object(...).
+            ---------
+            Arguments
+            ---------
+            start_configuration, numpy array of shape (d,) where d is the number of DOFs of the 
+                manipulator.
+            -------
+            Returns
+            -------
+            solution - Either a path in form of a list of SampleData elements, an OpenRAVE trajectory or None.
+                The solution is a path if the parameter compute_velocity was set to False, and a trajectory otherwise.
+                In case the planner failed at computing a solution, None is returned.
+            grasp_pose, numpy array of shape (4, 4) - a transformation matrix describing the pose of the 
+                end-effector relative to the target object.
+        """
         if self._debug_tree_drawer is not None:
             self._debug_tree_drawer.clear()
             debug_function = self._debug_tree_drawer.draw_trees
@@ -238,7 +255,7 @@ class IntegratedHFTSPlanner(object):
     def set_parameters(self, min_iterations=None, max_iterations=None,
                        free_space_weight=None, connected_space_weight=None,
                        use_approximates=None, compute_velocities=None,
-                       time_limit=None, 
+                       time_limit=None,
                        reachability_weight=None,
                        hfts_generation_params=None, max_num_hierarchy_descends=None,
                        b_force_new_hfts=None, vel_factor=None):
@@ -261,4 +278,3 @@ class IntegratedHFTSPlanner(object):
         if vel_factor is not None:
             self._vel_factor = vel_factor
         # TODO implement the rest
-

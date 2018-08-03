@@ -6,50 +6,18 @@ import logging
 import math
 import numpy
 import random
+import abc
 from rtree import index
 from hfts_grasp_planner.rrt import SampleData
 
 NUMERICAL_EPSILON = 0.00001
 
 
-class SamplingResult(object):
-    """
-        Stores the result of goal sampling step.
-    """
-    def __init__(self, configuration, hierarchy_info=None, data_extractor=None, cache_id=-1):
-        self.configuration = configuration
-        self.data_extractor = data_extractor
-        self.hierarchy_info = hierarchy_info
-        self.cache_id = cache_id
-
-    def get_configuration(self):
-        return self.configuration
-
-    def to_sample_data(self):
-        if self.data_extractor is not None:
-            return SampleData(self.configuration, self.data_extractor.extractData(self.hierarchy_info),
-                              self.data_extractor.getCopyFunction(), id_num=self.cache_id)
-        return SampleData(self.configuration, id_num=self.cache_id)
-
-    def is_valid(self):
-        return self.hierarchy_info.is_valid()
-
-    def is_goal(self):
-        if self.hierarchy_info is not None:
-            return self.hierarchy_info.is_goal()
-        return False
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __str__(self):
-        return "{SamplingResult:[Config=" + str(self.configuration) + "; Info=" + str(self.hierarchy_info) + "]}"
-
-
 class CSpaceSampler:
     """
         Interface for configuration space sampler.
     """
+
     def __init__(self):
         pass
 
@@ -136,6 +104,181 @@ class CSpaceSampler:
                 return False, waypoints
 
 
+class GoalHierarchy(object):
+    __metaclass__ = abc.ABCMeta
+
+    class GoalHierarchyNode(object):
+        __metaclass__ = abc.ABCMeta
+        """
+            Represents a node of a GoalHierarchy.
+        """
+
+        def __init__(self, configuration, data_extractor=None, cache_id=-1):
+            self.configuration = configuration
+            self.data_extractor = data_extractor
+            self.cache_id = cache_id
+
+        def get_configuration(self):
+            return self.configuration
+
+        def to_sample_data(self):
+            if self.data_extractor is not None:
+                return SampleData(self.configuration, self.data_extractor.extractData(self.hierarchy_info),
+                                  self.data_extractor.getCopyFunction(), id_num=self.cache_id)
+            return SampleData(self.configuration, id_num=self.cache_id)
+
+        @abc.abstractmethod
+        def is_valid(self):
+            """
+                Return whether this node is valid. That means it does not violate any constraints
+                and at least one associated configuration is collision-free.
+            """
+            pass
+
+        @abc.abstractmethod
+        def is_goal(self):
+            """
+                Return whether this node represents a goal. 
+                In addition to being valid, a goal must represent a configuration that is 
+                fulfilling all goal criteria.
+            """
+            pass
+
+        @abc.abstractmethod
+        def hierarchy_info_str(self):
+            """
+                Return a string representation of the hierarchy information for debugging and printing.
+            """
+            pass
+
+        @abc.abstractmethod
+        def get_num_possible_children(self):
+            """
+                Return the number of possible children of this node.
+            """
+            pass
+
+        @abc.abstractmethod
+        def get_num_possible_leaves(self):
+            """
+                Return the number of possible leaves in the subranch rooted at this node.
+            """
+            pass
+
+        @abc.abstractmethod
+        def get_hashable_label(self):
+            """
+                Return a unique and hashable identifier for this node.
+            """
+            pass
+
+        @abc.abstractmethod
+        def get_label(self):
+            """
+                Return a unique identifier for this node. This identifier does not need to be
+                hashable.
+            """
+            pass
+
+        @abc.abstractmethod
+        def get_depth(self):
+            """
+                Return the depth of this node.
+            """
+            pass
+
+        @abc.abstractmethod
+        def get_additional_data(self):
+            """
+                Return optional additional data associated with this node.
+                This may be any python object that stores additional information that an external
+                caller may be interested in, such as the hand configuration of a grasp, or a hand-opening
+                policy for dropping an object, etc.
+            """
+            pass
+
+        @abc.abstractmethod
+        def is_extendible(self):
+            """
+                Return whether this node is extendible, i.e. it has children.
+            """
+            pass
+
+        def is_leaf(self):
+            """
+                Return whether this node is a leaf. This is equivalent to not self.is_extendible()
+            """
+            return not self.is_extendible()
+
+        def __repr__(self):
+            return self.__str__()
+
+        def __str__(self):
+            return "{SamplingResult:[Config=" + str(self.configuration) + "; Info=" + self.hierarchy_info_str() + "]}"
+
+    @abc.abstractmethod
+    def sample(self, depth_limit, post_opt=True):
+        """
+            Sample a goal from the root level.
+            ---------
+            Arguments
+            ---------
+            depth_limit, int - maximal number of levels to descend (needs to be at least 1)
+            post_opt, bool - flag indicating whether (computationally) expensive post optimization
+                at a leaf node is allowed to be performed.
+            ---------
+            Returns
+            ---------
+            result, GoalHierarchyNode - a newly sampled goal hierarchy node
+        """
+        pass
+
+    @abc.abstractmethod
+    def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):
+        """
+            Sample a goal from the given node on.
+            ---------
+            Arguments
+            ---------
+            hierarchy_node, GoalHierarchyNode - node to start sampling from, may be root node.
+            depth_limit, int - maximal number of levels to descend (needs to be at least 1)
+            label_cache, ???? - ???? # TODO document
+            post_opt, bool - flag indicating whether (computationally) expensive post optimization 
+                at a leaf node is allowed to be performed.
+            ---------
+            Returns
+            ---------
+            result, GoalHierarchyNode - a newly sampled goal hierarchy node
+        """
+        pass
+
+    @abc.abstractmethod
+    def set_max_iter(self, iterations):
+        """
+            Set the maximum number of iterations to search for a new hierarhcy node on a
+            single level.
+            ---------
+            Arguments
+            ---------
+            iterations, int - number of iterations
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_max_depth(self):
+        """
+            Get the maximum depth of the hierarchy.
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_root(self):
+        """
+            Return the GoalHierarchyNode representing the root of the hierarchy.
+        """
+        pass
+
+
 class SimpleHierarchyNode:
     """
         A hierarchy node for the naive implementation.
@@ -200,6 +343,7 @@ class NaiveGoalSampler:
     """
         The naive goal sampler, which always goes all the way down in the hierarchy.
     """
+
     def __init__(self, goal_region, num_iterations=40, debug_drawer=None):
         self.goal_region = goal_region
         self.depth_limit = goal_region.get_max_depth()
@@ -270,9 +414,9 @@ class NaiveGoalSampler:
         logging.debug('[NaiveGoalSampler::sample] Success. Found a valid goal!')
         return my_sample.to_sample_data()
 
-    def get_quality(self, sample_data):
-        idx = sample_data.get_id()
-        return self.cache[idx].hierarchy_info.get_quality()
+    # def get_quality(self, sample_data):
+    #     idx = sample_data.get_id()
+    #     return self.cache[idx].hierarchy_info.get_quality()
 
     def is_goal(self, sample):
         sampled_before = 0 < sample.get_id() < len(self.cache)
@@ -285,6 +429,7 @@ class FreeSpaceModel(object):
     """
         This class builds a model of the collision-free space in form of samples stored in trees.
     """
+
     def __init__(self, c_space_sampler):
         self._trees = []
         self._c_space_sampler = c_space_sampler
@@ -321,6 +466,7 @@ class ExtendedFreeSpaceModel(FreeSpaceModel):
         A temporary sample is a configuration that is individually stored in a list and is used for that exactly?
 
     """
+
     def __init__(self, c_space_sampler):
         super(ExtendedFreeSpaceModel, self).__init__(c_space_sampler)
         self._scaling_factors = c_space_sampler.get_scaling_factors()
@@ -394,12 +540,13 @@ class FreeSpaceProximityHierarchyNode(object):
     """
         This class represents a node in the hierarchy built by the FreeSpaceProximitySampler
     """
+
     def __init__(self, goal_node, config=None, initial_temp=0.0, active_children_capacity=20):
         self._goal_nodes = []
         self._goal_nodes.append(goal_node)
         self._active_goal_node_idx = 0
         self._children = []
-        self._children_contact_labels = []
+        self._child_labels = []
         self._active_children = []
         self._inactive_children = []
         self._t = initial_temp
@@ -472,14 +619,14 @@ class FreeSpaceProximityHierarchyNode(object):
             deleted_child = self._active_children[i]
             self._active_children.remove(deleted_child)
             self._inactive_children.append(deleted_child)
-            logging.debug('[FreeSpaceProximityHierarchyNode::updateActiveChildren] Removing child with ' + \
+            logging.debug('[FreeSpaceProximityHierarchyNode::updateActiveChildren] Removing child with ' +
                           'temperature ' + str(deleted_child.get_T()) + '. It had index ' + str(i))
         assert len(self._children) == len(self._inactive_children) + len(self._active_children)
 
     def add_child(self, child):
         self._children.append(child)
         self._active_children.append(child)
-        self._children_contact_labels.append(child.get_contact_labels())
+        self._child_labels.append(child.get_label())
         child._parent = self
         if child.is_leaf():
             self._num_leaves_in_branch += 1
@@ -505,8 +652,8 @@ class FreeSpaceProximityHierarchyNode(object):
     def get_parent(self):
         return self._parent
 
-    def get_quality(self):
-        return self._goal_nodes[0].get_quality()
+    # def get_quality(self):
+    #     return self._goal_nodes[0].get_quality()
 
     def has_children(self):
         return self.get_num_children() > 0
@@ -517,17 +664,20 @@ class FreeSpaceProximityHierarchyNode(object):
     def get_children(self):
         return self._children
 
-    def get_contact_labels(self):
-        return self._goal_nodes[0].get_labels()
+    def get_label(self):
+        return self._goal_nodes[0].get_label()
 
-    def get_children_contact_labels(self):
-        return self._children_contact_labels
+    def get_sampled_child_labels(self):
+        """
+            Returns the labels of the all sampled children of this node.
+        """
+        return self._child_labels
 
     def get_active_children(self):
         return self._active_children
 
-    def get_unique_label(self):
-        return self._goal_nodes[0].get_unique_label()
+    def get_hashable_label(self):
+        return self._goal_nodes[0].get_hashable_label()
 
     def get_configurations(self):
         """ Returns all configurations stored for this hierarchy node."""
@@ -566,7 +716,7 @@ class FreeSpaceProximityHierarchyNode(object):
         for i in range(1, len(self._configs)):
             if not self._configs_registered[i]:
                 if self._goal_nodes[i].is_goal():
-                    unregistered_goals.append((self._configs[i], self._goal_nodes[i].get_hand_config()))
+                    unregistered_goals.append((self._configs[i], self._goal_nodes[i].get_additional_data()))
                 else:
                     unregistered_approx.append(self._configs[i])
                 self._configs_registered[i] = True
@@ -581,7 +731,7 @@ class FreeSpaceProximityHierarchyNode(object):
         # TODO it can happen that a result is once invalid and once valid. However, the label_cache
         # TODO should prevent this from happening
         # if not b_is_valid:
-            # assert not reduce(lambda x, y: x or y, [x.is_valid() for x in self._goal_nodes], False)
+        # assert not reduce(lambda x, y: x or y, [x.is_valid() for x in self._goal_nodes], False)
         return self._goal_nodes[self._active_goal_node_idx].is_valid()
 
     def is_extendible(self):
@@ -600,7 +750,7 @@ class FreeSpaceProximityHierarchyNode(object):
 
     def to_sample_data(self, id_num=-1):
         return SampleData(self._configs[self._active_goal_node_idx],
-                          data=self._goal_nodes[self._active_goal_node_idx].get_hand_config(),
+                          data=self._goal_nodes[self._active_goal_node_idx].get_additional_data(),
                           id_num=id_num)
 
     def add_goal_sample(self, sample):
@@ -612,7 +762,7 @@ class FreeSpaceProximityHierarchyNode(object):
             if b_config_known:
                 return
         self._configs.append(sample.get_configuration())
-        self._goal_nodes.append(sample.hierarchy_info)
+        self._goal_nodes.append(sample)
         self._configs_registered.append(not sample.is_valid())
 
 
@@ -621,6 +771,7 @@ class FreeSpaceProximitySampler(object):
         A goal hierarchy sampler that utilizes proximity to known free-space samples to guide
         goal sampling from a hierarchy.
     """
+
     def __init__(self, goal_sampler, c_free_sampler, k=4, num_iterations=10,
                  min_num_iterations=8,
                  b_return_approximates=True,
@@ -669,10 +820,10 @@ class FreeSpaceProximitySampler(object):
     def get_num_goal_nodes_sampled(self):
         return len(self._label_cache)
 
-    def get_quality(self, sample_data):
-        idx = sample_data.get_id()
-        node = self._label_cache[self._goal_labels[idx]]
-        return node.get_quality()
+    # def get_quality(self, sample_data):
+    #     idx = sample_data.get_id()
+    #     node = self._label_cache[self._goal_labels[idx]]
+    #     return node.get_quality()
 
     def set_connected_space(self, connected_space):
         self._connected_space = connected_space
@@ -698,7 +849,7 @@ class FreeSpaceProximitySampler(object):
             self._k = k
 
     def _get_hierarchy_node(self, goal_sample):
-        label = goal_sample.hierarchy_info.get_unique_label()
+        label = goal_sample.get_hashable_label()
         b_new = False
         hierarchy_node = None
         if label in self._label_cache:
@@ -706,25 +857,26 @@ class FreeSpaceProximitySampler(object):
             hierarchy_node.add_goal_sample(goal_sample)
             logging.warn('[FreeSpaceProximitySampler::_getHierarchyNode] Sampled a cached node!')
         else:
-            hierarchy_node = FreeSpaceProximityHierarchyNode(goal_node=goal_sample.hierarchy_info,
+            hierarchy_node = FreeSpaceProximityHierarchyNode(goal_node=goal_sample,
                                                              config=goal_sample.get_configuration())
             self._label_cache[label] = hierarchy_node
             b_new = True
         return hierarchy_node, b_new
 
-    def _filter_redundant_children(self, children):
-        labeled_children = []
-        filtered_children = []
-        for child in children:
-            labeled_children.append((child.get_unique_label(), child))
-        labeled_children.sort(key=lambda x: x[0])
-        prev_label = ''
-        for labeledChild in labeled_children:
-            if labeledChild[0] == prev_label:
-                continue
-            filtered_children.append(labeledChild[1])
-            prev_label = labeledChild[0]
-        return filtered_children
+    # TODO delete this function?
+    # def _filter_redundant_children(self, children):
+    #     labeled_children = []
+    #     filtered_children = []
+    #     for child in children:
+    #         labeled_children.append((child.get_hashable_label(), child))
+    #     labeled_children.sort(key=lambda x: x[0])
+    #     prev_label = ''
+    #     for labeledChild in labeled_children:
+    #         if labeledChild[0] == prev_label:
+    #             continue
+    #         filtered_children.append(labeledChild[1])
+    #         prev_label = labeledChild[0]
+    #     return filtered_children
 
     def _compute_connection_chance(self, config):
         (dist, nearest_config) = self._connected_space.get_nearest_configuration(config)
@@ -775,7 +927,7 @@ class FreeSpaceProximitySampler(object):
         #     print "WTF Assertion fail here"
         #     import IPython
         #     IPython.embed()
-        #TODO this assertion failed once. This indicates a serious bug, but did not manage to reproduce it!
+        # TODO this assertion failed once. This indicates a serious bug, but did not manage to reproduce it!
         assert not node.is_valid() or max_temp >= self._free_space_weight
         return node.get_t()
 
@@ -861,30 +1013,30 @@ class FreeSpaceProximitySampler(object):
             return False
         return True
 
-    def _sample_child(self, node):
-        goal_node = node.get_goal_sampler_hierarchy_node()
-        depth = node.get_depth()
-        num_iterations = int(self._min_num_iterations + \
-                             node.get_T() / (self._connected_weight + self._free_space_weight) * \
+    def _sample_child(self, parent_node):
+        goal_node = parent_node.get_goal_sampler_hierarchy_node()
+        depth = parent_node.get_depth()
+        num_iterations = int(self._min_num_iterations +
+                             parent_node.get_T() / (self._connected_weight + self._free_space_weight) *
                              (self._num_iterations[depth] - self._min_num_iterations))
         # num_iterations = max(self._minNumIterations, int(num_iterations))
         assert num_iterations >= self._min_num_iterations
         assert num_iterations <= self._num_iterations[depth]
         self._goal_hierarchy.set_max_iter(num_iterations)
         do_post_opt = depth == self._goal_hierarchy.get_max_depth() - 1
-        children_contact_labels = node.get_children_contact_labels()
-        goal_sample = self._goal_hierarchy.sample_warm_start(hierarchy_node=goal_node, depth_limit=1,
-                                                             label_cache=children_contact_labels,
-                                                             post_opt=do_post_opt)
-        if goal_sample.hierarchy_info.is_goal() and goal_sample.hierarchy_info.is_valid():
+        child_labels = parent_node.get_sampled_child_labels()
+        new_goal_node = self._goal_hierarchy.sample_warm_start(hierarchy_node=goal_node, depth_limit=1,
+                                                               label_cache=child_labels,
+                                                               post_opt=do_post_opt)
+        if new_goal_node.is_goal() and new_goal_node.is_valid():
             logging.debug('[FreeSpaceProximitySampler::_sampleChild] We sampled a valid goal here!!!')
-        elif goal_sample.hierarchy_info.is_valid():
+        elif new_goal_node.is_valid():
             logging.debug('[FreeSpaceProximitySampler::_sampleChild] Valid sample here!')
-        (hierarchy_node, b_new) = self._get_hierarchy_node(goal_sample)
+        (hierarchy_node, b_new) = self._get_hierarchy_node(new_goal_node)
         if b_new:
-            node.add_child(hierarchy_node)
+            parent_node.add_child(hierarchy_node)
         else:
-            assert hierarchy_node.get_unique_label() == node.get_unique_label()
+            assert hierarchy_node.get_hashable_label() == new_goal_node.get_hashable_label()
         return hierarchy_node
 
     def is_goal(self, sample):
@@ -894,7 +1046,7 @@ class FreeSpaceProximitySampler(object):
 
     def sample(self):
         current_node = self._root_node
-        logging.debug('[FreeSpaceProximitySampler::sample] Starting to sample a new goal candidate' + \
+        logging.debug('[FreeSpaceProximitySampler::sample] Starting to sample a new goal candidate' +
                       ' - the lazy way')
         num_samplings = self._k
         b_temperatures_invalid = True
@@ -927,7 +1079,7 @@ class FreeSpaceProximitySampler(object):
                 assert len(goal_configs) + len(approx_configs) <= 1
                 # if new_child.is_valid() and new_child.is_goal():
                 if len(goal_configs) > 0:
-                    self._goal_labels.append(new_child.get_unique_label())
+                    self._goal_labels.append(new_child.get_hashable_label())
                     return SampleData(config=goal_configs[0][0], data=goal_configs[0][1],
                                       id_num=len(self._goal_labels) - 1)
                 # elif new_child.is_valid():
@@ -937,7 +1089,7 @@ class FreeSpaceProximitySampler(object):
 
         if self._debug_drawer is not None:
             self._debug_drawer.draw_hierarchy(self._root_node)
-        logging.debug('[FreeSpaceProximitySampler::sample] The search led to a dead end. Maybe there is ' \
+        logging.debug('[FreeSpaceProximitySampler::sample] The search led to a dead end. Maybe there is '
                       + 'sth in our approximate cache!')
         if self._b_return_approximates:
             return SampleData(self._pick_random_approximate())

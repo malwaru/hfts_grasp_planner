@@ -1,5 +1,5 @@
 import numpy as np
-import transformations
+import hfts_grasp_planner.external.transformations as transformations
 import math
 import time
 import os
@@ -17,6 +17,7 @@ class InvalidTriangleException(Exception):
 
     def __str__(self):
         return repr(self.value)
+
 
 FINGERTIP_TRANSFORMS_KEY = 'fingertip_transforms'
 POSITION_KEY = 'position'
@@ -52,7 +53,7 @@ class RobotHand(object):
         self._hand_mani = ReachabilityKDTree(self, cache_file, self._hand_params)
         self._fingertip_symmetries = self._prepare_symmetries()
 
-    def __getattr__(self, attr): # composition, gets called when this class doesn't have attr.
+    def __getattr__(self, attr):  # composition, gets called when this class doesn't have attr.
         return getattr(self._or_hand, attr)  # in this case forward it to the OpenRAVE robot
 
     def _prepare_symmetries(self):
@@ -67,7 +68,8 @@ class RobotHand(object):
             return symmetries
         link_names = self.get_fingertip_links()
         name_to_idx = dict(zip(link_names, range(len(link_names))))
-        symmetries = [(name_to_idx[link_1], name_to_idx[link_2]) for (link_1, link_2) in self._hand_params[SYMMETRIES_KEY]]
+        symmetries = [(name_to_idx[link_1], name_to_idx[link_2])
+                      for (link_1, link_2) in self._hand_params[SYMMETRIES_KEY]]
         return symmetries
 
     def _load_config(self, config_file_name):
@@ -78,10 +80,12 @@ class RobotHand(object):
             # TODO we could do some sanity checking here on whether we have all required parameters
             file_content = yaml.load(afile)
             if not isinstance(file_content, dict):
-                raise ValueError('The hand configuration file needs to contain a dictionary mapping parameter names to values')
+                raise ValueError(
+                    'The hand configuration file needs to contain a dictionary mapping parameter names to values')
             if OTHER_LINK_NAMES_KEY not in file_content:
                 all_link_names = [link.GetName() for link in self._or_hand.GetLinks()]
-                file_content[OTHER_LINK_NAMES_KEY] = [link_name for link_name in all_link_names if link_name not in file_content[FINGERTIP_LINK_NAMES_KEY]]
+                file_content[OTHER_LINK_NAMES_KEY] = [
+                    link_name for link_name in all_link_names if link_name not in file_content[FINGERTIP_LINK_NAMES_KEY]]
             file_content[OPEN_HAND_DIR_KEY] = np.array(file_content[OPEN_HAND_DIR_KEY])
             return file_content
 
@@ -330,7 +334,8 @@ class ReachabilityKDTree(object):
     """
         KD tree based hand manifold for a robot hand
     """
-    def __init__(self, or_robot, cache_file_name, hand_params, num_samples=1000000):
+
+    def __init__(self, or_robot, cache_file_name, hand_params, num_samples=10000):
         """
             Creates a new KD-tree based hand manifold for a robot hand.
             :or_robot: - openrave robot, iu.e. the hand
@@ -397,7 +402,8 @@ class ReachabilityKDTree(object):
             self._hand_configurations = np.array(np.meshgrid(*sample_values)).T.reshape((actual_num_samples, num_dofs))
         else:
             random_data = np.random.rand(self._num_samples, num_dofs)
-            self._hand_configurations = np.apply_along_axis(lambda row: lower_limits + row * joint_ranges, 1, random_data)
+            self._hand_configurations = np.apply_along_axis(
+                lambda row: lower_limits + row * joint_ranges, 1, random_data)
         self._codes = np.zeros((actual_num_samples, 2 * self._hand_params[NUM_FINGERTIPS_KEY]))
         logging.info('[ReachabilityKDTree::Evaluating %i hand configurations.' % actual_num_samples)
         # now compute codes for all configurations
@@ -416,7 +422,8 @@ class ReachabilityKDTree(object):
         self._min_code = np.min(self._codes, axis=0)
         self._max_code = np.max(self._codes, axis=0)
         self._codes = (self._codes - self._min_code) / (self._max_code - self._min_code)
-        logging.info('[ReachabilityKDTree::Sampling finished. Found %i collision-free hand configurations.' % self._hand_configurations.shape[0])
+        logging.info('[ReachabilityKDTree::Sampling finished. Found %i collision-free hand configurations.' %
+                     self._hand_configurations.shape[0])
 
     def _encode_grasp_non_normalized(self, grasp):
         """

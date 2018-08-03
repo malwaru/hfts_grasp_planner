@@ -10,6 +10,7 @@ import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
 import hfts_grasp_planner.utils as utils
+from hfts_grasp_planner.sampler import GoalHierarchy
 import numpy as np
 import scipy.spatial
 import openravepy as orpy
@@ -31,6 +32,7 @@ class SimplePlacementQuality(object):
             max_angle, float - the maximal allowed angle between placement plane's normal and the normal
                 of this filter.
         """
+
         def __init__(self, normal, max_angle):
             self._normal = normal
             self._max_angle = max_angle
@@ -51,6 +53,7 @@ class SimplePlacementQuality(object):
         """
             Implements an IO interface to load preference filters from files.
         """
+
         def __init__(self, base_dir):
             """
                 Create a new IO filter that looks for preference filters in the given base_dir.
@@ -76,7 +79,8 @@ class SimplePlacementQuality(object):
                     new_filters = []
                     filter_descs = np.load(filename)  # assumes array (n, 4), where n is the number of filters
                     if len(filter_descs.shape) != 2 or filter_descs.shape[1] != 4:
-                        raise IOError("Could not load filter for model %s. Invalid numpy array shape encountered." % model_name)
+                        raise IOError(
+                            "Could not load filter for model %s. Invalid numpy array shape encountered." % model_name)
                     for filter_desc in filter_descs:  # filter_desc is assumed to be (nx, ny, nz, angle)
                         new_filters.append(SimplePlacementQuality.OrientationFilter(filter_desc[:3], filter_desc[3]))
                     self._filters[model_name] = new_filters
@@ -101,7 +105,7 @@ class SimplePlacementQuality(object):
         self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
         col_checker = orpy.RaveCreateCollisionChecker(self._env, 'ode')  # Bullet is not working properly
         self._env.SetCollisionChecker(col_checker)
-        self._env.SetViewer('qtcoin')  # for debug only
+        # self._env.SetViewer('qtcoin')  # for debug only
         self._body = None
         self._placement_planes = None
         self._dir_gravity = np.array([0.0, 0.0, -1.0])
@@ -315,7 +319,7 @@ class SimplePlacementQuality(object):
             -------
             true or false depending on whether it is stable or not
         """
-        handles = self._visualize_placement_plane(plane) # TODO remove
+        handles = self._visualize_placement_plane(plane)  # TODO remove
         # due to our tolerance value when clustering faces, the points may not be co-planar.
         # hence, project them
         mean_point = np.mean(plane[1:], axis=0)
@@ -371,7 +375,7 @@ class SimplePlacementQuality(object):
             plane = np.empty((len(vertices) + 1, 3), dtype=float)
             plane[0] = normal
             plane[1:] = convex_hull.points[list(vertices)]
-            # filter faces based on object specific filters 
+            # filter faces based on object specific filters
             if user_filters:
                 acceptances = np.array([uf.accept_plane(plane) for uf in user_filters])
                 if not acceptances.any():
@@ -437,49 +441,52 @@ class SimplePlacementQuality(object):
         self._body.Enable(True)
         distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
         distances[np.invert(collisions)] = np.inf
-        ##### DRAW CONTACT ARROWS ###### TODO remove
+        # DRAW CONTACT ARROWS ###### TODO remove
         handles = []
         for idx, contact in enumerate(virtual_contacts):
             if collisions[idx] and distances[idx] > 0.001:  # distances shouldn't be too small, otherwise the viewer crashes
                 handles.append(self._env.drawarrow(tf_plane[idx + 1], contact[:3], linewidth=0.002))
         ##### DRAW CONTACT ARROWS - END ######
         # compute virtual contact plane
-        ## first, sort virtual contact points by falling distance
+        # first, sort virtual contact points by falling distance
         contact_distance_tuples = zip(distances[collisions], np.where(collisions)[0])
-        ## if we have less than three contacts, there is nothing we can do
+        # if we have less than three contacts, there is nothing we can do
         if len(contact_distance_tuples) < 3:
             return virtual_contacts[collisions, :3], np.where(collisions)[0], None, distances
-        ## do the actual sorting
+        # do the actual sorting
         contact_distance_tuples.sort(key=lambda x: x[0])
         sorted_indices = [cdt[1] for cdt in contact_distance_tuples]
-        ### second, select the minimal number of contact points such that they span a plane in x, y
+        # second, select the minimal number of contact points such that they span a plane in x, y
         points_in_line = True
         for idx in xrange(2, len(contact_distance_tuples)):
             top_virtual_contacts = virtual_contacts[sorted_indices[:idx + 1], :3]
             _, s, _ = np.linalg.svd(top_virtual_contacts[:, :2] - np.mean(top_virtual_contacts[:, :2], axis=0))
-            std_dev = s[1] / np.sqrt(idx) 
+            std_dev = s[1] / np.sqrt(idx)
             if std_dev > 5e-3:  # std deviation should not be larger than some value
                 points_in_line = False
                 break
         if points_in_line:
             # TODO should we return a special flag if all virtual contacts are in a line?
             return virtual_contacts[collisions, :3], np.where(collisions)[0], None, distances
-        #### Getting here means not all points lie in a line, so we can actually fit a plane
-        #### Add some additional points if they are close
+        # Getting here means not all points lie in a line, so we can actually fit a plane
+        # Add some additional points if they are close
         max_falling_height = contact_distance_tuples[idx][0] + self._parameters["falling_height_tolerance"]
         vidx = np.where(distances <= max_falling_height)[0]
         top_virtual_contacts = virtual_contacts[vidx]
-        #### third, fit a plane into these virtual contact points
+        # third, fit a plane into these virtual contact points
         mean_point = np.mean(top_virtual_contacts[:, :3], axis=0)
         top_virtual_contacts[:, :3] -= mean_point
         _, s, v = np.linalg.svd(top_virtual_contacts[:, :3])
         # flip the normal of the virtual placement plane such that it points upwards
         if v[2, 2] < 0.0:
             v[2, :] *= -1.0
-        ##### DRAW CONTACT PLANE ###### TODO remove
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[0, :], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[1, :], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 * v[2, :], linewidth=0.002, color=[0.0, 0.0, 1.0, 1.0]))
+        # DRAW CONTACT PLANE ###### TODO remove
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
+                                           v[0, :], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
+                                           v[1, :], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
+        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
+                                           v[2, :], linewidth=0.002, color=[0.0, 0.0, 1.0, 1.0]))
         ##### DRAW CONTACT ARROWS - END ######
         return top_virtual_contacts[:, :3] + mean_point, vidx, v.transpose(), distances
 
@@ -538,6 +545,7 @@ class PlacementHeuristic(object):
         The collision cost punishes nodes that are in collision. The stability cost
         evaluates whether a given node is suitable for releasing an object so that it fall towards a good placement pose.
     """
+
     def __init__(self, env, scene_sdf, object_base_path, vol_approx=0.005):
         """
             Creates a new PlacementHeuristic
@@ -548,7 +556,8 @@ class PlacementHeuristic(object):
             scene_sdf, SceneSDF of the environment
             object_base_path, string - path to object files
         """
-        self._env = env
+        # self._env = env  # TODO might wanna clone the environment
+        self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
         self._obj_name = None
         self._model_name = None
         self._kinbody = None
@@ -613,7 +622,7 @@ class PlacementHeuristic(object):
         # compute the collision cost for this pose
         col_val = self.evaluate_collision(representative)
         stability_val = self.evaluate_stability(representative)
-        #TODO add weights? different combination of different costs?
+        # TODO add weights? different combination of different costs?
         return stability_val + col_val
 
     @staticmethod
@@ -632,6 +641,7 @@ class SE3Hierarchy(object):
         """
             A representative for a node in the hierarchy
         """
+
         def __init__(self, cartesian_box, so3_key, depth, hierarchy, global_id=None):
             """
                 Creates a new SE3HierarchyNode.
@@ -689,7 +699,8 @@ class SE3Hierarchy(object):
                                    np.random.randint(-1, 2),
                                    np.random.randint(-1, 2)])
             child_id = node.get_id(relative_to_parent=True)
-            max_ids = [self._hierarchy._cart_branching - 1, self._hierarchy._cart_branching - 1, self._hierarchy._cart_branching - 1]
+            max_ids = [self._hierarchy._cart_branching - 1,
+                       self._hierarchy._cart_branching - 1, self._hierarchy._cart_branching - 1]
             # TODO respect blacklist
             neighbor_id = np.zeros(5, np.int)
             neighbor_id[:3] = np.clip(child_id[:3] + random_dir, 0, max_ids)
@@ -739,19 +750,44 @@ class SE3Hierarchy(object):
                 child = self.get_child_node(lkey)
                 yield child
 
+        def get_num_children(self):
+            """
+                Return the number of children this node has.
+            """
+            if not self.is_leaf():
+                bfs = so3hierarchy.get_branching_factors(self._depth)
+                return math.pow(self._hierarchy._cart_branching, 3) * bfs[0] * bfs[1]
+            return 0
+
+        def get_num_leaves_in_branch(self):
+            """
+                Return the number of leaves in the branch of the hierarchy rooted at this node.
+            """
+            # TODO if this is turns out to be a resource hog, we could cache the result
+            num_leaves = 1
+            for d in xrange(self._hierarchy.get_depth(), self._depth, -1):
+                # calculate the number of children a node on level d - 1 has
+                bfs = so3hierarchy.get_branching_factors(d - 1)
+                num_children = math.pow(self._hierarchy._cart_branching, 3) * bfs[0] * bfs[1]
+                num_leaves *= num_children
+            return num_leaves
+
         def get_representative_value(self, rtype=0):
             """
                 Returns a point in SE(3) that represents this cell, i.e. the center of this cell
+                Note that for the root, None is returned.
                 @param rtype - Type to represent point (0 = 4x4 matrix,
                                                         1 = [x, y, z, theta, phi, psi] (Hopf coordinates),)
             """
+            if self._depth == 0:  # the root does not have a representative
+                return None
             position = self._cartesian_box[0] + self._cartesian_range / 2.0
             if rtype == 0:  # return a matrix
                 quaternion = so3hierarchy.get_quaternion(self._so3_key)
                 matrix = transformations.quaternion_matrix(quaternion)
                 matrix[:3, 3] = position
                 return matrix
-            elif rtype == 1: # return array with position and hopf coordinates
+            elif rtype == 1:  # return array with position and hopf coordinates
                 result = np.empty(6)
                 result[:3] = position
                 result[3:] = so3hierarchy.get_hopf_coordinates(self._so3_key)
@@ -829,7 +865,8 @@ class SE3Hierarchy(object):
         """
         if parent_id is None:
             return tuple(((x,) for x in child_id))  # global id is of format ((a), (b), (c), (d), (e))
-        return tuple((parent_id[i] + (child_id[i],) for i in xrange(5)))  # append elements of child id to individual elements of global id
+        # append elements of child id to individual elements of global id
+        return tuple((parent_id[i] + (child_id[i],) for i in xrange(5)))
 
     def get_root(self):
         return self._root
@@ -838,89 +875,274 @@ class SE3Hierarchy(object):
         return self._max_depth
 
 
-def default_leaf_stage(objective_fn, collision_cost, plcmt_result):
-    """
-        Locally optimize the objective_fn in the domain of the plcmt_result's node
-        using scikit's constrained optimization by linear approximation function.
-        ---------
-        Arguments
-        ---------
-        objective_fn - The function to maximize.
-        collision_cost - Contstraint that needs to be positive.
-    """
-    def to_matrix(x):
-        quat = so3hierarchy.hopf_to_quaternion(x[3:])
-        pose = transformations.quaternion_matrix(quat)
-        pose[:3, 3] = x[:3]
-        return pose
-
-    def pose_wrapper_fn(fn, x, multiplier=1.0):
-        # extract pose from x and pass it to fn
-        val = multiplier * fn(to_matrix(x))
-        if val == float('inf'):
-            val = 10e9  # TODO this is a hack
-        return val
-
-    # get the initial value
-    x0 = plcmt_result.hierarchy_node.get_representative_value(rtype=1)
-    # get bounds
-    bounds = plcmt_result.hierarchy_node.get_bounds()
-    constraints = [
-        {
-            'type': 'ineq',
-            'fun': functools.partial(pose_wrapper_fn, collision_cost),
-        },
-        {
-            'type': 'ineq',
-            'fun': lambda x: x - bounds[:, 0]  # TODO replace with real bounds
-        },
-        {
-            'type': 'ineq',
-            'fun': lambda x: bounds[:, 1] - x  # TODO replace with real bounds
-        }
-    ]
-    opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, objective_fn, multiplier=-1.0),
-                                         x0, method='COBYLA', constraints=constraints)
-    sol = opt_result.x
-    plcmt_result.obj_pose = to_matrix(sol)
-
-
-class PlacementGoalPlanner:
+class PlacementGoalPlanner(GoalHierarchy):
     """This class allows to search for object placements in combination with
         the FreeSpaceProximitySampler.
     """
-    class PlacementResult(object): # TODO define interface for GoalSampling result
+    class PlacementResult(GoalHierarchy.GoalHierarchyNode):
         """
             Represents the result of a placement call. 
-            TODO: implement all functions that the goal sampler needs.
+            See GoalHierarhcy.GoalHierarchyNode in sampler module for docs.
         """
+
         def __init__(self, hierarchy_node, quality_value):
-            self.hierarchy_node = hierarchy_node
-            self.quality_value = quality_value
-            self.arm_configuration = None
+            super(PlacementGoalPlanner.PlacementResult, self).__init__(None)
+            self._hierarchy_node = hierarchy_node
+            self._quality_value = quality_value
+            self._valid = False
+            self._bgoal = False
             self.obj_pose = hierarchy_node.get_representative_value()
-        
-        def is_leaf(self):
-            return self.hierarchy_node.is_leaf()
-        
+            self._was_evaluated = False
+
+        def is_valid(self):
+            assert(self._was_evaluated)
+            return self._valid
+
+        def is_goal(self):
+            assert(self._was_evaluated)
+            return self._bgoal
+
+        def hierarchy_info_str(self):
+            return str(self._hierarchy_node.get_id())
+
+        def get_num_possible_children(self):
+            return self._hierarchy_node.get_num_children()
+
+        def get_num_possible_leaves(self):
+            return self._hierarchy_node.get_num_leaves_in_branch()
+
+        def get_hashable_label(self):
+            return str(self._hierarchy_node.get_id())
+
+        def get_label(self):
+            return self._hierarchy_node.get_id()
+
+        def get_depth(self):
+            return self._hierarchy_node.get_depth()
+
+        def get_additional_data(self):
+            # TODO here we could return sth like an open-hand policy
+            return None
+
+        def is_extendible(self):
+            return not self._hierarchy_node.is_leaf()
+
+    class RobotInterface(object):
+        """
+            Interface for the full robot used to compute arm configurations for a placement pose.
+        """
+
+        def __init__(self, env, robot_name, manip_name=None):
+            """
+                Create a new RobotInterface.
+                ---------
+                Arguments
+                ---------
+                env, OpenRAVE Environment - environment containing the full planning scene including the
+                    robot. The environment is copied.
+                robot_name, string - name of the robot to compute ik solutions for
+                manip_name, string (optional) - name of manipulator to compute ik solutions for. If not provided,
+                    the active manipulator is used.
+            """
+            # clone the environment so we are sure it is always setup correctly
+            self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
+            self._robot = self._env.GetRobot(robot_name)
+            if not self._robot:
+                raise ValueError("Could not find robot with name %s" % robot_name)
+            if manip_name:
+                self._robot.SetActiveManipulator(manip_name)
+            self._manip = self._robot.GetActiveManipulator()
+            self._arm_ik = orpy.databases.inversekinematics.InverseKinematicsModel(self._robot,
+                                                                                   iktype=orpy.IkParameterization.Type.Transform6D)
+            # Make sure we have an ik solver
+            if not self._arm_ik.load():
+                self._arm_ik.autogenerate()
+            self._hand_config = None
+            self._grasp_tf = None  # from obj frame to eef-frame
+            self._inv_grasp_tf = None  # from eef frame to object frame
+            self._arm_dofs = self._manip.GetArmIndices()
+            self._hand_dofs = self._manip.GetGripperIndices()
+
+        def set_grasp_info(self, grasp_tf, hand_config, obj_name):
+            """
+                Set information about the grasp the target object is grasped with.
+                ---------
+                Arguments
+                ---------
+                grasp_tf, numpy array of shape (4,4) - pose of object relative to end-effector (in eef frame)
+                hand_config, numpy array of shape (d_h,) - grasp configuration of the hand
+                obj_name, string - name of grasped object
+            """
+            self._grasp_tf = grasp_tf
+            self._inv_grasp_tf = utils.inverse_transform(grasp_tf)
+            self._hand_config = hand_config
+            with self._env:
+                # first ungrab all grabbed objects
+                self._robot.ReleaseAllGrabbed()
+                body = self._env.GetKinBody(obj_name)
+                if not body:
+                    raise ValueError("Could not find object with name %s in or environment" % obj_name)
+                # place the body relative to the end-effector
+                eef_tf = self._manip.GetEndEffectorTransform()
+                obj_tf = np.dot(eef_tf, grasp_tf)
+                body.SetTransform(obj_tf)
+                # set hand configuration and grab the body
+                self._robot.SetDOFValues(hand_config, self._hand_dofs)
+                self._robot.Grab(body)
+
+        def check_arm_ik(self, obj_pose, seed=None):
+            """
+                Check whether there is an inverse kinematics solution for the arm to place the set
+                object at the given pose.
+                ---------
+                Arguments
+                ---------
+                obj_pose, numpy array of shape (4, 4) - pose of the object in world frame
+                seed, numpy array of shape (d,) (optional) - seed arm configuration to use for computation
+                -------
+                Returns
+                -------
+                config, None or numpy array of shape (d,) - computed arm configuration or None, if no solution
+                    exists.
+                b_col_free, bool - True if the configuration is collision free, else False
+            """
+            with self._env:
+                # compute eef-pose from obj_pose
+                eef_pose = np.dot(obj_pose, self._inv_grasp_tf)
+                # if we have a seed set it
+                if seed is not None:
+                    self._robot.SetDOFValues(seed, dofindices=self._arm_dofs)
+                # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
+                sol = self._manip.FindIKSolution(eef_pose, orpy.IkFilterOptions.CheckEnvCollisions)
+                # If that didn't work, try to compute a solution that is in collision (may be useful anyways)
+                if sol is None:
+                    # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
+                    sol = self._manip.FindIKSolution(eef_pose, orpy.IkFilterOptions.IgnoreCustomFilters)
+                    b_sol_col_free = False
+                else:
+                    b_sol_col_free = True
+                return sol, b_sol_col_free
+
+    class DefaultLeafStage(object):
+        """
+            Default leaf stage for the placement planner.
+        """
+
+        def __init__(self, objective_fn, collision_cost, robot_interface=None):
+            self.objective_fn = objective_fn
+            self.collision_cost = collision_cost
+            self.robot_interface = robot_interface
+
+        def post_optimize(self, plcmt_result):
+            """
+                Locally optimize the objective function in the domain of the plcmt_result's node
+                using scikit's constrained optimization by linear approximation function.
+                ---------
+                Arguments
+                ---------
+                plcmt_result, PlacementGoalPlanner.PlacementResult - result to update with a locally optimized
+                    solution.
+            """
+            def to_matrix(x):
+                quat = so3hierarchy.hopf_to_quaternion(x[3:])
+                pose = transformations.quaternion_matrix(quat)
+                pose[:3, 3] = x[:3]
+                return pose
+
+            def pose_wrapper_fn(fn, x, multiplier=1.0):
+                # extract pose from x and pass it to fn
+                val = multiplier * fn(to_matrix(x))
+                if val == float('inf'):
+                    val = 10e9  # TODO this is a hack
+                return val
+
+            # get the initial value
+            x0 = plcmt_result._hierarchy_node.get_representative_value(rtype=1)
+            # get bounds
+            bounds = plcmt_result._hierarchy_node.get_bounds()
+            constraints = [
+                {
+                    'type': 'ineq',
+                    'fun': functools.partial(pose_wrapper_fn, self.collision_cost),
+                },
+                {
+                    'type': 'ineq',
+                    'fun': lambda x: x - bounds[:, 0]  # TODO replace with real bounds
+                },
+                {
+                    'type': 'ineq',
+                    'fun': lambda x: bounds[:, 1] - x  # TODO replace with real bounds
+                }
+            ]
+            opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, self.objective_fn, multiplier=-1.0),
+                                                 x0, method='COBYLA', constraints=constraints)
+            sol = opt_result.x
+            plcmt_result.obj_pose = to_matrix(sol)
+            self.evaluate_result(plcmt_result)
+
+        def evaluate_result(self, plcmt_result):
+            """
+                Evaluate the given result and set its validity and goal flags.
+                If a robot interface is set, this will also set an arm configuration for the result, if possible.
+            """
+            if self.robot_interface:
+                plcmt_result.configuration, plcmt_result._valid =\
+                    self.robot_interface.check_arm_ik(plcmt_result.obj_pose)
+            else:
+                # TODO could/should cache this value
+                plcmt_result._valid = self.collision_cost(plcmt_result.obj_pose) > 0.0
+            # compute whether it is goal
+            if plcmt_result._valid and plcmt_result.is_leaf():
+                # TODO could/should cache this value
+                obj_val = self.objective_fn(plcmt_result.obj_pose)
+                # TODO properly implement a check for a goal
+                # plcmt_result._bgoal = obj_val > -0.02
+                plcmt_result._bgoal = True
+            else:
+                plcmt_result._bgoal = False
+            plcmt_result._was_evaluated = True
+
+        def set_grasp_info(self, grasp_tf, grasp_config, obj_name):
+            """
+                Set information about the grasp the target object is grasped with.
+                ---------
+                Arguments
+                ---------
+                grasp_tf, numpy array of shape (4,4) - pose of object relative to end-effector (in eef frame)
+                hand_config, numpy array of shape (d_h,) - grasp configuration of the hand
+                obj_name, string - name of grasped object
+            """
+            if self.robot_interface:
+                self.robot_interface.set_grasp_info(grasp_tf, grasp_config, obj_name)
+
+    ############################ PlacementGoalPlanner methods ############################
     def __init__(self, base_path,
-                 env, scene_sdf, visualize=False):
+                 env, scene_sdf, robot_name=None, manip_name=None, visualize=False):
         """
             Creates a PlacementGoalPlanner
-            @param base_path Path where object data can be found
-            @param env OpenRAVE environment
-            @param scene_sdf SceneSDF of the OpenRAVE environment
+            ---------
+            Arguments
+            ---------
+            base_path, string - Path where object data can be found
+            env, OpenRAVE environment
+            scene_sdf, SceneSDF - SceneSDF of the OpenRAVE environment
+            robot_name, string (optional) - name of the robot to use for placing
+            manip_name, string (optional) - in addition to robot name, name of the manipulator to use
             @param visualize If true, the internal OpenRAVE environment is set to be visualized
         """
         self._hierarchy = None
+        self._root = None
         self._env = env
         self._placement_heuristic = PlacementHeuristic(env, scene_sdf, base_path)
         self._optimizer = optimization.StochasticOptimizer(self._placement_heuristic)
+        robot_interface = None
+        if robot_name:
+            robot_interface = PlacementGoalPlanner.RobotInterface(env, robot_name, manip_name)
         # self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
         # TODO replace the leaf_stage with BayesOpt on Physics?
-        self._leaf_stage = functools.partial(default_leaf_stage,
-                                             self._placement_heuristic.evaluate_stability,
-                                             self._placement_heuristic.evaluate_collision) 
+        self._leaf_stage = PlacementGoalPlanner.DefaultLeafStage(self._placement_heuristic.evaluate_stability,
+                                                                 self._placement_heuristic.evaluate_collision,
+                                                                 robot_interface)
         self._placement_volume = None
         self._env = env
         self._parameters = {'cart_branching': 3, 'max_depth': 4, 'num_iterations': 100}  # TODO update
@@ -948,20 +1170,20 @@ class PlacementGoalPlanner:
         num_iterations = self._parameters['num_iterations']
         best_val = None
         best_node = None
-        current_node = hierarchy_node
-        for depth in xrange(current_node.get_depth(), min(depth_limit, self.get_max_depth())):
+        current_node = hierarchy_node._hierarchy_node
+        start_depth = current_node.get_depth()
+        for depth in xrange(start_depth, start_depth + depth_limit):
             logging.debug("Searching for placement pose on depth %i" % depth)
             best_val, best_node = self._optimizer.run(current_node, num_iterations)
             current_node = best_node
-        placement_result = PlacementGoalPlanner.PlacementResult(best_node, best_val) 
-        if post_opt and placement_result.is_leaf():
-            self._leaf_stage(placement_result)
-        return placement_result
-
-    def is_goal(self, sampling_result):
-        """ Returns whether the given node is a goal or not. """
-        # TODO
-        pass
+        # we are done with searching for a good node in the hierarchy
+        result = PlacementGoalPlanner.PlacementResult(best_node, best_val)
+        # we are at a leaf, perform the leaf stage
+        if result.is_leaf() and post_opt:
+            self._leaf_stage.post_optimize(result)
+        # next ask the leaf stage (also if the result is not a leaf), to evaluate the node
+        self._leaf_stage.evaluate_result(result)  # this sets goal, valid flags and optionally arm configuration
+        return result
 
     def load_hand(self, hand_path, hand_cache_file, hand_config_file, hand_ball_file):
         """ Does nothing. """
@@ -977,16 +1199,31 @@ class PlacementGoalPlanner:
         self._placement_heuristic.set_target_object(obj_id, model_id)
         self._initialized = False
 
+    def setup(self, obj_name, grasp_tf, grasp_config, model_id=None):
+        """
+            Setup the planner for integrated planning, i.e. with arm configurations.
+            ---------
+            Arguments
+            ---------
+            obj_name, string - the name of the object
+            grasp_tf, numpy array of shape (4, 4) - transformation matrix from object frame to end-effector frame, 
+                describing the pose of the object relative to the eef
+            grasp_config, numpy array of shape (d_h,) - grasp configuration of the gripper/hand
+            model_id, string (optional) - Name of the model data. If None, it is assumed to be identical to obj_id
+        """
+        self.set_object(obj_name, model_id=model_id)
+        self._leaf_stage.set_grasp_info(grasp_tf, grasp_config, obj_name)
+
     def set_max_iter(self, iterations):
         self._parameters['num_iterations'] = iterations
 
     def get_max_depth(self):
-        return self._hierarchy.get_depth()
+        return self._parameters['max_depth']
 
     def get_root(self):
         if not self._initialized:
             self._initialize()
-        return self._hierarchy.get_root()
+        return self._root
 
     def set_parameters(self, **kwargs):
         self._initialized = False
@@ -999,6 +1236,9 @@ class PlacementGoalPlanner:
         if self._placement_heuristic.get_target_object() is None:
             raise ValueError("Could not intialize as there is no placement target object available")
         self._hierarchy = SE3Hierarchy(self._placement_volume,
-                                       self._parameters['cart_branching'],  # TODO it makes more sense to provide a resolution instead
+                                       # TODO it makes more sense to provide a resolution instead
+                                       self._parameters['cart_branching'],
                                        self._parameters['max_depth'])
+        self._root = PlacementGoalPlanner.PlacementResult(self._hierarchy.get_root(), -1.0*float('inf'))
+        self._root._was_evaluated = True  # root is always invalid and not a goal
         self._initialized = True
