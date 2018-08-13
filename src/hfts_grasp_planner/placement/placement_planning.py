@@ -117,7 +117,7 @@ class SimplePlacementQuality(object):
             for (key, value) in parameters:
                 self._parameters[key] = value
 
-    def compute_quality(self, pose):
+    def compute_quality(self, pose, return_terms=False):
         """
             Compute the placement quality for the given pose. 
             The larger the returned value, the more suitable a pose is for placement.
@@ -127,10 +127,19 @@ class SimplePlacementQuality(object):
             ---------
             pose, numpy array of shape (4, 4) - describes the pose of the currently
                 set kinbody
+            return_terms, bool - if true, the individual terms that the placement quality
+                is computed of are returned.
             ---------
             Returns
             ---------
             score, float - the larger the better the pose is
+
+            If return_terms is true, the function additionally returns:
+            falling_distance, float - distance of how far the object will approximately fall
+            chull_distance, float - signed distance of the projected center of mass to the planar convex hull
+                of contact points
+            alpha, float - angle between virtual placement plane and z-axis
+            gamma, float - angle between virtual placement plane and placement plane
         """
         self._body.SetTransform(pose)
         best_score = float('inf')
@@ -165,9 +174,13 @@ class SimplePlacementQuality(object):
                     # scores for anything related to the virtual placement plane
                     placement_value = self._max_ray_length
                     alpha = 1.57
+                    chull_distance = float('inf')
+                    gamma = 1.57
             else:
                 # we have no contacts, so there isn't anything we can say
                 d_head = float('inf')
+                chull_distance = float('inf')
+                gamma = float('inf')
                 placement_value = float('inf')
                 alpha = float('inf')
             # we want to minimize the following score
@@ -178,6 +191,8 @@ class SimplePlacementQuality(object):
             # Minimizing alpha prefers placements on planar surfaces rather than on slopes.
             score = d_head + placement_value + self._parameters["slopiness_weight"] * alpha
             best_score = min(score, best_score)
+        if return_terms:
+            return -1.0 * best_score, d_head, chull_distance, alpha, gamma
         return -1.0 * best_score  # externally we want to maximize
 
     def set_target_object(self, body, model_name=None):
@@ -441,11 +456,11 @@ class SimplePlacementQuality(object):
         self._body.Enable(True)
         distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
         distances[np.invert(collisions)] = np.inf
-        # DRAW CONTACT ARROWS ###### TODO remove
-        handles = []
-        for idx, contact in enumerate(virtual_contacts):
-            if collisions[idx] and distances[idx] > 0.001:  # distances shouldn't be too small, otherwise the viewer crashes
-                handles.append(self._env.drawarrow(tf_plane[idx + 1], contact[:3], linewidth=0.002))
+        # # DRAW CONTACT ARROWS ###### TODO remove
+        # handles = []
+        # for idx, contact in enumerate(virtual_contacts):
+        #     if collisions[idx] and distances[idx] > 0.001:  # distances shouldn't be too small, otherwise the viewer crashes
+        #         handles.append(self._env.drawarrow(tf_plane[idx + 1], contact[:3], linewidth=0.002))
         ##### DRAW CONTACT ARROWS - END ######
         # compute virtual contact plane
         # first, sort virtual contact points by falling distance
@@ -481,12 +496,12 @@ class SimplePlacementQuality(object):
         if v[2, 2] < 0.0:
             v[2, :] *= -1.0
         # DRAW CONTACT PLANE ###### TODO remove
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
-                                           v[0, :], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
-                                           v[1, :], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
-        handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
-                                           v[2, :], linewidth=0.002, color=[0.0, 0.0, 1.0, 1.0]))
+        # handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
+        #                                    v[0, :], linewidth=0.002, color=[1.0, 0, 0, 1.0]))
+        # handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
+        #                                    v[1, :], linewidth=0.002, color=[0.0, 1.0, 0.0, 1.0]))
+        # handles.append(self._env.drawarrow(mean_point, mean_point + 0.1 *
+        #                                    v[2, :], linewidth=0.002, color=[0.0, 0.0, 1.0, 1.0]))
         ##### DRAW CONTACT ARROWS - END ######
         return top_virtual_contacts[:, :3] + mean_point, vidx, v.transpose(), distances
 
@@ -595,12 +610,19 @@ class PlacementHeuristic(object):
         """
         return self._obj_name
 
-    def evaluate_stability(self, pose):
+    def evaluate_stability(self, pose, return_details=False):
         """
             Evalute the stability cost function for the given pose.
+            ---------
+            Arguments
+            ---------
+            pose, numpy array of shape (4, 4) - pose to evaluate
+            return_details, bool - if True, return additionaly information computed
+                by stability function. What values are returned, depends on the stability
+                function.
         """
         self._kinbody.SetTransform(pose)
-        return self._stability_function.compute_quality(pose)
+        return self._stability_function.compute_quality(pose, return_details)
 
     def evaluate_collision(self, pose):
         """
@@ -1032,6 +1054,12 @@ class PlacementGoalPlanner(GoalHierarchy):
             self.objective_fn = objective_fn
             self.collision_cost = collision_cost
             self.robot_interface = robot_interface
+            self._parameters = {
+                'max_falling_distance': 0.04,
+                'max_misalignment_angle': 0.2,
+                'max_slope_angle': 0.2,
+                'min_chull_distance': -0.008,
+            }
 
         def post_optimize(self, plcmt_result):
             """
@@ -1091,13 +1119,18 @@ class PlacementGoalPlanner(GoalHierarchy):
             else:
                 # TODO could/should cache this value
                 plcmt_result._valid = self.collision_cost(plcmt_result.obj_pose) > 0.0
-            # compute whether it is goal
+            # compute whether it is a goal
             if plcmt_result._valid and plcmt_result.is_leaf():
                 # TODO could/should cache this value
-                obj_val = self.objective_fn(plcmt_result.obj_pose)
-                # TODO properly implement a check for a goal
-                # plcmt_result._bgoal = obj_val > -0.02
-                plcmt_result._bgoal = True
+                # TODO this is specific to the simple placement heuristic
+                obj_val, falling_distance, chull_distance, alpha, gamma = \
+                    self.objective_fn(plcmt_result.obj_pose, True)
+                plcmt_result._bgoal = falling_distance < self._parameters['max_falling_distance'] and \
+                    chull_distance < self._parameters['min_chull_distance'] and \
+                    alpha < self._parameters['max_slope_angle'] and \
+                    gamma < self._parameters['max_misalignment_angle']
+                logging.debug('Candidate goal: falling_distance %f, chull_distance %f, alpha %f, gamma %f' %
+                              (falling_distance, chull_distance, alpha, gamma))
             else:
                 plcmt_result._bgoal = False
             plcmt_result._was_evaluated = True
