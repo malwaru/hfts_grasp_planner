@@ -16,6 +16,111 @@ import scipy.spatial
 import openravepy as orpy
 
 
+def merge_faces(chull, min_normal_similarity=0.97):
+    """
+        Merge adjacent faces of the convex hull if they have similar normals.
+        ---------
+        Arguments
+        ---------
+        chull - convex hull computed by scipy.spatial.ConvexHull
+        min_normal_similarity - minimal value that the pairwise dot product of the normals
+            of two faces need to have to be merged.
+        ---------
+        Returns
+        ---------
+        A tuple (clusters, face_clusters, num_clusters):
+            - clusters, a list of tuples (normal, vertices) - describes all clusters.
+                normal is a numpy array of length 3 describing the normal of a cluster (merged faces)
+                vertices is the set of vertex indices, which compose the cluster
+            - face_cluster - numpy array of length num_clusters, which stores for each original face
+                of chull which cluster it belongs to
+            - num_clusters, int - the total number of clusters
+    """
+    clusters = []
+    face_clusters = np.ones(chull.simplices.shape[0], dtype=int)
+    face_clusters *= -1
+    face_idx = 0
+    cluster_id = 0
+    cluster_candidates = collections.deque()
+    # run over all faces
+    while face_idx < chull.simplices.shape[0]:
+        if face_clusters[face_idx] == -1:  # we have not assigned this face to a cluster yet
+            cluster_normal = chull.equations[face_idx, :3]
+            current_cluster = (cluster_normal, set(chull.simplices[face_idx]))  # create a new cluster
+            clusters.append(current_cluster)
+            face_clusters[face_idx] = cluster_id  # assign this face to the new cluster
+            # grow cluster to include adjacent unclustered faces that have a similar normal
+            cluster_candidates.extend(chull.neighbors[face_idx])
+            while cluster_candidates:
+                candidate_idx = cluster_candidates.popleft()
+                # check if this face belongs to the same cluster, it does so, if the normal is almost the same
+                if np.dot(chull.equations[candidate_idx, :3], cluster_normal) >= min_normal_similarity:
+                    if face_clusters[candidate_idx] == -1:  # check if candidate is unclustered yet
+                        # add the vertices of this face to the cluster
+                        current_cluster[1].update(chull.simplices[candidate_idx])
+                        face_clusters[candidate_idx] = cluster_id  # assign the cluster to the face
+                        # add its neighbors to our extension candidates
+                        cluster_candidates.extend(chull.neighbors[candidate_idx])
+            cluster_id += 1
+        face_idx += 1
+    return clusters, face_clusters, cluster_id
+
+
+def compute_hull_distance(convex_hull, point):
+    """
+        Compute the signed distance of the given point
+        to the closest edge of the given 2d convex hull.
+        ---------
+        Arguments
+        ---------
+        convex_hull, ConvexHull - a convex hull of 2d points computed using scipy's wrapper 
+            for QHull.
+        point, numpy array of shape (2,) - a 2d point to compute the distance for
+        ---------
+        Returns
+        ---------
+        distance, float - the signed distance to the closest edge of the convex hull
+        edge_id, int - the index of the closest edge
+    """
+    # min_distance = 0.0
+    assert(convex_hull.points[0].shape == point.shape)
+    assert(point.shape == (2,))
+    interior_distance = float('-inf')
+    exterior_distance = float('inf')
+    closest_int_edge = 0
+    closest_ext_edge = 0
+    for idx, edge in enumerate(convex_hull.simplices):
+        rel_point = point - convex_hull.points[edge[0]]
+        # there are 3 cases: the point is closest to edge[0], to edge[1] or to
+        # its orthogonal projection onto the edge
+        edge_dir = convex_hull.points[edge[1]] - convex_hull.points[edge[0]]
+        edge_length = np.linalg.norm(edge_dir)
+        assert(edge_length > 0.0)
+        edge_dir /= edge_length
+        # in any case we need the orthogonal distance to compute the sign
+        orthogonal_distance = np.dot(convex_hull.equations[idx, :2], rel_point)
+        # now check the different cases
+        directional_distance = np.dot(edge_dir, rel_point)
+        if directional_distance >= edge_length:
+            # closest distance is to edge[1]
+            edge_distance = np.linalg.norm(point - convex_hull.points[edge[1]])
+        elif directional_distance <= 0.0:
+            # closest distance is to edge[0]
+            edge_distance = np.linalg.norm(point - convex_hull.points[edge[0]])
+        else:
+            edge_distance = np.abs(orthogonal_distance)
+        if orthogonal_distance < 0.0:  # point is inside w.r.t to this edge
+            if interior_distance < -1.0 * edge_distance:
+                interior_distance = -1.0 * edge_distance
+                closest_int_edge = idx
+        elif edge_distance < exterior_distance:
+            exterior_distance = edge_distance
+            closest_ext_edge = idx
+    if exterior_distance == float('inf'):  # the point is inside the convex hull
+        return interior_distance, closest_int_edge
+    return exterior_distance, closest_ext_edge  # the point is outside the convex hull
+
+
 class SimplePlacementQuality(object):
     """
         Implements a simple quality function for a placement.
@@ -157,7 +262,7 @@ class SimplePlacementQuality(object):
                     # project the virtual contacts to the x, y plane and compute their convex hull
                     contact_footprint = scipy.spatial.ConvexHull(virtual_contacts[:, :2])
                     # retrieve the distance to the closest edge
-                    chull_distance = self._compute_hull_distance(contact_footprint, self._body.GetCenterOfMass()[:2])
+                    chull_distance, _ = compute_hull_distance(contact_footprint, self._body.GetCenterOfMass()[:2])
                     # angle between virtual placement plane and z-axis
                     dot_product = np.dot(virtual_plane_axes[:, 2], np.abs(self._dir_gravity))
                     alpha = np.arccos(np.clip(dot_product, -1.0, 1.0))
@@ -230,97 +335,6 @@ class SimplePlacementQuality(object):
         """
         self._workspace_volume = np.array(workspace_volume)
 
-    # TODO move this function to utils or so
-    @staticmethod
-    def merge_faces(chull, min_normal_similarity=0.97):
-        """
-            Merge adjacent faces of the convex hull if they have similar normals.
-            ---------
-            Arguments
-            ---------
-            chull - convex hull computed by scipy.spatial.ConvexHull
-            min_normal_similarity - minimal value that the pairwise dot product of the normals
-                of two faces need to have to be merged.
-            ---------
-            Returns
-            ---------
-            A tuple (clusters, face_clusters, num_clusters):
-                - clusters, a list of tuples (normal, vertices) - describes all clusters.
-                    normal is a numpy array of length 3 describing the normal of a cluster (merged faces)
-                    vertices is the set of vertex indices, which compose the cluster
-                - face_cluster - numpy array of length num_clusters, which stores for each original face
-                    of chull which cluster it belongs to
-                - num_clusters, int - the total number of clusters
-        """
-        clusters = []
-        face_clusters = np.ones(chull.simplices.shape[0], dtype=int)
-        face_clusters *= -1
-        face_idx = 0
-        cluster_id = 0
-        cluster_candidates = collections.deque()
-        # run over all faces
-        while face_idx < chull.simplices.shape[0]:
-            if face_clusters[face_idx] == -1:  # we have not assigned this face to a cluster yet
-                cluster_normal = chull.equations[face_idx, :3]
-                current_cluster = (cluster_normal, set(chull.simplices[face_idx]))  # create a new cluster
-                clusters.append(current_cluster)
-                face_clusters[face_idx] = cluster_id  # assign this face to the new cluster
-                # grow cluster to include adjacent unclustered faces that have a similar normal
-                cluster_candidates.extend(chull.neighbors[face_idx])
-                while cluster_candidates:
-                    candidate_idx = cluster_candidates.popleft()
-                    # check if this face belongs to the same cluster, it does so, if the normal is almost the same
-                    if np.dot(chull.equations[candidate_idx, :3], cluster_normal) >= min_normal_similarity:
-                        if face_clusters[candidate_idx] == -1:  # check if candidate is unclustered yet
-                            # add the vertices of this face to the cluster
-                            current_cluster[1].update(chull.simplices[candidate_idx])
-                            face_clusters[candidate_idx] = cluster_id  # assign the cluster to the face
-                            # add its neighbors to our extension candidates
-                            cluster_candidates.extend(chull.neighbors[candidate_idx])
-                cluster_id += 1
-            face_idx += 1
-        return clusters, face_clusters, cluster_id
-
-    # TODO move this to some utils
-    @staticmethod
-    def _compute_hull_distance(convex_hull, point):
-        """
-            Compute the signed distance of the given point
-            to the closest edge of the given 2d convex hull.
-        """
-        # min_distance = 0.0
-        assert(convex_hull.points[0].shape == point.shape)
-        assert(point.shape == (2,))
-        interior_distance = float('-inf')
-        exterior_distance = float('inf')
-        for idx, edge in enumerate(convex_hull.simplices):
-            rel_point = point - convex_hull.points[edge[0]]
-            # there are 3 cases: the point is closest to edge[0], to edge[1] or to
-            # its orthogonal projection onto the edge
-            edge_dir = convex_hull.points[edge[1]] - convex_hull.points[edge[0]]
-            edge_length = np.linalg.norm(edge_dir)
-            assert(edge_length > 0.0)
-            edge_dir /= edge_length
-            # in any case we need the orthogonal distance to compute the sign
-            orthogonal_distance = np.dot(convex_hull.equations[idx, :2], rel_point)
-            # now check the different cases
-            directional_distance = np.dot(edge_dir, rel_point)
-            if directional_distance >= edge_length:
-                # closest distance is to edge[1]
-                edge_distance = np.linalg.norm(point - convex_hull.points[edge[1]])
-            elif directional_distance <= 0.0:
-                # closest distance is to edge[0]
-                edge_distance = np.linalg.norm(point - convex_hull.points[edge[0]])
-            else:
-                edge_distance = np.abs(orthogonal_distance)
-            if orthogonal_distance < 0.0:  # point is inside w.r.t to this edge
-                interior_distance = max(-1.0 * edge_distance, interior_distance)
-            else:
-                exterior_distance = min(edge_distance, exterior_distance)
-        if exterior_distance == float('inf'):  # the point is inside the convex hull
-            return interior_distance
-        return exterior_distance  # the point is outside the convex hull
-
     def _is_stable_placement_plane(self, plane):
         """
             Return whether the specified plane can be used to stably place the
@@ -352,20 +366,21 @@ class SimplePlacementQuality(object):
         # compute the convex hull of the projected points
         convex_hull = scipy.spatial.ConvexHull(points_2d)
         # ##### DRAW CONVEX HULL ###### TODO remove
-        boundary = points_2d[convex_hull.vertices]
-        # compute 3d boundary from bases and mean point
-        boundary3d = boundary[:, 0, np.newaxis] * axes[:, 0] + boundary[:, 1, np.newaxis] * axes[:, 1] + mean_point
-        # transform it to world frame
-        tf = self._body.GetTransform()
-        boundary3d = np.dot(boundary3d, tf[:3, :3]) + tf[:3, 3]
-        handles.append(self._visualize_boundary(boundary3d))
-        ##### DRAW CONVEX HULL - END ######
-        ##### DRAW PROJECTED COM ######
-        handles.append(self._env.drawbox(projected_com + mean_point, np.array([0.005, 0.005, 0.005]),
-                                         np.array([0.29, 0, 0.5]), tf))
+        # boundary = points_2d[convex_hull.vertices]
+        # # compute 3d boundary from bases and mean point
+        # boundary3d = boundary[:, 0, np.newaxis] * axes[:, 0] + boundary[:, 1, np.newaxis] * axes[:, 1] + mean_point
+        # # transform it to world frame
+        # tf = self._body.GetTransform()
+        # boundary3d = np.dot(boundary3d, tf[:3, :3]) + tf[:3, 3]
+        # handles.append(self._visualize_boundary(boundary3d))
+        # ##### DRAW CONVEX HULL - END ######
+        # ##### DRAW PROJECTED COM ######
+        # handles.append(self._env.drawbox(projected_com + mean_point, np.array([0.005, 0.005, 0.005]),
+        #                                  np.array([0.29, 0, 0.5]), tf))
         # ##### DRAW PROJECTED COM - END ######
         # accept the point if the projected center of mass is inside of the convex hull
-        return self._compute_hull_distance(convex_hull, com2d) < -1.0 * self._parameters["min_com_distance"]
+        dist, _ = compute_hull_distance(convex_hull, com2d)
+        return dist < -1.0 * self._parameters["min_com_distance"]
 
     def _compute_placement_planes(self, user_filters):
         # first compute the convex hull of the body
@@ -380,8 +395,7 @@ class SimplePlacementQuality(object):
             offset += mesh.vertices.shape[0]
         convex_hull = scipy.spatial.ConvexHull(vertices)  # TODO do we need to add any flags?
         # merge faces
-        clusters, face_clusters, _ = SimplePlacementQuality.merge_faces(convex_hull,
-                                                                        self._parameters["min_normal_similarity"])
+        clusters, face_clusters, _ = merge_faces(convex_hull, self._parameters["min_normal_similarity"])
         # handles = self._visualize_clusters(convex_hull, clusters, face_clusters)
         # handles = None
         self._placement_planes = []
@@ -552,6 +566,148 @@ class SimplePlacementQuality(object):
         for plane in self._placement_planes:
             handles.extend(self._visualize_placement_plane(plane, arrow_length, arrow_width))
         return handles
+
+
+class QuasistaticFallingQuality(object):
+    """
+        Implements a quality function to evaluate placement stability. The function implemented
+        by this class quasistatically simulates how an object falls if released at a given pose.
+        At each contact, the function computes in which direction the object will tip under the assumption
+        that the kinectic energy of the object is zero.
+    """
+
+    def __init__(self, env):
+        """
+            Create a new instance of a QuasistaticFallingQuality function.
+            ---------
+            Arguments
+            ---------
+            env, OpenRAVE environment - fully initialized OpenRAVE environment of the scene in which
+                objects should be placed. The environment is cloned.
+        """
+        self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
+        # only fcl supports contiuous collision detection
+        col_checker = orpy.RaveCreateCollisionChecker(self._env, 'fcl')
+        self._env.SetCollisionChecker(col_checker)
+        self._placement_volume = None
+        self._body = None
+        self._link = None
+        self._body_radius = None
+        self._parameters = {
+            "max_iterations": 100,
+        }
+
+    def compute_quality(self, pose, return_terms=False):
+        """
+            Compute the placement quality for the given pose. 
+            The larger the returned value, the more suitable a pose is for placement.
+            Note that this function is merely a heuristic.
+            ---------
+            Arguments
+            ---------
+            pose, numpy array of shape (4, 4) - describes the pose of the currently
+                set kinbody
+            return_terms, bool - if true, the individual terms that the placement quality
+                is computed of are returned.
+            ---------
+            Returns
+            ---------
+            score, float - the larger the better the pose is
+
+            If return_terms is true, the function additionally returns:
+            bcomes_to_rest, bool - True, if the object comes to rest within the placement volume
+            falling_distance, float - distance of how far the object will fall until first contact
+            acc_rotation, float - accumulated rotation in radians the object will rotate until it comes to rest
+            chull_distance, float - signed distance of the projected center of mass to the planar convex hull
+                of contact points when the object comes to rest
+        """
+        assert(self._body is not None)
+        assert(self._link is not None)
+        assert(self._placement_volume is not None)
+        # TODO implement me
+        iterations = 0
+        b_at_rest = False
+        contact_state = 0  # 0 - free fall, 1 - point contact, 2 - line contact, 3 - planar contact
+        report = orpy.ContinuousCollisionReport()
+        self._body.SetTransform(pose)
+        acc_distance = 0.0
+        acc_rotation = 0.0
+        while iterations < self._parameters["max_iterations"] and not b_at_rest:
+            current_tf = self._body.GetTransform()
+            if contact_state == 0:  # free fall
+                # translate along z axis downwards until first contact
+                target_tf = self._body.GetTransform()
+                target_tf[3, 3] = self._placement_volume[0][3] + self._body_radius
+                b_contact = self._env.CheckContinuousCollision(self._link, target_tf, report)
+                if not b_contact:
+                    if return_terms:
+                        return float('-inf'), False, float('inf'), float('inf'), float('inf')
+                    return float('-inf')
+                contact_quat_pose = report.vCollisions[0][1]
+                acc_distance += np.linalg.norm(contact_quat_pose[4:] - current_tf[:3, 3])
+                self._body.SetTransform(orpy.matrixFromQuat(contact_quat_pose))
+                contact_state = self._compute_contact_state(report)
+            elif contact_state == 1:  # we have a single point contact
+                # TODO implement what to do in case of a single contact
+            elif contact_state == 2:  # we have a line contact
+                # TODO implement this
+            elif contact_state == 3:  # we have plane contact
+                # TODO compute convex hull of projected contact points
+                # TODO determine stability
+            iterations += 1
+        pass
+
+    def set_target_object(self, body, model_name=None):
+        """
+            Set the target object. 
+            Synchronizes the underlying OpenRAVE environment with the environment of the given body.
+            If the environment of the body has more kinbodies than the underlying environment, 
+            a RuntimeError is thrown. This is due to a bug in OpenRAVE, that doesn't allow
+            us to load additional kinbodies into any environment after a viewer has been set.
+            ---------
+            Arguments
+            ---------
+            body, OpenRAVE Kinbody - target object, which must have exactly one link
+            model_name (string, optional) - name of the kinbody model if it is different from the kinbody's name
+        """
+        self._body = self._env.GetKinBody(body.GetName())
+        if not self._body:
+            raise ValueError("Could not find body " + body.GetName() + " in cloned environment.")
+        self._body_radius = np.linalg.norm(self._body.ComputeAABB().extents())
+        self._link = self._body.GetLinks()[0]
+        if len(self._body.GetLinks()) != 1:
+            raise RuntimeError("Can not operate on bodies with more than one link")
+        self._synch_env(body.GetEnv())
+        if not model_name:
+            model_name = body.GetName()
+
+    def set_placement_volume(self, workspace_volume):
+        """
+            Set the placement volume.
+            @param workspace_volume - (min_point, max_point), where both are np.arrays of length 3
+        """
+        self._placement_volume = np.array(workspace_volume)
+
+    def _synch_env(self, env):
+        with env:
+            with self._env:
+                bodies = env.GetBodies()
+                for body in bodies:
+                    my_body = self._env.GetKinBody(body.GetName())
+                    if not my_body:
+                        raise RuntimeError("Could not find body with name " + body.GetName() + " in cloned environment")
+                    my_body.SetTransform(body.GetTransform())
+
+    def _compute_contact_state(self):
+        """
+            Compute the contact state of the current pose of self._body.
+        """
+        report = orpy.CollisionReport()
+        report.options = orpy.AllGeometryContacts
+        b_collision = self._env.CheckCollision(self._body, report)
+        # TODO CheckCollision does not seem to work properly -> debug it
+        # TODO implement decision making based on found contacts
+        # TODO return contacts as well
 
 
 class PlacementHeuristic(object):

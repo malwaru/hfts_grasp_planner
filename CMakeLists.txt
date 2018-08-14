@@ -15,6 +15,9 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
 )
 
+# find_package(SWIG REQUIRED)
+# INCLUDE(${SWIG_USE_FILE})
+# find_package(PythonLibs)
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -126,7 +129,27 @@ catkin_package(
 # include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  # ${PYTHON_INCLUDE_PATH}
 )
+
+# # Build swig python modules
+# set(CMAKE_SWIG_FLAGS "")
+# set(PLCMNT_STABILITY_INTERFACE src/hfts_grasp_planner/placement/stability.i)
+# set(PLCMNT_STABILITY_SRC src/hfts_grasp_planner/placement/stability.cpp)
+# set(CMAKE_SWIG_OUTDIR ${CATKIN_DEVEL_PREFIX}/${CATKIN_PACKAGE_PYTHON_DESTINATION})
+
+# set_property(SOURCE ${PLCMNT_STABILITY_INTERFACE} PROPERTY CPLUSPLUS ON)
+# set_property(SOURCE ${PLCMNT_STABILITY_INTERFACE} PROPERTY CMAKE_SWIG_FLAGS "-includeall")
+# swig_add_library(placement_stability 
+#   # TYPE MODULE 
+#   LANGUAGE python 
+#   # OUTPUT_DIR ${CATKIN_DEVEL_PREFIX}/${CATKIN_PACKAGE_PYTHON_DESTINATION}
+#   SOURCES ${PLCMNT_STABILITY_INTERFACE} ${PLCMNT_STABILITY_SRC})
+# swig_link_libraries(placement_stability ${PYTHON_LIBRARIES})
+# # This makes sure the built library can be found by the python wrapper. This is properly not the best way of doing this
+# set_property(TARGET ${SWIG_MODULE_placement_stability_REAL_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY ${CATKIN_DEVEL_PREFIX}/${CATKIN_PACKAGE_PYTHON_DESTINATION})
+# set_target_properties(placement_stability 
+#   PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CATKIN_PACKAGE_PYTHON_DESTINATION})
 
 ## Declare a C++ library
 # add_library(hfts_grasp_planner
