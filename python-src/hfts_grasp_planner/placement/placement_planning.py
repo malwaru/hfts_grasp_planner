@@ -73,7 +73,7 @@ def compute_hull_distance(convex_hull, point):
         ---------
         Arguments
         ---------
-        convex_hull, ConvexHull - a convex hull of 2d points computed using scipy's wrapper 
+        convex_hull, ConvexHull - a convex hull of 2d points computed using scipy's wrapper
             for QHull.
         point, numpy array of shape (2,) - a 2d point to compute the distance for
         ---------
@@ -119,6 +119,37 @@ def compute_hull_distance(convex_hull, point):
     if exterior_distance == float('inf'):  # the point is inside the convex hull
         return interior_distance, closest_int_edge
     return exterior_distance, closest_ext_edge  # the point is outside the convex hull
+
+
+def compute_closest_point_on_line(start_point, end_point, query_point):
+    """
+        Compute the closest point to query_point that lies on the line spanned from 
+        start_point to end_point.
+        ---------
+        Arguments
+        ---------
+        start_point, numpy array of shape (n,)
+        end_point, numpy array of shape (n,)
+        query_point, numpy array of shape (n,)
+        -------
+        Returns
+        -------
+        distance, float - distance of query_point to the line
+        point, numpy array of shape (n,) - closest point on the line
+        t, float - t in [0, 1] indicating where on the line the closest point lies (0 - start_point, 1 end_point)
+    """
+    line_dir = end_point - start_point
+    rel_point = query_point - start_point
+    line_length = np.linalg.norm(line_dir)
+    if line_length == 0.0:
+        return np.linalg.norm(rel_point), start_point, 0.0
+    t = np.dot(line_dir / line_length, rel_point) / line_length
+    if t <= 0.0:
+        return np.linalg.norm(rel_point), start_point, 0.0
+    if t <= 1.0:
+        return np.linalg.norm(query_point - (start_point + t * line_dir)), start_point, t
+    if t > 1.0:
+        return np.linalg.norm(end_point), end_point, 1.0
 
 
 class SimplePlacementQuality(object):
@@ -224,7 +255,7 @@ class SimplePlacementQuality(object):
 
     def compute_quality(self, pose, return_terms=False):
         """
-            Compute the placement quality for the given pose. 
+            Compute the placement quality for the given pose.
             The larger the returned value, the more suitable a pose is for placement.
             Note that this function is merely a heuristic.
             ---------
@@ -302,9 +333,9 @@ class SimplePlacementQuality(object):
 
     def set_target_object(self, body, model_name=None):
         """
-            Set the target object. 
+            Set the target object.
             Synchronizes the underlying OpenRAVE environment with the environment of this body.
-            If the environment of body has more kinbodies than the underlying environment, 
+            If the environment of body has more kinbodies than the underlying environment,
             a RuntimeError is thrown. This is due to a bug in OpenRAVE, that doesn't allow
             us to load additional kinbodies into any environment after a viewer has been set.
             ---------
@@ -587,7 +618,8 @@ class QuasistaticFallingQuality(object):
         """
         self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
         # only fcl supports contiuous collision detection
-        col_checker = orpy.RaveCreateCollisionChecker(self._env, 'fcl')
+        col_checker = orpy.RaveCreateCollisionChecker(self._env, 'fcl_')
+        col_checker.SetCollisionOptions(orpy.CollisionOptions.Contacts | orpy.CollisionOptions.AllGeometryContacts)
         self._env.SetCollisionChecker(col_checker)
         self._placement_volume = None
         self._body = None
@@ -595,11 +627,14 @@ class QuasistaticFallingQuality(object):
         self._body_radius = None
         self._parameters = {
             "max_iterations": 100,
+            "collision_step_size": 0.01,
+            "rot_step_size": 0.01,
+            "minimal_chull_distance": 0.0,
         }
 
     def compute_quality(self, pose, return_terms=False):
         """
-            Compute the placement quality for the given pose. 
+            Compute the placement quality for the given pose.
             The larger the returned value, the more suitable a pose is for placement.
             Note that this function is merely a heuristic.
             ---------
@@ -625,43 +660,92 @@ class QuasistaticFallingQuality(object):
         assert(self._link is not None)
         assert(self._placement_volume is not None)
         # TODO implement me
-        iterations = 0
+        # iterations = 0
         b_at_rest = False
-        contact_state = 0  # 0 - free fall, 1 - point contact, 2 - line contact, 3 - planar contact
-        report = orpy.ContinuousCollisionReport()
+        ccd_report = orpy.ContinuousCollisionReport()
+        dcd_report = orpy.CollisionReport()
         self._body.SetTransform(pose)
         acc_distance = 0.0
         acc_rotation = 0.0
-        while iterations < self._parameters["max_iterations"] and not b_at_rest:
+        # while iterations < self._parameters["max_iterations"] and not b_at_rest:
+        while not b_at_rest:  # TODO need to have some maximum iterations here or some other guard
             current_tf = self._body.GetTransform()
-            if contact_state == 0:  # free fall
+            b_collision = self._env.CheckCollision(self._body, dcd_report)
+            if not b_collision:
                 # translate along z axis downwards until first contact
                 target_tf = self._body.GetTransform()
-                target_tf[3, 3] = self._placement_volume[0][3] + self._body_radius
-                b_contact = self._env.CheckContinuousCollision(self._link, target_tf, report)
+                target_tf[2, 3] = self._placement_volume[0][2] - self._body_radius
+                b_contact = self._env.CheckContinuousCollision(self._link, target_tf, ccd_report)
                 if not b_contact:
                     if return_terms:
                         return float('-inf'), False, float('inf'), float('inf'), float('inf')
                     return float('-inf')
-                contact_quat_pose = report.vCollisions[0][1]
+                contact_quat_pose = ccd_report.vCollisions[0][1]
                 acc_distance += np.linalg.norm(contact_quat_pose[4:] - current_tf[:3, 3])
-                self._body.SetTransform(orpy.matrixFromQuat(contact_quat_pose))
-                contact_state = self._compute_contact_state(report)
-            elif contact_state == 1:  # we have a single point contact
-                # TODO implement what to do in case of a single contact
-            elif contact_state == 2:  # we have a line contact
-                # TODO implement this
-            elif contact_state == 3:  # we have plane contact
-                # TODO compute convex hull of projected contact points
-                # TODO determine stability
-            iterations += 1
-        pass
+                new_tf = orpy.matrixFromQuat(contact_quat_pose[:4])
+                new_tf[:3, 3] = contact_quat_pose[4:]
+                self._body.SetTransform(new_tf)
+            else:
+                contacts = np.array([[ct.pos, ct.norm]
+                                     for ct in dcd_report.contacts]).reshape((len(dcd_report.contacts), 6))
+                rot_axis, rot_point, b_at_rest = self._compute_rotation_dir(contacts)
+                if not b_at_rest:
+                    acc_rotation += self._parameters["rot_step_size"]
+                    # rotate, TODO cache rotation matrix?
+                    tf_rot_frame = transformations.rotation_matrix(
+                        self._parameters["rot_step_size"], rot_axis, rot_point)
+                    self._body.SetTransform(np.dot(tf_rot_frame, current_tf))
+        if return_terms:
+            return 0.0, b_at_rest, acc_distance, acc_rotation, 0.0  # TODO return correct values
+        return 0.0  # TODO return correct values
+        #     contact_state, contacts = self._compute_contact_state(new_contacts)
+        #     new_contacts = None
+        #     if contact_state == 0:  # free fall
+        #         print "Free fall"
+        #         # translate along z axis downwards until first contact
+        #         target_tf = self._body.GetTransform()
+        #         target_tf[2, 3] = self._placement_volume[0][2] - self._body_radius
+        #         b_contact = self._env.CheckContinuousCollision(self._link, target_tf, report)
+        #         if not b_contact:
+        #             if return_terms:
+        #                 return float('-inf'), False, float('inf'), float('inf'), float('inf')
+        #             return float('-inf')
+        #         contact_quat_pose = report.vCollisions[0][1]
+        #         acc_distance += np.linalg.norm(contact_quat_pose[4:] - current_tf[:3, 3])
+        #         new_tf = orpy.matrixFromQuat(contact_quat_pose[:4])
+        #         new_tf[:3, 3] = contact_quat_pose[4:]
+        #         self._body.SetTransform(new_tf)
+        #     elif contact_state == 1:  # we have a single point contact
+        #         # TODO implement what to do in case of a single contact
+        #         print "Single point contact!"
+        #         # compute rotation axis
+        #         com = self._body.GetCenterOfMass()
+        #         rot_center = np.mean(contacts[:, :3], axis=0)
+        #         rot_axis = np.cross(com - rot_center, grav_dir)
+        #         rot_axis /= np.linalg.norm(rot_axis)
+        #         # TODO rotate around rot_axis until contact state changes
+        #         new_contacts = self._rotate_until_new_contact_state(rot_axis, rot_center, np.pi, contacts)
+        #     elif contact_state == 2:  # we have a line contact
+        #         print "Single line contact!"
+        #         # TODO implement this
+        #         # TODO rotation axis is the direction of the line contact
+        #         # TODO rotation center any point on this line
+        #         # TODO rotate around rot_axis until contact state changes
+        #     elif contact_state == 3:  # we have plane contact
+        #         print "Planar contact!"
+        #         # TODO compute convex hull of projected contact points
+        #         # TODO compute signed distance of projected center of mass
+        #         # TODO if proj com not in contact polygon, rot axis is closest axis
+        #         # TODO rot_center any point on this axis
+        #         # TODO rotate around rot_axis until contact state changes
+        #     iterations += 1
+        # pass
 
     def set_target_object(self, body, model_name=None):
         """
-            Set the target object. 
+            Set the target object.
             Synchronizes the underlying OpenRAVE environment with the environment of the given body.
-            If the environment of the body has more kinbodies than the underlying environment, 
+            If the environment of the body has more kinbodies than the underlying environment,
             a RuntimeError is thrown. This is due to a bug in OpenRAVE, that doesn't allow
             us to load additional kinbodies into any environment after a viewer has been set.
             ---------
@@ -698,16 +782,186 @@ class QuasistaticFallingQuality(object):
                         raise RuntimeError("Could not find body with name " + body.GetName() + " in cloned environment")
                     my_body.SetTransform(body.GetTransform())
 
-    def _compute_contact_state(self):
+    def _compute_rotation_dir(self, contacts):
         """
-            Compute the contact state of the current pose of self._body.
+            Compute the rotation direction for the body at its current pose given the contacts.
+            ---------
+            Arguments
+            ---------
+            contacts, numpy array of shape (n, 6) - n > 0 contacts in shape [x, y, z, nx, ny, nz]
+            -------
+            Returns
+            -------
+            rot_axis, numpy array of shape (3,) or None - axis in world frame to rotate body around
+            rot_point, numpy array of shape (3,) or None - rotation center in world frame
+            b_at_rest, bool - whether the body is at rest or not. If at rest, rot_axis and rot_point are None
         """
-        report = orpy.CollisionReport()
-        report.options = orpy.AllGeometryContacts
-        b_collision = self._env.CheckCollision(self._body, report)
-        # TODO CheckCollision does not seem to work properly -> debug it
-        # TODO implement decision making based on found contacts
-        # TODO return contacts as well
+        assert(contacts.shape[0] > 0)
+        com = self._body.GetCenterOfMass()
+        grav_dir = np.array([0, 0, -1.0])
+        support_shape = 0  # 0 if point, 1 if line, 2 if planar
+        if contacts.shape[0] == 1:
+            support_shape = 0
+        else:  # at least two contacts
+            normalized_contacts = contacts[:, :3] - np.mean(contacts[:, :3], axis=0)
+            _, s, v = np.linalg.svd(normalized_contacts)
+            std_dev = s[1] / np.sqrt(contacts.shape[0])
+            if std_dev <= 5e-3:  # line or a point
+                std_dev = s[0] / np.sqrt(contacts.shape[0])
+                if std_dev <= 5e-3:  # we essentially have a point contact
+                    support_shape = 0
+                else:  # the support has a line shape
+                    support_shape = 1
+            else:
+                support_shape = 2  # the contacts span a plane
+        if support_shape == 0:  # the contacts form a point
+            rot_center = np.mean(contacts[:, :3], axis=0)
+            rot_axis = np.cross(com - rot_center, grav_dir)
+            rot_axis /= np.linalg.norm(rot_axis)
+            return rot_axis, rot_center, False
+        elif support_shape == 1:  # the contacts span a line
+            line_dir = v[0]
+            start_point = contacts[np.argmin(np.dot(normalized_contacts, line_dir)), :3]
+            end_point = contacts[np.argmax(np.dot(normalized_contacts, line_dir)), :3]
+            rot_axis, rot_center = self._compute_rotation_dir_line(start_point, end_point, com)
+            return rot_axis, rot_center, False
+        else:  # contacts span a plane
+            convex_hull = scipy.spatial.ConvexHull(contacts[:, :2])
+            dist, edge_id = compute_hull_distance(convex_hull, com[:2])
+            if dist < self._parameters["minimal_chull_distance"]:
+                return None, None, True
+            start_point = contacts[convex_hull.simplices[edge_id][0]][:3]
+            end_point = contacts[convex_hull.simplices[edge_id][1]][:3]
+            rot_axis, rot_center = self._compute_rotation_dir_line(start_point, end_point, com)
+            return rot_axis, rot_center, False
+
+            # def _compute_contact_state(self, contacts=None):
+            #     """
+            #         Compute the contact state of the current pose of self._body.
+            #         ---------
+            #         Arguments
+            #         ---------
+            #         contacts, numpy array of shape (n, 6) (optional) - Matrix of n contacts of shape [x, y, z, nx, ny, nz].
+            #             If provided, the contact state is computed from these contacts, else a collision check is performed
+            #             for the current pose of self._body.
+            #         -------
+            #         Returns
+            #         -------
+            #         contact_state, int - 0: free fall, 1: point contact, 2: line contact, 3: planar contact
+            #         contacts, numpy array of shape (n, 6) - all n contacts detected using OpenRAVE's collision detection.
+            #             Each row represents one contact as [x, y, z, nx, ny, nz]
+            #     """
+            #     if contacts is None:
+            #         report = orpy.CollisionReport()
+            #         b_collision = self._env.CheckCollision(self._body, report)
+            #         contacts = np.array([[ct.pos, ct.norm] for ct in report.contacts]).reshape((len(report.contacts), 6))
+            #     else:
+            #         b_collision = True
+            #     if not b_collision:
+            #         return 0, contacts
+            #     if contacts.shape[0] == 1:
+            #         return 1, contacts
+            #     if contacts.shape[0] == 2:
+            #         return 2, contacts
+            #     # we have at least three contacts, so we need to compute svd to see whether they span a plane
+            #     mean_point = np.mean(contacts[:, :3], axis=0)
+            #     normalized_contacts = contacts[:, :3] - mean_point
+            #     _, s, v = np.linalg.svd(normalized_contacts)
+            #     std_dev = s[1] / np.sqrt(contacts.shape[0])
+            #     if std_dev <= 5e-3:  # we have a planar contact if the std deviation along the snd eigen vector is large enough
+            #         std_dev = s[0] / np.sqrt(contacts.shape[0])  # we might essentially have a point contact
+            #         if std_dev <= 5e-3:
+            #             return 1, contacts
+            #         return 2, contacts
+            #     return 3, contacts
+
+            # def _rotate_until_new_contact_state(self, rot_axis, rot_point, max_rotation,
+            #                                     initial_contacts, step_size=0.01):
+            #     """
+            #         Rotates the body around the given axis located at the given point until
+            #         the contact state of the body has changed, i.e. a new set of contacts have reached
+            #         or the maximal rotation was exceeded.
+            #         ---------
+            #         Arguments
+            #         ---------
+            #         rot_axis, numpy array of shape (3,) - rotation axis in world frame
+            #         rot_point, numpy array of shape (3,) - center of rotation in world frame
+            #         max_rotation, float - maximum angle in radians to rotate
+            #         initial_contacts, numpy array of shape (n, 6) - initial contact points
+            #         -------
+            #         Returns
+            #         -------
+            #         ????
+            #     """
+            #     report = orpy.CollisionReport()
+            #     tf_rot_frame = transformations.rotation_matrix(step_size, rot_axis, rot_point)
+            #     num_previous_contacts = initial_contacts.shape[0]
+            #     for i in xrange(int(np.ceil(max_rotation / step_size))):
+            #         tf = np.dot(tf_rot_frame, self._body.GetTransform())
+            #         self._body.SetTransform(tf)
+            #         # get contacts
+            #         b_collision = self._env.CheckCollision(self._body, report)
+            #         assert(b_collision)
+            #         handles = self._visualize_contacts(report.contacts)
+            #         # if not b_collision:
+            #         #     return 0, np.array([])
+            #         if len(report.contacts) > num_previous_contacts:
+            #             # we reached a new contact state
+            #             new_contacts = np.array([[ct.pos, ct.norm] for ct in report.contacts]
+            #                                     ).reshape((len(report.contacts), 6))
+            #             return new_contacts
+            #         else:
+            #             num_previous_contacts = len(report.contacts)
+            #     return None  # TODO think about whether this can ever occur and what the function should do
+
+    @staticmethod
+    def _compute_rotation_dir_line(start, end, com):
+        """
+            Compute the rotation axis given that the provided line is the line of contacts
+            the object tips over.
+            ---------
+            Arguments
+            ---------
+            start, numpy array of shape (3,) - start point of the line
+            end, numpy array of shape (3,) - end point of the line
+            com, numpy array of shape (3,) - center of mass
+            -------
+            Returns
+            -------
+            rot_axis, numpy array of shape (3,) - rotation axis
+            rot_center, numpy array of shape (3,) - center of rotation
+        """
+        proj_start = start[:2]
+        proj_end = end[:2]
+        _, _, t = compute_closest_point_on_line(proj_start, proj_end, com[:2])
+        grav_dir = np.array([0, 0, -1.0])
+        if t == 0.0:
+            rot_center = start
+            rot_axis = np.cross(com - rot_center, grav_dir)
+            rot_axis /= np.linalg.norm(rot_axis)
+            return rot_axis, rot_center
+        if t == 1.0:
+            rot_center = end
+            rot_axis = np.cross(com - rot_center, grav_dir)
+            rot_axis /= np.linalg.norm(rot_axis)
+            return rot_axis, rot_center
+        # TODO the rotation axis is start - end, but the direction matters.
+        # TODO is there a smarter way to compute it?
+        rot_center = start + t * (end - start)
+        rot_axis = np.cross(com - rot_center, grav_dir)
+        return rot_axis, start
+
+    def _visualize_contacts(self, contacts, arrow_length=0.01, arrow_width=0.0001):
+        handles = []
+        for contact in contacts:
+            if type(contact) == np.ndarray:
+                p1 = contact[:3]
+                p2 = contact[:3] + arrow_length * contact[3:]
+            else:
+                p1 = contact.pos
+                p2 = p1 + arrow_length * contact.norm
+            handles.append(self._env.drawarrow(p1, p2, arrow_width))
+        return handles
 
 
 class PlacementHeuristic(object):
@@ -986,7 +1240,7 @@ class SE3Hierarchy(object):
 
         def get_bounds(self):
             """
-                Return workspace range represented by this node. 
+                Return workspace range represented by this node.
                 -------
                 Returns
                 -------
@@ -1059,7 +1313,7 @@ class PlacementGoalPlanner(GoalHierarchy):
     """
     class PlacementResult(GoalHierarchy.GoalHierarchyNode):
         """
-            Represents the result of a placement call. 
+            Represents the result of a placement call.
             See GoalHierarhcy.GoalHierarchyNode in sampler module for docs.
         """
 
@@ -1270,8 +1524,8 @@ class PlacementGoalPlanner(GoalHierarchy):
                 If a robot interface is set, this will also set an arm configuration for the result, if possible.
             """
             if self.robot_interface:
-                plcmt_result.configuration, plcmt_result._valid =\
-                    self.robot_interface.check_arm_ik(plcmt_result.obj_pose)
+                plcmt_result.configuration, plcmt_result._valid = self.robot_interface.check_arm_ik(
+                    plcmt_result.obj_pose)
             else:
                 # TODO could/should cache this value
                 plcmt_result._valid = self.collision_cost(plcmt_result.obj_pose) > 0.0
@@ -1279,8 +1533,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             if plcmt_result._valid and plcmt_result.is_leaf():
                 # TODO could/should cache this value
                 # TODO this is specific to the simple placement heuristic
-                obj_val, falling_distance, chull_distance, alpha, gamma = \
-                    self.objective_fn(plcmt_result.obj_pose, True)
+                obj_val, falling_distance, chull_distance, alpha, gamma = self.objective_fn(plcmt_result.obj_pose, True)
                 plcmt_result._bgoal = falling_distance < self._parameters['max_falling_distance'] and \
                     chull_distance < self._parameters['min_chull_distance'] and \
                     alpha < self._parameters['max_slope_angle'] and \
@@ -1395,7 +1648,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             Arguments
             ---------
             obj_name, string - the name of the object
-            grasp_tf, numpy array of shape (4, 4) - transformation matrix from object frame to end-effector frame, 
+            grasp_tf, numpy array of shape (4, 4) - transformation matrix from object frame to end-effector frame,
                 describing the pose of the object relative to the eef
             grasp_config, numpy array of shape (d_h,) - grasp configuration of the gripper/hand
             model_id, string (optional) - Name of the model data. If None, it is assumed to be identical to obj_id

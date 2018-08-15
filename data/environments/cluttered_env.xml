@@ -38,6 +38,7 @@
 
     <KinBody name="crayola">
         <Translation>-0.16 0.78 1.0</Translation>
+        <!-- <RotationAxis>0 0 1 20</RotationAxis> -->
         <Body type="dynamic">
             <Geom type="trimesh">
                 <Data>../crayola/objectModel.ply</Data>
