@@ -42,10 +42,13 @@ SDF_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data
 #     exec_code = "bunny_octree.compute_intersection(scene_sdf)"
 #     print timeit.timeit(stmt=exec_code, setup=setup_code, number=1000) / 1000
 #     print "Done"
+
+
 def draw_volume(env, volume):
     return env.drawbox(0.5 * (volume[:3] + volume[3:]), 0.5 * (volume[3:] - volume[:3]), np.array([0.3, 0.3, 0.3, 0.3]))
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     env = orpy.Environment()
     env.Load(ENV_PATH)
     env.SetViewer('qtcoin')
@@ -53,12 +56,12 @@ if __name__=="__main__":
     scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=[robot_name, 'bunny', 'crayola', 'stick'])
     if os.path.exists(SDF_PATH):
         scene_sdf.load(SDF_PATH)
-        # volume = np.array([-0.6, 0.3, 0.5, 0.7, 1.2, 1.0])
-        # sdf_vis = sdf_module.ORSDFVisualization(env)
-        # sdf_vis.visualize(scene_sdf, volume, resolution=0.01, max_sat_value=0.4, style='sprites')
+        volume = np.array([-0.6, 0.3, 0.3, 0.7, 1.2, 0.8])
+        sdf_vis = sdf_module.ORSDFVisualization(env)
+        sdf_vis.visualize(scene_sdf, volume, resolution=0.01, max_sat_value=0.4, style='sprites')
     else:
         # volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
-        volume = np.array([-0.6, 0.3, 0.5, 0.7, 1.2, 1.0])
+        volume = np.array([-0.6, 0.3, 0.3, 0.7, 1.2, 0.8])
     # placement_volume = (np.array([-0.35, 0.55, 0.64]), np.array([0.53, 0.9, 0.75]))
         handle = draw_volume(env, volume)
         resolution = 0.005

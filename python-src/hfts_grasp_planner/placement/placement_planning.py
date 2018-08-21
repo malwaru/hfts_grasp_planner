@@ -619,8 +619,11 @@ class QuasistaticFallingQuality(object):
         self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
         # only fcl supports contiuous collision detection
         col_checker = orpy.RaveCreateCollisionChecker(self._env, 'fcl_')
-        col_checker.SetCollisionOptions(orpy.CollisionOptions.Contacts | orpy.CollisionOptions.AllGeometryContacts)
+        col_checker.SetCollisionOptions(orpy.CollisionOptions.Contacts |
+                                        orpy.CollisionOptions.AllGeometryContacts | orpy.CollisionOptions.AllLinkCollisions)
         self._env.SetCollisionChecker(col_checker)
+        orpy.RaveSetDebugLevel(orpy.DebugLevel.Debug)
+        self._env.SetDebugLevel(orpy.DebugLevel.Debug)
         self._placement_volume = None
         self._body = None
         self._link = None
@@ -659,7 +662,6 @@ class QuasistaticFallingQuality(object):
         assert(self._body is not None)
         assert(self._link is not None)
         assert(self._placement_volume is not None)
-        # TODO implement me
         # iterations = 0
         b_at_rest = False
         ccd_report = orpy.ContinuousCollisionReport()
@@ -698,48 +700,6 @@ class QuasistaticFallingQuality(object):
         if return_terms:
             return 0.0, b_at_rest, acc_distance, acc_rotation, 0.0  # TODO return correct values
         return 0.0  # TODO return correct values
-        #     contact_state, contacts = self._compute_contact_state(new_contacts)
-        #     new_contacts = None
-        #     if contact_state == 0:  # free fall
-        #         print "Free fall"
-        #         # translate along z axis downwards until first contact
-        #         target_tf = self._body.GetTransform()
-        #         target_tf[2, 3] = self._placement_volume[0][2] - self._body_radius
-        #         b_contact = self._env.CheckContinuousCollision(self._link, target_tf, report)
-        #         if not b_contact:
-        #             if return_terms:
-        #                 return float('-inf'), False, float('inf'), float('inf'), float('inf')
-        #             return float('-inf')
-        #         contact_quat_pose = report.vCollisions[0][1]
-        #         acc_distance += np.linalg.norm(contact_quat_pose[4:] - current_tf[:3, 3])
-        #         new_tf = orpy.matrixFromQuat(contact_quat_pose[:4])
-        #         new_tf[:3, 3] = contact_quat_pose[4:]
-        #         self._body.SetTransform(new_tf)
-        #     elif contact_state == 1:  # we have a single point contact
-        #         # TODO implement what to do in case of a single contact
-        #         print "Single point contact!"
-        #         # compute rotation axis
-        #         com = self._body.GetCenterOfMass()
-        #         rot_center = np.mean(contacts[:, :3], axis=0)
-        #         rot_axis = np.cross(com - rot_center, grav_dir)
-        #         rot_axis /= np.linalg.norm(rot_axis)
-        #         # TODO rotate around rot_axis until contact state changes
-        #         new_contacts = self._rotate_until_new_contact_state(rot_axis, rot_center, np.pi, contacts)
-        #     elif contact_state == 2:  # we have a line contact
-        #         print "Single line contact!"
-        #         # TODO implement this
-        #         # TODO rotation axis is the direction of the line contact
-        #         # TODO rotation center any point on this line
-        #         # TODO rotate around rot_axis until contact state changes
-        #     elif contact_state == 3:  # we have plane contact
-        #         print "Planar contact!"
-        #         # TODO compute convex hull of projected contact points
-        #         # TODO compute signed distance of projected center of mass
-        #         # TODO if proj com not in contact polygon, rot axis is closest axis
-        #         # TODO rot_center any point on this axis
-        #         # TODO rotate around rot_axis until contact state changes
-        #     iterations += 1
-        # pass
 
     def set_target_object(self, body, model_name=None):
         """
@@ -797,6 +757,7 @@ class QuasistaticFallingQuality(object):
             b_at_rest, bool - whether the body is at rest or not. If at rest, rot_axis and rot_point are None
         """
         assert(contacts.shape[0] > 0)
+        # handles = self._visualize_contacts(contacts)
         com = self._body.GetCenterOfMass()
         grav_dir = np.array([0, 0, -1.0])
         support_shape = 0  # 0 if point, 1 if line, 2 if planar
@@ -834,85 +795,6 @@ class QuasistaticFallingQuality(object):
             end_point = contacts[convex_hull.simplices[edge_id][1]][:3]
             rot_axis, rot_center = self._compute_rotation_dir_line(start_point, end_point, com)
             return rot_axis, rot_center, False
-
-            # def _compute_contact_state(self, contacts=None):
-            #     """
-            #         Compute the contact state of the current pose of self._body.
-            #         ---------
-            #         Arguments
-            #         ---------
-            #         contacts, numpy array of shape (n, 6) (optional) - Matrix of n contacts of shape [x, y, z, nx, ny, nz].
-            #             If provided, the contact state is computed from these contacts, else a collision check is performed
-            #             for the current pose of self._body.
-            #         -------
-            #         Returns
-            #         -------
-            #         contact_state, int - 0: free fall, 1: point contact, 2: line contact, 3: planar contact
-            #         contacts, numpy array of shape (n, 6) - all n contacts detected using OpenRAVE's collision detection.
-            #             Each row represents one contact as [x, y, z, nx, ny, nz]
-            #     """
-            #     if contacts is None:
-            #         report = orpy.CollisionReport()
-            #         b_collision = self._env.CheckCollision(self._body, report)
-            #         contacts = np.array([[ct.pos, ct.norm] for ct in report.contacts]).reshape((len(report.contacts), 6))
-            #     else:
-            #         b_collision = True
-            #     if not b_collision:
-            #         return 0, contacts
-            #     if contacts.shape[0] == 1:
-            #         return 1, contacts
-            #     if contacts.shape[0] == 2:
-            #         return 2, contacts
-            #     # we have at least three contacts, so we need to compute svd to see whether they span a plane
-            #     mean_point = np.mean(contacts[:, :3], axis=0)
-            #     normalized_contacts = contacts[:, :3] - mean_point
-            #     _, s, v = np.linalg.svd(normalized_contacts)
-            #     std_dev = s[1] / np.sqrt(contacts.shape[0])
-            #     if std_dev <= 5e-3:  # we have a planar contact if the std deviation along the snd eigen vector is large enough
-            #         std_dev = s[0] / np.sqrt(contacts.shape[0])  # we might essentially have a point contact
-            #         if std_dev <= 5e-3:
-            #             return 1, contacts
-            #         return 2, contacts
-            #     return 3, contacts
-
-            # def _rotate_until_new_contact_state(self, rot_axis, rot_point, max_rotation,
-            #                                     initial_contacts, step_size=0.01):
-            #     """
-            #         Rotates the body around the given axis located at the given point until
-            #         the contact state of the body has changed, i.e. a new set of contacts have reached
-            #         or the maximal rotation was exceeded.
-            #         ---------
-            #         Arguments
-            #         ---------
-            #         rot_axis, numpy array of shape (3,) - rotation axis in world frame
-            #         rot_point, numpy array of shape (3,) - center of rotation in world frame
-            #         max_rotation, float - maximum angle in radians to rotate
-            #         initial_contacts, numpy array of shape (n, 6) - initial contact points
-            #         -------
-            #         Returns
-            #         -------
-            #         ????
-            #     """
-            #     report = orpy.CollisionReport()
-            #     tf_rot_frame = transformations.rotation_matrix(step_size, rot_axis, rot_point)
-            #     num_previous_contacts = initial_contacts.shape[0]
-            #     for i in xrange(int(np.ceil(max_rotation / step_size))):
-            #         tf = np.dot(tf_rot_frame, self._body.GetTransform())
-            #         self._body.SetTransform(tf)
-            #         # get contacts
-            #         b_collision = self._env.CheckCollision(self._body, report)
-            #         assert(b_collision)
-            #         handles = self._visualize_contacts(report.contacts)
-            #         # if not b_collision:
-            #         #     return 0, np.array([])
-            #         if len(report.contacts) > num_previous_contacts:
-            #             # we reached a new contact state
-            #             new_contacts = np.array([[ct.pos, ct.norm] for ct in report.contacts]
-            #                                     ).reshape((len(report.contacts), 6))
-            #             return new_contacts
-            #         else:
-            #             num_previous_contacts = len(report.contacts)
-            #     return None  # TODO think about whether this can ever occur and what the function should do
 
     @staticmethod
     def _compute_rotation_dir_line(start, end, com):
@@ -964,14 +846,63 @@ class QuasistaticFallingQuality(object):
         return handles
 
 
-class PlacementHeuristic(object):
+class SimpleGraspCompatibility(object):
     """
-        Implements a heuristic for placement. It consists of two components: a collision cost and a stability cost.
-        The collision cost punishes nodes that are in collision. The stability cost
-        evaluates whether a given node is suitable for releasing an object so that it fall towards a good placement pose.
+        Implements a heuristic to determine the grasp compatibility of an object pose.
+        This heuristic simply punishes poses for which the object would fall towards the palm 
+        of the robot.
     """
 
-    def __init__(self, env, scene_sdf, object_base_path, vol_approx=0.005):
+    def __init__(self, manip):
+        """
+            Create a new instance of SimpleGraspCompatibility.
+            ---------
+            Arguments
+            ---------
+            manip, OpenRAVE manipulator - manipulator used for placing
+        """
+        self._manip = manip
+        self._palm_dir = None  # stores direction pointing away from the palm in object frame
+        self._gravity = np.array([0, 0, -1])
+
+    def set_grasp_info(self, grasp_tf, grasp_config):
+        """
+            Sets information about the grasp of the object.
+            ---------
+            Arguments
+            ---------
+            grasp_tf, numpy array of shape (4,4) - pose of object relative to end-effector (in eef frame)
+            hand_config, numpy array of shape (d_h,) - grasp configuration of the hand
+        """
+        inv_grasp_tf = utils.inverse_transform(grasp_tf)
+        self._palm_dir = np.dot(inv_grasp_tf[:3, :3], self._manip.GetDirection())
+
+    def compute_compatibility(self, pose):
+        """
+            Computes the grasp compatibility for the given pose.
+            ---------
+            Arguments
+            ---------
+            pose, numpy array of shape (4, 4) - pose of the object
+            -------
+            Returns
+            -------
+            val, float - a value representing compatibility. The larger the better.
+        """
+        palm_world_dir = np.dot(pose[:3, :3], self._palm_dir)
+        return np.dot(palm_world_dir, self._gravity)
+
+
+class PlacementHeuristic(object):
+    """
+        Implements a heuristic for placement. It consists of three components: a collision cost, a stability cost and
+        a grasp compatibility cost. The collision cost punishes nodes that are in collision. The stability cost
+        evaluates whether a given node is suitable for releasing an object so that it fall towards a good placement pose.
+        The grasp compatibility cost evalutes whether the robot hand would interfere with placing/dropping the object.
+        The grasp compatibility cost is optional and only active if a manipulator is passed on construction.
+    """
+
+    def __init__(self, env, scene_sdf, object_base_path, robot_name=None, manip_name=None, vol_approx=0.005):
         """
             Creates a new PlacementHeuristic
             ---------
@@ -980,8 +911,9 @@ class PlacementHeuristic(object):
             env, OpenRAVE environment
             scene_sdf, SceneSDF of the environment
             object_base_path, string - path to object files
+            robot_name, string (optional) - name of OpenRAVE robot used to place the object.
+            manip_name, string (optional) - name of OpenRAVE manipulator used to place the object.
         """
-        # self._env = env  # TODO might wanna clone the environment
         self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
         self._obj_name = None
         self._model_name = None
@@ -990,7 +922,18 @@ class PlacementHeuristic(object):
         self._kinbody_octree = None
         filter_io = SimplePlacementQuality.PreferenceFilterIO(object_base_path)
         self._stability_function = SimplePlacementQuality(env, filter_io)  # TODO make settable as parameter
+        if robot_name is not None:
+            robot = self._env.GetRobot(robot_name)
+            if manip_name is None:
+                manip = robot.GetActiveManipulator()
+            else:
+                manip = robot.GetManipulator(manip_name)
+            self._grasp_compatibility = SimpleGraspCompatibility(manip)  # TODO make settable as parameters
+        else:
+            self._grasp_compatibility = None
         self._vol_approx = vol_approx
+        self._grasp_tf = None
+        self._env.SetViewer('qtcoin')  # TODO DELETE ME
 
     def set_target_object(self, obj_name, model_name=None):
         """
@@ -1042,6 +985,15 @@ class PlacementHeuristic(object):
         _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
         return col_val
 
+    def evaluate_grasp_compatibility(self, pose):
+        """
+            Evalute the grasp compatibility cost for the given pose.
+        """
+        if self._grasp_compatibility:
+            self._kinbody.SetTransform(pose)
+            return self._grasp_compatibility.compute_compatibility(self._scene_sdf)
+        return 0.0
+
     def evaluate(self, node):
         """
             Evalutes the objective function for the given node (must be SE3HierarchyNode).
@@ -1054,8 +1006,9 @@ class PlacementHeuristic(object):
         # compute the collision cost for this pose
         col_val = self.evaluate_collision(representative)
         stability_val = self.evaluate_stability(representative)
+        grasp_val = self.evaluate_grasp_compatibility(representative)
         # TODO add weights? different combination of different costs?
-        return stability_val + col_val
+        return stability_val + col_val + grasp_val
 
     @staticmethod
     def is_better(val_1, val_2):
@@ -1063,6 +1016,18 @@ class PlacementHeuristic(object):
             Returns whether val_1 is better than val_2
         """
         return val_1 > val_2
+
+    def set_grasp_info(self, grasp_tf, grasp_config):
+        """
+            Sets information about the grasp of the object.
+            ---------
+            Arguments
+            ---------
+            grasp_tf, numpy array of shape (4,4) - pose of object relative to end-effector (in eef frame)
+            hand_config, numpy array of shape (d_h,) - grasp configuration of the hand
+        """
+        if self._grasp_compatibility:
+            self._grasp_compatibility.set_grasp_info(grasp_tf, grasp_config)
 
 
 class SE3Hierarchy(object):
@@ -1529,6 +1494,8 @@ class PlacementGoalPlanner(GoalHierarchy):
             else:
                 # TODO could/should cache this value
                 plcmt_result._valid = self.collision_cost(plcmt_result.obj_pose) > 0.0
+                # TODO This validity check invalidates valid solutions due to inaccuracies in the collision cost
+                # TODO Could instead just check for collision, which may be problematic, too though
             # compute whether it is a goal
             if plcmt_result._valid and plcmt_result.is_leaf():
                 # TODO could/should cache this value
@@ -1575,7 +1542,10 @@ class PlacementGoalPlanner(GoalHierarchy):
         self._hierarchy = None
         self._root = None
         self._env = env
-        self._placement_heuristic = PlacementHeuristic(env, scene_sdf, base_path)
+        if robot_name and manip_name is None:
+            manip_name = robot_name.GetActiveManipulator().GetName()
+        self._placement_heuristic = PlacementHeuristic(
+            env, scene_sdf, base_path, robot_name=robot_name, manip_name=manip_name)
         self._optimizer = optimization.StochasticOptimizer(self._placement_heuristic)
         robot_interface = None
         if robot_name:
@@ -1614,6 +1584,9 @@ class PlacementGoalPlanner(GoalHierarchy):
         best_node = None
         current_node = hierarchy_node._hierarchy_node
         start_depth = current_node.get_depth()
+        if start_depth + depth_limit > self.get_max_depth():
+            depth_limit = self.get_max_depth() - start_depth
+            logging.warn("Specified depth limit exceeds maximal search depth. Capping search depth.")
         for depth in xrange(start_depth, start_depth + depth_limit):
             logging.debug("Searching for placement pose on depth %i" % depth)
             best_val, best_node = self._optimizer.run(current_node, num_iterations)
@@ -1655,6 +1628,7 @@ class PlacementGoalPlanner(GoalHierarchy):
         """
         self.set_object(obj_name, model_id=model_id)
         self._leaf_stage.set_grasp_info(grasp_tf, grasp_config, obj_name)
+        self._placement_heuristic.set_grasp_info(grasp_tf, grasp_config)
 
     def set_max_iter(self, iterations):
         self._parameters['num_iterations'] = iterations
