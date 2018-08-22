@@ -58,14 +58,12 @@ if __name__ == "__main__":
     #                        [1.00000000e+00,   2.38317910e-07,  -4.89843450e-09, 1.66712295e-01],
     #                        [0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
     time_limit = 60.0
-    sdf_volume = (np.array([-0.6, 0.3, 0.5]), np.array([0.7, 1.2, 1.0]))  # volume to compute sdf in
+    sdf_volume = (np.array([-0.6, 0.3, 0.3]), np.array([0.7, 1.2, 0.8]))
     planner = ipp_module.IntegratedPlacementPlanner(ENV_PATH, SDF_PATH, sdf_volume, DATA_PATH,
                                                     ROBOT_NAME, MANIP_NAME, draw_search_tree=True)
     # set a placement target volume
-    # placement_volume = (np.array([-0.35,  0.45,  0.65]), np.array([0.53,  0.9,  0.75]))  # top of shelf
-    placement_volume = (np.array([-0.35, 0.45, 0.45]), np.array([0.53, 0.9, 0.55]))  # inside shelf
-    # placement_volume = (np.array([0.24, 0.58, 0.73]), np.array([0.29, 0.8, 0.8]))  # volume in small gap
-    planner._env.SetViewer('qtcoin')
+    placement_volume = (np.array([-0.35, 0.45, 0.42]), np.array([0.53, 0.9, 0.64]))  # inside shelf
+    # planner._env.SetViewer('qtcoin')
     handle = draw_volume(planner._env, placement_volume)
     print "Check the placement volume!", placement_volume
     IPython.embed()

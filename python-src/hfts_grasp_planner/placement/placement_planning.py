@@ -933,7 +933,6 @@ class PlacementHeuristic(object):
             self._grasp_compatibility = None
         self._vol_approx = vol_approx
         self._grasp_tf = None
-        self._env.SetViewer('qtcoin')  # TODO DELETE ME
 
     def set_target_object(self, obj_name, model_name=None):
         """
@@ -991,7 +990,7 @@ class PlacementHeuristic(object):
         """
         if self._grasp_compatibility:
             self._kinbody.SetTransform(pose)
-            return self._grasp_compatibility.compute_compatibility(self._scene_sdf)
+            return self._grasp_compatibility.compute_compatibility(pose)
         return 0.0
 
     def evaluate(self, node):
