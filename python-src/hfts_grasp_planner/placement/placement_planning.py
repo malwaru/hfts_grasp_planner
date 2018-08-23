@@ -633,6 +633,7 @@ class QuasistaticFallingQuality(object):
             "collision_step_size": 0.01,
             "rot_step_size": 0.01,
             "minimal_chull_distance": 0.0,
+            "max_sloping_angle": np.pi / 9.0
         }
 
     def compute_quality(self, pose, return_terms=False):
@@ -664,39 +665,54 @@ class QuasistaticFallingQuality(object):
         assert(self._placement_volume is not None)
         # iterations = 0
         b_at_rest = False
+        b_slippage = False
+        b_fell_out_of_volume = False
         ccd_report = orpy.ContinuousCollisionReport()
         dcd_report = orpy.CollisionReport()
         self._body.SetTransform(pose)
         acc_distance = 0.0
         acc_rotation = 0.0
-        # while iterations < self._parameters["max_iterations"] and not b_at_rest:
-        while not b_at_rest:  # TODO need to have some maximum iterations here or some other guard
+        # TODO this procedure does not make sense when the body is initially in contact
+        while not b_at_rest:
             current_tf = self._body.GetTransform()
-            b_collision = self._env.CheckCollision(self._body, dcd_report)
-            if not b_collision:
+            # TODO check if current_tf is still within placement volume
+            self._env.CheckCollision(self._body, dcd_report)
+            # get contacts from collision report
+            contacts = np.array([[ct.pos, ct.norm]
+                                 for ct in dcd_report.contacts]).reshape((len(dcd_report.contacts), 6))
+            # classify contacts in supporting contacts (compensating gravity), sliding contacts and others
+            sup_contacts, sliding_contacts, other_contacts = self._classify_contacts(contacts)
+            # if we have no supporting contacts, the body may be sliding
+            if sup_contacts.shape[0] == 0 and sliding_contacts.shape[0] > 0:  # slippage
+                b_slippage = True
+                break
+            elif sup_contacts.shape[0] == 0:  # the object is falling
                 # translate along z axis downwards until first contact
                 target_tf = self._body.GetTransform()
                 target_tf[2, 3] = self._placement_volume[0][2] - self._body_radius
                 b_contact = self._env.CheckContinuousCollision(self._link, target_tf, ccd_report)
                 if not b_contact:
-                    if return_terms:
-                        return float('-inf'), False, float('inf'), float('inf'), float('inf')
-                    return float('-inf')
+                    b_fell_out_of_volume = True
+                    break
                 contact_quat_pose = ccd_report.vCollisions[0][1]
                 acc_distance += np.linalg.norm(contact_quat_pose[4:] - current_tf[:3, 3])
                 new_tf = orpy.matrixFromQuat(contact_quat_pose[:4])
                 new_tf[:3, 3] = contact_quat_pose[4:]
                 self._body.SetTransform(new_tf)
-            else:
-                contacts = np.array([[ct.pos, ct.norm]
-                                     for ct in dcd_report.contacts]).reshape((len(dcd_report.contacts), 6))
-                rot_axis, rot_point, b_at_rest = self._compute_rotation_dir(contacts)
+            else:  # the object may rotate or is at rest
+                rot_axis, rot_point, b_at_rest = self._compute_rotation(sup_contacts, sliding_contacts, other_contacts)
                 if not b_at_rest:
                     acc_rotation += self._parameters["rot_step_size"]
                     # rotate, TODO cache rotation matrix?
                     tf_rot_frame = transformations.rotation_matrix(
                         self._parameters["rot_step_size"], rot_axis, rot_point)
                     self._body.SetTransform(np.dot(tf_rot_frame, current_tf))
+
+        if b_fell_out_of_volume or b_slippage:
+            # TODO decide what to return in these cases
+            if return_terms:
+                return float('-inf'), False, float('inf'), float('inf'), float('inf')
+            return float('-inf')
         if return_terms:
             return 0.0, b_at_rest, acc_distance, acc_rotation, 0.0  # TODO return correct values
         return 0.0  # TODO return correct values
@@ -742,9 +758,9 @@ class QuasistaticFallingQuality(object):
                         raise RuntimeError("Could not find body with name " + body.GetName() + " in cloned environment")
                     my_body.SetTransform(body.GetTransform())
 
-    def _compute_rotation_dir(self, contacts):
+    def _classify_contacts(self, contacts):
         """
-            Compute the rotation direction for the body at its current pose given the contacts.
+            Classify the given contacts into supporting contacts, sliding contacts and others.
             ---------
             Arguments
             ---------
@@ -752,15 +768,87 @@ class QuasistaticFallingQuality(object):
             -------
             Returns
             -------
+            sup_contacts, numpy array of shape (n_1, 6) - n_1 >= 0 contacts that support the weight of the object,
+                i.e. stop it from falling
+            sliding_contacts, numpy array of shape (n_2, 6) - n_2 >= 0 contacts that are supporting, but the object will likely
+                slide downwards, e.g. contacts on a steep slope
+            other_contacts, numpy array of shape (n_3, 6) - n_3 >= 0 contacts that are neither supporting nor sliding. It is
+                n = n_1 + n_2 + n_3
+        """
+        normal_dot_products = np.dot(contacts[:, 3:], np.array([0.0, 0.0, 1.0]))
+        sup_contacts_idx = normal_dot_products >= np.cos(self._parameters["max_sloping_angle"])
+        sup_contacts = contacts[sup_contacts_idx]
+        sliding_contacts_idx = np.logical_and(normal_dot_products > 0, np.logical_not(sup_contacts_idx))
+        sliding_contacts = contacts[sliding_contacts_idx]
+        other_contacts = contacts[np.logical_and(np.logical_not(
+            sup_contacts_idx), np.logical_not(sliding_contacts_idx))]
+        return sup_contacts, sliding_contacts, other_contacts
+
+    def _compute_rotation(self, sup_contacts, sliding_contacts, other_contacts):
+        """
+            Compute the rotation direction for the body at its current pose given the contacts.
+            ---------
+            Arguments
+            ---------
+            contacts, numpy array of shape (n_1, 6) - n_1 > 0 supporting contacts in shape [x, y, z, nx, ny, nz]
+            sliding_contacts, numpy array of shape (n_2, 6) - n_2 >= 0 sliding contacts in shape [x, y, z, nx, ny, nz]
+            other_contacts, numpy array of shape (n_3, 6) - n_3 >= 0 other contacts in shape [x, y, z, nx, ny, nz]
+            -------
+            Returns
+            -------
             rot_axis, numpy array of shape (3,) or None - axis in world frame to rotate body around
             rot_point, numpy array of shape (3,) or None - rotation center in world frame
             b_at_rest, bool - whether the body is at rest or not. If at rest, rot_axis and rot_point are None
         """
+        b_at_rest, b_has_rotation = False, False
+        rot_axis, rot_point = None, None
+        support_shape = 0  # initially we assume we have a point contact
+        chull = None
+        active_contacts = sup_contacts
+        assert(active_contacts.shape[0] > 0)
+        if sliding_contacts.shape[0] > 0 and other_contacts.shape[0] > 0:
+            inactive_contacts = np.concatenate((sliding_contacts, other_contacts))
+        elif sliding_contacts.shape[0] > 0:
+            inactive_contacts = sliding_contacts
+        else:
+            inactive_contacts = other_contacts
+        prev_hull_points = None  # boundary of the convex hull in the previous iteration
+        new_active_contacts = sup_contacts  # contacts that became active in this iteration
+        while not b_at_rest and not b_has_rotation:
+            # first compute what type of support shape we have, unless we already know we have planar contact
+            if support_shape != 2:
+                support_shape, line_start, line_end = self._characterize_support_shape(active_contacts)
+            if support_shape == 2:  # if we have planar support, compute the convex hull
+                if prev_hull_points is not None:  # if we have the boundary of a previous convex hull, reuse it
+                    assert(new_active_contacts.shape[0] > 0)
+                    active_contacts = np.concatenate((prev_hull_points, new_active_contacts))
+                    chull = scipy.spatial.ConvexHull(active_contacts[:, :2])
+                    prev_hull_points = active_contacts[chull.vertices]  # TODO could we only use active_cotnacts?
+                else:
+                    # build a convex hull from scratch
+                    chull = scipy.spatial.ConvexHull(active_contacts[:, :2])
+                    prev_hull_points = active_contacts[chull.vertices]
+                rot_axis, rot_point = self._compute_rotation_dir(support_shape, active_contacts, chull)
+            else:  # we have a line or point contact
+                rot_axis, rot_point = self._compute_rotation_dir(support_shape, active_contacts, (line_start, line_end))
+            if rot_axis is not None:
+                # we have a rotation axis, so let's compute whether there any opposing contacts that become active now
+                new_active_contacts, inactive_contacts = self._compute_opposing_contacts(
+                    inactive_contacts, rot_axis, rot_point)
+                if new_active_contacts.shape[0] > 0:  # do we have new active contacts?
+                    active_contacts = np.concatenate((active_contacts, new_active_contacts))
+                else:
+                    # if there are no opposing contacts, we can rotate
+                    b_has_rotation = True
+            else:
+                b_at_rest = True
+        return rot_axis, rot_point, b_at_rest
+
+    def _characterize_support_shape(self, contacts):
         assert(contacts.shape[0] > 0)
         # handles = self._visualize_contacts(contacts)
-        com = self._body.GetCenterOfMass()
-        grav_dir = np.array([0, 0, -1.0])
         support_shape = 0  # 0 if point, 1 if line, 2 if planar
+        start_point, end_point = None, None
         if contacts.shape[0] == 1:
             support_shape = 0
         else:  # at least two contacts
@@ -773,28 +861,97 @@ class QuasistaticFallingQuality(object):
                     support_shape = 0
                 else:  # the support has a line shape
                     support_shape = 1
+                    line_dir = v[0]
+                    start_point = contacts[np.argmin(np.dot(normalized_contacts, line_dir)), :3]
+                    end_point = contacts[np.argmax(np.dot(normalized_contacts, line_dir)), :3]
             else:
                 support_shape = 2  # the contacts span a plane
+        return support_shape, start_point, end_point
+
+    def _compute_opposing_contacts(self, contacts, rot_axis, rot_point):
+        """
+            Compute the contacts that oppose a rotation around the given rotation axis.
+            ---------
+            Arguments
+            ---------
+            contacts, numpy array of shape (m, 6) - m number of contacts
+            rot_axis, numpy array of shape (3,) - axis in world frame
+            rot_point, numpy array of shape (3,) - center of rotation in world frame
+            --------
+            Returns
+            --------
+            opposing contacts, numpy array of shape (k, 6)
+            non-opposing contacts, numpy array of shape (m-k, 6)
+        """
+        if contacts.shape[0] == 0:
+            return np.empty((0, 6)), contacts
+        rel_positions = contacts[:, :3] - rot_point
+        motion_dirs = np.cross(rot_axis, rel_positions)
+        norms = np.linalg.norm(motion_dirs, axis=1)
+        motion_dirs /= norms[:, np.newaxis]
+        dps = np.sum(motion_dirs * contacts[:, 3:], axis=1)
+        opposing_contact_idx = dps < -1e-4
+        opposing_contacts = contacts[opposing_contact_idx]
+        if opposing_contacts.shape[0] == 0:
+            return opposing_contacts, contacts
+        # some contacts may be on top of the object preventing it from tipping. These we need to mirror around the
+        # center of mass of the object so that we can take them into account when computing the support plane.
+        # These contact points have the property that they are on the opposite side of the plane spanned
+        # by the rotation axis and the z-axis than the center of mass of the object.
+        # first compute the normal of this plane
+        plane_normal = np.cross(rot_axis, np.array([0, 0, 1]))
+        plane_normal /= np.linalg.norm(plane_normal)
+        com = self._body.GetCenterOfMass()
+        rel_com = com - rot_point
+        # the center of mass should always be on the side where we rotate to
+        assert(np.dot(plane_normal, rel_com) > 0.0)
+        # so we need to flip the contacts on the other side of the plane
+        contacts_to_flip_idx = np.dot(rel_positions[opposing_contact_idx], plane_normal) < -1e-4
+        if contacts_to_flip_idx.any():
+            # do the flipping: c_pos = com - (c_pos - com)
+            opposing_contacts[contacts_to_flip_idx][:, :3] = 2.0 * com - opposing_contacts[contacts_to_flip_idx][:, :3]
+            opposing_contacts[contacts_to_flip_idx][:, 3:] *= -1.0
+        return opposing_contacts, contacts[np.logical_not(opposing_contact_idx)]
+
+    def _compute_rotation_dir(self, support_shape, contacts, data):
+        """
+            Compute the rotation direction for the body at its current pose given the contacts.
+            ---------
+            Arguments
+            ---------
+            support_shape, int - 0 = point contact, 1 = line contact, 2 = planar contact
+            contacts, numpy array of shape (n, 6) - n > 0 contacts in shape [x, y, z, nx, ny, nz]
+            data, varying - if support_shape == 0: None. 
+                            if support_shape == 1:
+                                a tuple (start_point, end_point) describing the line
+                            if support_shape == 2:
+                                ConvexHull of the 2d projection of the given contacts
+            -------
+            Returns
+            -------
+            rot_axis, numpy array of shape (3,) or None - axis in world frame to rotate body around
+            rot_point, numpy array of shape (3,) or None - rotation center in world frame
+            Both values are None, if the object is placed stably
+        """
+        com = self._body.GetCenterOfMass()
+        grav_dir = np.array([0, 0, -1.0])
         if support_shape == 0:  # the contacts form a point
             rot_center = np.mean(contacts[:, :3], axis=0)
             rot_axis = np.cross(com - rot_center, grav_dir)
             rot_axis /= np.linalg.norm(rot_axis)
-            return rot_axis, rot_center, False
+            return rot_axis, rot_center
         elif support_shape == 1:  # the contacts span a line
-            line_dir = v[0]
-            start_point = contacts[np.argmin(np.dot(normalized_contacts, line_dir)), :3]
-            end_point = contacts[np.argmax(np.dot(normalized_contacts, line_dir)), :3]
-            rot_axis, rot_center = self._compute_rotation_dir_line(start_point, end_point, com)
-            return rot_axis, rot_center, False
+            rot_axis, rot_center = self._compute_rotation_dir_line(data[0], data[1], com)
+            return rot_axis, rot_center
         else:  # contacts span a plane
-            convex_hull = scipy.spatial.ConvexHull(contacts[:, :2])
+            convex_hull = data
             dist, edge_id = compute_hull_distance(convex_hull, com[:2])
             if dist < self._parameters["minimal_chull_distance"]:
-                return None, None, True
+                return None, None
             start_point = contacts[convex_hull.simplices[edge_id][0]][:3]
             end_point = contacts[convex_hull.simplices[edge_id][1]][:3]
             rot_axis, rot_center = self._compute_rotation_dir_line(start_point, end_point, com)
-            return rot_axis, rot_center, False
+            return rot_axis, rot_center
 
     @staticmethod
     def _compute_rotation_dir_line(start, end, com):
