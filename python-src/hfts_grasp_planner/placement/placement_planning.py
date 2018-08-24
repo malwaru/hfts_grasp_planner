@@ -618,12 +618,15 @@ class QuasistaticFallingQuality(object):
         """
         self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
         # only fcl supports contiuous collision detection
-        col_checker = orpy.RaveCreateCollisionChecker(self._env, 'fcl_')
-        col_checker.SetCollisionOptions(orpy.CollisionOptions.Contacts |
-                                        orpy.CollisionOptions.AllGeometryContacts | orpy.CollisionOptions.AllLinkCollisions)
-        self._env.SetCollisionChecker(col_checker)
+        self._fcl_col_checker = orpy.RaveCreateCollisionChecker(self._env, 'fcl_')
+        # self._ode_col_checker = orpy.RaveCreateCollisionChecker(self._env, 'ode')
+        self._fcl_col_checker.SetCollisionOptions(orpy.CollisionOptions.Contacts |
+                                                  orpy.CollisionOptions.AllGeometryContacts |
+                                                  orpy.CollisionOptions.AllLinkCollisions)
+        self._env.SetCollisionChecker(self._fcl_col_checker)
         orpy.RaveSetDebugLevel(orpy.DebugLevel.Debug)
         self._env.SetDebugLevel(orpy.DebugLevel.Debug)
+        self._handles = []
         self._placement_volume = None
         self._body = None
         self._link = None
@@ -633,7 +636,8 @@ class QuasistaticFallingQuality(object):
             "collision_step_size": 0.01,
             "rot_step_size": 0.01,
             "minimal_chull_distance": 0.0,
-            "max_sloping_angle": np.pi / 9.0
+            "max_sloping_angle": np.pi / 9.0,
+            "minimal_contact_spread": 25e-4,
         }
 
     def compute_quality(self, pose, return_terms=False):
@@ -673,15 +677,20 @@ class QuasistaticFallingQuality(object):
         acc_distance = 0.0
         acc_rotation = 0.0
         # TODO this procedure does not make sense when the body is initially in contact
-        while not b_at_rest:
+        while not b_at_rest and not b_slippage:
+            self._clear_visualization()
             current_tf = self._body.GetTransform()
             # TODO check if current_tf is still within placement volume
+            # self._env.SetCollisionChecker(self._ode_col_checker)
             self._env.CheckCollision(self._body, dcd_report)
             # get contacts from collision report
             contacts = np.array([[ct.pos, ct.norm]
                                  for ct in dcd_report.contacts]).reshape((len(dcd_report.contacts), 6))
             # classify contacts in supporting contacts (compensating gravity), sliding contacts and others
             sup_contacts, sliding_contacts, other_contacts = self._classify_contacts(contacts)
+            self._visualize_contacts(sup_contacts, color=[1,0,0])
+            self._visualize_contacts(sliding_contacts, color=[0,1,0])
+            self._visualize_contacts(other_contacts, color=[0,0,1])
             # if we have no supporting contacts, the body may be sliding
             if sup_contacts.shape[0] == 0 and sliding_contacts.shape[0] > 0:  # slippage
                 b_slippage = True
@@ -690,6 +699,7 @@ class QuasistaticFallingQuality(object):
                 # translate along z axis downwards until first contact
                 target_tf = self._body.GetTransform()
                 target_tf[2, 3] = self._placement_volume[0][2] - self._body_radius
+                # self._env.SetCollisionChecker(self._fcl_col_checker)
                 b_contact = self._env.CheckContinuousCollision(self._link, target_tf, ccd_report)
                 if not b_contact:
                     b_fell_out_of_volume = True
@@ -700,9 +710,10 @@ class QuasistaticFallingQuality(object):
                 new_tf[:3, 3] = contact_quat_pose[4:]
                 self._body.SetTransform(new_tf)
             else:  # the object may rotate or is at rest
-                rot_axis, rot_point, b_at_rest = self._compute_rotation(sup_contacts, sliding_contacts, other_contacts)
-                if not b_at_rest:
+                rot_axis, rot_point, b_at_rest, b_slippage = self._compute_rotation(sup_contacts, sliding_contacts, other_contacts)
+                if not b_at_rest and not b_slippage:
                     acc_rotation += self._parameters["rot_step_size"]
+                    self._visualize_rotation_dir(rot_axis, rot_point)
                     # rotate, TODO cache rotation matrix?
                     tf_rot_frame = transformations.rotation_matrix(
                         self._parameters["rot_step_size"], rot_axis, rot_point)
@@ -775,6 +786,7 @@ class QuasistaticFallingQuality(object):
             other_contacts, numpy array of shape (n_3, 6) - n_3 >= 0 contacts that are neither supporting nor sliding. It is
                 n = n_1 + n_2 + n_3
         """
+        # TODO filter out contacts for which the object normal points in the same direction
         normal_dot_products = np.dot(contacts[:, 3:], np.array([0.0, 0.0, 1.0]))
         sup_contacts_idx = normal_dot_products >= np.cos(self._parameters["max_sloping_angle"])
         sup_contacts = contacts[sup_contacts_idx]
@@ -799,8 +811,9 @@ class QuasistaticFallingQuality(object):
             rot_axis, numpy array of shape (3,) or None - axis in world frame to rotate body around
             rot_point, numpy array of shape (3,) or None - rotation center in world frame
             b_at_rest, bool - whether the body is at rest or not. If at rest, rot_axis and rot_point are None
+            b_sliding, bool - whether the body is at risk to slide
         """
-        b_at_rest, b_has_rotation = False, False
+        b_at_rest, b_has_rotation, b_sliding = False, False, False
         rot_axis, rot_point = None, None
         support_shape = 0  # initially we assume we have a point contact
         chull = None
@@ -814,7 +827,7 @@ class QuasistaticFallingQuality(object):
             inactive_contacts = other_contacts
         prev_hull_points = None  # boundary of the convex hull in the previous iteration
         new_active_contacts = sup_contacts  # contacts that became active in this iteration
-        while not b_at_rest and not b_has_rotation:
+        while not b_at_rest and not b_has_rotation and not b_sliding:
             # first compute what type of support shape we have, unless we already know we have planar contact
             if support_shape != 2:
                 support_shape, line_start, line_end = self._characterize_support_shape(active_contacts)
@@ -833,16 +846,19 @@ class QuasistaticFallingQuality(object):
                 rot_axis, rot_point = self._compute_rotation_dir(support_shape, active_contacts, (line_start, line_end))
             if rot_axis is not None:
                 # we have a rotation axis, so let's compute whether there any opposing contacts that become active now
-                new_active_contacts, inactive_contacts = self._compute_opposing_contacts(
+                new_active_contacts, sliding_active_contacts, inactive_contacts = self._compute_opposing_contacts(
                     inactive_contacts, rot_axis, rot_point)
                 if new_active_contacts.shape[0] > 0:  # do we have new active contacts?
                     active_contacts = np.concatenate((active_contacts, new_active_contacts))
+                elif sliding_active_contacts.shape[0] > 0:
+                    # there are new active contacts, but they are sliding
+                    b_sliding = True
                 else:
                     # if there are no opposing contacts, we can rotate
                     b_has_rotation = True
             else:
                 b_at_rest = True
-        return rot_axis, rot_point, b_at_rest
+        return rot_axis, rot_point, b_at_rest, b_sliding
 
     def _characterize_support_shape(self, contacts):
         assert(contacts.shape[0] > 0)
@@ -851,21 +867,33 @@ class QuasistaticFallingQuality(object):
         start_point, end_point = None, None
         if contacts.shape[0] == 1:
             support_shape = 0
-        else:  # at least two contacts
+        elif contacts.shape[0] == 2:
+            # compute how far this points are apart
+            start_point = contacts[0, :3]
+            end_point = contacts[1, :3]
+            if np.linalg.norm(end_point - start_point) > self._parameters["minimal_contact_spread"] / 2.0:
+                support_shape = 1
+            else:
+                support_shape = 0
+        else:  # we have at least three contacts
             normalized_contacts = contacts[:, :3] - np.mean(contacts[:, :3], axis=0)
             _, s, v = np.linalg.svd(normalized_contacts)
-            std_dev = s[1] / np.sqrt(contacts.shape[0])
-            if std_dev <= 5e-3:  # line or a point
-                std_dev = s[0] / np.sqrt(contacts.shape[0])
-                if std_dev <= 5e-3:  # we essentially have a point contact
-                    support_shape = 0
-                else:  # the support has a line shape
+            # comppute maximal distance between any point from the mean point along the main axis of spread
+            spread_0 = np.max(np.abs(np.dot(normalized_contacts, v[0])))
+            if spread_0 > self._parameters["minimal_contact_spread"]:
+                # now check the second axis
+                spread_1 = np.max(np.abs(np.dot(normalized_contacts, v[1])))
+                if spread_1 > self._parameters["minimal_contact_spread"]:
+                    # if it large enough, the contacts span a plane
+                    support_shape = 2
+                else:
+                    # else they only span a line
+                    start_point = contacts[np.argmin(np.dot(normalized_contacts, v[0])), :3]
+                    end_point = contacts[np.argmax(np.dot(normalized_contacts, v[0])), :3]
                     support_shape = 1
-                    line_dir = v[0]
-                    start_point = contacts[np.argmin(np.dot(normalized_contacts, line_dir)), :3]
-                    end_point = contacts[np.argmax(np.dot(normalized_contacts, line_dir)), :3]
             else:
-                support_shape = 2  # the contacts span a plane
+                # if this spread is small, consider all contacts to be a point
+                support_shape = 0
         return support_shape, start_point, end_point
 
     def _compute_opposing_contacts(self, contacts, rot_axis, rot_point):
@@ -881,19 +909,21 @@ class QuasistaticFallingQuality(object):
             Returns
             --------
             opposing contacts, numpy array of shape (k, 6)
-            non-opposing contacts, numpy array of shape (m-k, 6)
+            sliding_opposing_contacts, numpy array of shape (j, 6)
+            non-opposing contacts, numpy array of shape (m-k-j, 6)
         """
         if contacts.shape[0] == 0:
-            return np.empty((0, 6)), contacts
+            return np.empty((0, 6)), contacts, contacts
         rel_positions = contacts[:, :3] - rot_point
         motion_dirs = np.cross(rot_axis, rel_positions)
         norms = np.linalg.norm(motion_dirs, axis=1)
         motion_dirs /= norms[:, np.newaxis]
         dps = np.sum(motion_dirs * contacts[:, 3:], axis=1)
-        opposing_contact_idx = dps < -1e-4
+        opposing_contact_idx = dps < -np.cos(self._parameters["max_sloping_angle"])  # -1e-4
+        sliding_opposing_idx = np.logical_and(dps < -1e-4, np.logical_not(opposing_contact_idx))
         opposing_contacts = contacts[opposing_contact_idx]
         if opposing_contacts.shape[0] == 0:
-            return opposing_contacts, contacts
+            return opposing_contacts, contacts[sliding_opposing_idx], contacts[np.logical_not(sliding_opposing_idx)]
         # some contacts may be on top of the object preventing it from tipping. These we need to mirror around the
         # center of mass of the object so that we can take them into account when computing the support plane.
         # These contact points have the property that they are on the opposite side of the plane spanned
@@ -911,7 +941,8 @@ class QuasistaticFallingQuality(object):
             # do the flipping: c_pos = com - (c_pos - com)
             opposing_contacts[contacts_to_flip_idx][:, :3] = 2.0 * com - opposing_contacts[contacts_to_flip_idx][:, :3]
             opposing_contacts[contacts_to_flip_idx][:, 3:] *= -1.0
-        return opposing_contacts, contacts[np.logical_not(opposing_contact_idx)]
+        others_idx = np.logical_and(np.logical_not(sliding_opposing_idx), np.logical_not(opposing_contact_idx))
+        return opposing_contacts, contacts[sliding_opposing_idx], contacts[others_idx]
 
     def _compute_rotation_dir(self, support_shape, contacts, data):
         """
@@ -970,9 +1001,9 @@ class QuasistaticFallingQuality(object):
             rot_axis, numpy array of shape (3,) - rotation axis
             rot_center, numpy array of shape (3,) - center of rotation
         """
-        proj_start = start[:2]
-        proj_end = end[:2]
-        _, _, t = compute_closest_point_on_line(proj_start, proj_end, com[:2])
+        # proj_start = start[:2]
+        # proj_end = end[:2]
+        _, _, t = compute_closest_point_on_line(start, end, com)
         grav_dir = np.array([0, 0, -1.0])
         if t == 0.0:
             rot_center = start
@@ -984,14 +1015,20 @@ class QuasistaticFallingQuality(object):
             rot_axis = np.cross(com - rot_center, grav_dir)
             rot_axis /= np.linalg.norm(rot_axis)
             return rot_axis, rot_center
-        # TODO the rotation axis is start - end, but the direction matters.
-        # TODO is there a smarter way to compute it?
         rot_center = start + t * (end - start)
-        rot_axis = np.cross(com - rot_center, grav_dir)
+        rot_axis = start - end
+        rot_axis /= np.linalg.norm(rot_axis)
+        # The rotation axis is start - end, but we need to determine its rotation
+        # compute in which direction the center of mass will move (it has to move downwards)
+        f_z = rot_axis[0] * (com[1] - rot_center[1]) - rot_axis[1] * (com[0] - rot_center[0])
+        assert(abs(f_z) > 0.0)
+        if f_z > 0.0:
+            rot_axis = -rot_axis
         return rot_axis, start
 
-    def _visualize_contacts(self, contacts, arrow_length=0.01, arrow_width=0.0001):
-        handles = []
+    def _visualize_contacts(self, contacts, arrow_length=0.01, arrow_width=0.0001, color=None):
+        if color is None:
+            color = [1, 0, 0]
         for contact in contacts:
             if type(contact) == np.ndarray:
                 p1 = contact[:3]
@@ -999,8 +1036,18 @@ class QuasistaticFallingQuality(object):
             else:
                 p1 = contact.pos
                 p2 = p1 + arrow_length * contact.norm
-            handles.append(self._env.drawarrow(p1, p2, arrow_width))
-        return handles
+            self._handles.append(self._env.drawarrow(p1, p2, arrow_width, color=color))
+
+    def _visualize_line(self, start_point, end_point, width=0.0001, color=None):
+        if color is None:
+            color = [1, 0, 0]
+        self._handles.append(self._env.drawarrow(start_point, end_point, width, color=color))
+
+    def _visualize_rotation_dir(self, rot_axis, rot_point, color=None):
+        self._visualize_line(rot_point - 0.3 * rot_axis, rot_point + 0.3 * rot_axis, width=0.001, color=color)
+
+    def _clear_visualization(self):
+        self._handles = []
 
 
 class SimpleGraspCompatibility(object):

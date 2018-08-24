@@ -61,10 +61,14 @@ def manual_test():
     #                             [3.13400655e-02,   9.94545318e-01,  -9.94857287e-02, 6.57463729e-01],
     #                             [2.76453391e-03,   9.94479886e-02,   9.95038921e-01, 8.29895318e-01],
     #                             [0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]]))
-    body.SetTransform(np.array([[0.96211303, -0.08257759, -0.25984508, -0.33390048],
-                                [-0.12367726,  0.71716285, -0.68584356,  0.86756551],
-                                [0.24298654,  0.69199595,  0.67977875,  0.56252837],
-                                [0.,  0.,  0.,  1.]]))
+    # body.SetTransform(np.array([[0.96211303, -0.08257759, -0.25984508, -0.33390048],
+    #                             [-0.12367726,  0.71716285, -0.68584356,  0.86756551],
+    #                             [0.24298654,  0.69199595,  0.67977875,  0.56252837],
+    #                             [0.,  0.,  0.,  1.]]))
+    body.SetTransform(np.array([[9.93673107e-01,   1.12310935e-01,  -9.90206330e-05, -3.14856857e-01],
+                                [-1.12310970e-01,   9.93672309e-01,  -1.26001278e-03, 6.74364626e-01],
+                                [-4.31191525e-05,   1.26316192e-03,   9.99999201e-01, 5.60004268e-01],
+                                [0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]]))
     env.GetKinBody('bunny').SetTransform(np.array([[1.00000000e+00,   4.07142262e-08,   8.97183551e-08,
                                                     1.61587194e-01],
                                                    [4.07142262e-08,   6.58464440e-01,  -7.52611840e-01,
@@ -74,15 +78,15 @@ def manual_test():
                                                    [0.00000000e+00,   0.00000000e+00,   0.00000000e+00,
                                                     1.00000000e+00]]))
     quality_fn.set_target_object(body)
-    # quality_fn._env.SetViewer('qtcoin')
+    quality_fn._env.SetViewer('qtcoin')
     # handle = draw_volume(quality_fn._env, placement_volume)
     # print "Check the placement volume!", placement_volume
     # handle = None
-    # IPython.embed()
+    IPython.embed()
     quality_fn.compute_quality(body.GetTransform())
-    # IPython.embed()
+    IPython.embed()
 
 
 if __name__ == "__main__":
-    measure_time()
-    # manual_test()
+    # measure_time()
+    manual_test()
