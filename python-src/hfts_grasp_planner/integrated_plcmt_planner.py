@@ -24,7 +24,7 @@ class IntegratedPlacementPlanner(object):
     """
 
     def __init__(self, env_file, sdf_file, sdf_volume,
-                 data_path, robot_name, manip_name, **kwargs):
+                 data_path, robot_name, manip_name, urdf_file=None, **kwargs):
         """
             Creates a new integrated placement planner.
             ---------
@@ -39,6 +39,7 @@ class IntegratedPlacementPlanner(object):
                 preferences for different objects are stored.
             robot_name, string - name of the robot to plan for.
             manip_name, manipulator_name - name of the manipulator to use.
+            urdf_file, string (optional) - path to a urdf description of the robot. Needed if IKFast doesn't work
 
             Additionally, you may specify any parameter described in the class description.
         """
@@ -57,6 +58,7 @@ class IntegratedPlacementPlanner(object):
         if not self._manip:
             raise ValueError("Could not retrieve manipulator with name %s" % manip_name)
         self._robot.SetActiveDOFs(self._manip.GetArmIndices())
+        self._robot.SetActiveManipulator(manip_name)
         dynamic_bodies = [body for body in self._env.GetBodies() if utils.is_dynamic_body(body)]
         # TODO instead of excluding all dynamic bodies we could also simply activate and deactivate bodies as we need them
         self._scene_sdf = sdf_module.SceneSDF(self._env, [], excluded_bodies=dynamic_bodies)
@@ -68,11 +70,13 @@ class IntegratedPlacementPlanner(object):
             self._scene_sdf.save(sdf_file)
         # TODO do we need to let the plctm planner know about the manipulator?
         self._plcmt_planner = plcmnt_module.PlacementGoalPlanner(
-            data_path, self._env, self._scene_sdf, robot_name, manip_name)
+            data_path, self._env, self._scene_sdf, robot_name, manip_name,
+            urdf_file_name=urdf_file)
         self._c_sampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=self._parameters['dof_weights'])
         # TODO pass additional parameters
         # initialize optional members as None
         self._debug_tree_drawer = None
+        self._hierarchy_visualizer = None
         # now set them based parameters
         self._setup_optional_members()
 
@@ -87,7 +91,7 @@ class IntegratedPlacementPlanner(object):
         for (key, value) in kwargs.iteritems():
             self._parameters[key] = value
 
-    def plan_placement(self, target_obj, plcmnt_volume, grasp_tf, start_config, time_limit=60.0):
+    def plan_placement(self, target_obj, plcmnt_volume, grasp_tf, grasp_config, time_limit=60.0):
         """
             Plan a placement for the given object in the given volume starting from the current state of
             the OpenRAVE environment. It is assumed that the object is being grasped.
@@ -97,7 +101,7 @@ class IntegratedPlacementPlanner(object):
             target_obj, string - name of the object to place
             plcmnt_volume, tuple of two numpy arrays each of shape (3,) - placement volume in form (min_point, max_point)
             grasp_tf, numpy array of shape (4, 4) - pose of the grasped object relative to the end-effector
-            start_config, numpy array of shape (d + d_h,) - start configuration of the hand-arm system
+            grasp_config, numpy array of shape (d_h,) - grasping configuration of the hand 
             time_limit, float - maximal number of seconds to plan
             -------
             Returns
@@ -112,14 +116,15 @@ class IntegratedPlacementPlanner(object):
         target_body = self._env.GetKinBody(target_obj)
         if not self._robot.IsGrabbing(target_body):
             self._robot.Grab(target_body)
-        self._plcmt_planner.setup(target_obj, grasp_tf, start_config[self._manip.GetGripperIndices()])
+        self._plcmt_planner.setup(target_obj, grasp_tf, grasp_config)
         if self._debug_tree_drawer:
             self._debug_tree_drawer.clear()
             debug_fn = self._debug_tree_drawer.draw_trees
         else:
             def debug_fn(forward_tree, backward_trees):
                 pass
-        goal_sampler = FreeSpaceProximitySampler(self._plcmt_planner, self._c_sampler)
+        goal_sampler = FreeSpaceProximitySampler(
+            self._plcmt_planner, self._c_sampler, debug_drawer=self._hierarchy_visualizer)
         motion_planner = RRT(DynamicPGoalProvider(), self._c_sampler, goal_sampler, logging.getLogger())
         start_config = self._robot.GetActiveDOFValues()
         path = motion_planner.proximity_birrt(start_config, time_limit=time_limit, debug_function=debug_fn)
@@ -129,5 +134,7 @@ class IntegratedPlacementPlanner(object):
         """
             Initialize optional members.
         """
-        if self._parameters['draw_search_tree'] and not self._debug_tree_drawer:
+        if self._parameters['draw_search_tree'] and self._debug_tree_drawer is None:
             self._debug_tree_drawer = utils.OpenRAVEDrawer(self._env, self._robot, True)
+        if self._parameters['draw_hierarchy'] and self._hierarchy_visualizer is None:
+            self._hierarchy_visualizer = FreeSpaceProximitySamplerVisualizer(self._robot)

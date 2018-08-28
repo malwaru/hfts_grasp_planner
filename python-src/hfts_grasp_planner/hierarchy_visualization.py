@@ -7,6 +7,7 @@ from std_msgs.msg import String
 class FreeSpaceProximitySamplerVisualizer(object):
     """ A debugging tool to visualize the current state
         of a FreeSpaceProximitySampler """
+
     def __init__(self, robot):
         self._graph = igraph.Graph()
         self._labels_to_ids = {}
@@ -22,25 +23,25 @@ class FreeSpaceProximitySamplerVisualizer(object):
             config = node.get_active_configuration()
             logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Got a request')
             if config is not None:
-                logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Request to ' + \
+                logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Request to ' +
                               'show config ' + str(config))
                 self.robot.SetDOFValues(config)
                 env = self.robot.GetEnv()
                 b_in_collision = env.CheckCollision(self.robot) or self.robot.CheckSelfCollision()
                 if not b_in_collision:
-                    logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +\
+                    logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
                                   ' is collision-free!')
                     if node.is_goal():
-                        logging.debug('FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] The ' +\
+                        logging.debug('FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] The ' +
                                       ' selected config is a goal!')
                 else:
-                    logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +\
+                    logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
                                   ' is in collision.')
         else:
             logging.warning('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Received unknown node label.')
 
     def _add_node(self, parent_id, node, b_is_active):
-        label = node.get_unique_label()
+        label = node.get_hashable_label()
         if label in self._labels_to_ids:
             node_id = self._labels_to_ids[label]
         else:
@@ -58,7 +59,7 @@ class FreeSpaceProximitySamplerVisualizer(object):
             self._graph.vs[node_id]['coverage'] = 1.0
         if node.get_max_num_leaves_in_branch() != 0:
             self._graph.vs[node_id]['branch_coverage'] = node.get_num_leaves_in_branch() / \
-                                                    float(node.get_max_num_leaves_in_branch())
+                float(node.get_max_num_leaves_in_branch())
         else:
             self._graph.vs[node_id]['branch_coverage'] = 1.0
         self._nodes_cache[label] = node
@@ -79,7 +80,6 @@ class FreeSpaceProximitySamplerVisualizer(object):
         node_id = self._add_node(parent_id, node, b_is_active)
         active_children_map = {}
         for child in node.get_active_children():
-            active_children_map[child.get_unique_label()] = True
+            active_children_map[child.get_hashable_label()] = True
         for child in node.get_children():
-            self.draw_hierarchy_recursively(node_id, child, child.get_unique_label() in active_children_map)
-
+            self.draw_hierarchy_recursively(node_id, child, child.get_hashable_label() in active_children_map)

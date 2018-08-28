@@ -6,8 +6,7 @@
             <!-- <quat>0.7071 0.7071 0 0</quat> -->
             <quat>1.0 0.0 0.0 0.0</quat>
             <Geom type="trimesh">
-                <!-- <render>meshes/body.stl</render> -->
-                <render>meshes/coarse/body.stl</render>
+                <render>meshes/body.stl</render>
                 <collision>meshes/coarse/body.stl</collision>
             </Geom>
         </Body>
@@ -17,8 +16,7 @@
             <Translation>0.05355 -0.0725 0.41492</Translation>
             <quat>0.21925458 -0.40779636 0.31428983 -0.82876502</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_1.stl</Render> -->
-                <render>meshes/coarse/link_1.stl</render>
+                <Render>meshes/link_1.stl</Render>
                 <collision>meshes/coarse/link_1.stl</collision>
             </Geom>
         </Body>
@@ -27,8 +25,7 @@
             <Translation>0.03 0.0 0.1</Translation>
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_2.stl</Render> -->
-                <render>meshes/coarse/link_2.stl</render>
+                <Render>meshes/link_2.stl</Render>
                 <collision>meshes/coarse/link_2.stl</collision>
             </Geom>
         </Body>
@@ -37,8 +34,7 @@
             <Translation>-0.03 0.17283 0.0</Translation>
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_3.stl</Render> -->
-                <render>meshes/coarse/link_3.stl</render>
+                <Render>meshes/link_3.stl</Render>
                 <collision>meshes/coarse/link_3.stl</collision>
             </Geom>
         </Body>
@@ -47,8 +43,7 @@
             <Translation>-0.04188 0.0 0.07873</Translation>
             <quat>0.5 0.5 -0.5 0.5</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_4.stl</Render> -->
-                <render>meshes/coarse/link_4.stl</render>
+                <Render>meshes/link_4.stl</Render>
                 <collision>meshes/coarse/link_4.stl</collision>
             </Geom>
         </Body>
@@ -57,8 +52,7 @@
             <Translation>0.0405 0.16461 0.0</Translation>
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_5.stl</Render> -->
-                <render>meshes/coarse/link_5.stl</render>
+                <Render>meshes/link_5.stl</Render>
                 <collision>meshes/coarse/link_5.stl</collision>
             </Geom>
         </Body>
@@ -67,8 +61,7 @@
             <Translation>-0.027 0 0.10039</Translation>
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_6.stl</Render> -->
-                <render>meshes/coarse/link_6.stl</render>
+                <Render>meshes/link_6.stl</Render>
                 <collision>meshes/coarse/link_6.stl</collision>
             </Geom>
         </Body>
@@ -77,8 +70,7 @@
             <Translation>0.027 0.029 0.0</Translation>
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_7.stl</Render> -->
-                <render>meshes/coarse/link_7.stl</render>
+                <Render>meshes/link_7.stl</Render>
                 <collision>meshes/coarse/link_7.stl</collision>
             </Geom>
         </Body>
@@ -145,8 +137,7 @@
             <Translation>0.0 0.0 0.007</Translation>
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/gripper/base.stl</Render> -->
-                <render>meshes/gripper/coarse/base.stl</render>
+                <Render>meshes/gripper/base.stl</Render>
                 <collision>meshes/gripper/coarse/base.stl</collision>
             </Geom>
         </Body>
@@ -155,8 +146,7 @@
             <Translation>0.0 -0.0065 0.0837</Translation>
             <quat>1 0 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/gripper/finger.stl</Render> -->
-                <render>meshes/gripper/coarse/finger.stl</render>
+                <Render>meshes/gripper/finger.stl</Render>
                 <collision>meshes/gripper/coarse/finger.stl</collision>
             </Geom>
         </Body>
@@ -165,8 +155,7 @@
             <Translation>0.0 0.0065 0.0837</Translation>
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/gripper/finger.stl</Render> -->
-                <render>meshes/gripper/coarse/finger.stl</render>
+                <Render>meshes/gripper/finger.stl</Render>
                 <collision>meshes/gripper/coarse/finger.stl</collision>
             </Geom>
         </Body>
@@ -199,8 +188,7 @@
             <Translation>0.05355 0.0725 0.41492</Translation>
             <quat>0.21763236  0.40848028  0.31343673  0.82917877</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_1.stl</Render> -->
-                <render>meshes/coarse/link_1.stl</render>
+                <Render>meshes/link_1.stl</Render>
                 <collision>meshes/coarse/link_1.stl</collision>
             </Geom>
         </Body>
@@ -209,8 +197,7 @@
             <Translation>0.03 0.0 0.1</Translation>
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_2.stl</Render> -->
-                <render>meshes/coarse/link_2.stl</render>
+                <Render>meshes/link_2.stl</Render>
                 <collision>meshes/coarse/link_2.stl</collision>
             </Geom>
         </Body>
@@ -219,8 +206,7 @@
             <Translation>-0.03 0.17283 0.0</Translation>
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_3.stl</Render> -->
-                <render>meshes/coarse/link_3.stl</render>
+                <Render>meshes/link_3.stl</Render>
                 <collision>meshes/coarse/link_3.stl</collision>
             </Geom>
         </Body>
@@ -229,8 +215,7 @@
             <Translation>-0.04188 0.0 0.07873</Translation>
             <quat>0.5 0.5 -0.5 0.5</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_4.stl</Render> -->
-                <render>meshes/coarse/link_4.stl</render>
+                <Render>meshes/link_4.stl</Render>
                 <collision>meshes/coarse/link_4.stl</collision>
             </Geom>
         </Body>
@@ -239,8 +224,7 @@
             <Translation>0.0405 0.16461 0.0</Translation>
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_5.stl</Render> -->
-                <render>meshes/coarse/link_5.stl</render>
+                <Render>meshes/link_5.stl</Render>
                 <collision>meshes/coarse/link_5.stl</collision>
             </Geom>
         </Body>
@@ -249,8 +233,7 @@
             <Translation>-0.027 0 0.10039</Translation>
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_6.stl</Render> -->
-                <render>meshes/coarse/link_6.stl</render>
+                <Render>meshes/link_6.stl</Render>
                 <collision>meshes/coarse/link_6.stl</collision>
             </Geom>
         </Body>
@@ -259,8 +242,7 @@
             <Translation>0.027 0.029 0.0</Translation>
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/link_7.stl</Render> -->
-                <render>meshes/coarse/link_7.stl</render>
+                <Render>meshes/link_7.stl</Render>
                 <collision>meshes/coarse/link_7.stl</collision>
             </Geom>
         </Body>
@@ -327,8 +309,7 @@
             <Translation>0.0 0.0 0.007</Translation>
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/gripper/base.stl</Render> -->
-                <render>meshes/gripper/coarse/base.stl</render>
+                <Render>meshes/gripper/base.stl</Render>
                 <collision>meshes/gripper/coarse/base.stl</collision>
             </Geom>
         </Body>
@@ -337,8 +318,7 @@
             <Translation>0.0 -0.0065 0.0837</Translation>
             <quat>1 0 0 0</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/gripper/finger.stl</Render> -->
-                <render>meshes/gripper/coarse/finger.stl</render>
+                <Render>meshes/gripper/finger.stl</Render>
                 <collision>meshes/gripper/coarse/finger.stl</collision>
             </Geom>
         </Body>
@@ -347,8 +327,7 @@
             <Translation>0.0 0.0065 0.0837</Translation>
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
-                <!-- <Render>meshes/gripper/finger.stl</Render> -->
-                <render>meshes/gripper/coarse/finger.stl</render>
+                <Render>meshes/gripper/finger.stl</Render>
                 <collision>meshes/gripper/coarse/finger.stl</collision>
             </Geom>
         </Body>

@@ -23,6 +23,7 @@ class OccupancyOctree(object):
         """
             Represents a cell of an OccupancyOctree
         """
+
         def __init__(self, idx_box, depth, tree):
             """
                 Create a new cell.
@@ -47,14 +48,14 @@ class OccupancyOctree(object):
             Construct a new OccupancyOctree.
             @param cell_size - minimum edge length of a cell (all cells are cubes)
         """
-        self._body = body  
+        self._body = body
         self._grid = None
         self._root = None
         self._total_volume = 0.0
         self._depth = 0
         self._construct_grid(cell_size)
         self._construct_octree(cell_size)
-    
+
     def _construct_grid(self, cell_size):
         """
             Construct the occupancy grid that this octree represents.
@@ -81,7 +82,7 @@ class OccupancyOctree(object):
             for body, body_flag in itertools.izip(env.GetBodies(), body_flags):
                 body.Enable(body_flag[0])
                 body.SetVisible(body_flag[1])
-    
+
     def _construct_octree(self, cell_size):
         """
             Construct the octree. Assumes self._grid has been created.
@@ -89,7 +90,7 @@ class OccupancyOctree(object):
         # first construct the root
         root_aabb_idx = np.zeros((6,), dtype=np.int)  # stores indices of cells in grid covered by this node
         root_aabb_idx[3:] = self._grid.get_num_cells()  # it represents all cells
-        self._root = OccupancyOctree.OccupancyOctreeCell(root_aabb_idx, 0, self) 
+        self._root = OccupancyOctree.OccupancyOctreeCell(root_aabb_idx, 0, self)
         # construct tree
         nodes_to_refine = collections.deque([self._root])
         while nodes_to_refine:  # as long as there are nodes to refine
@@ -99,12 +100,12 @@ class OccupancyOctree(object):
             max_idx = current_node.idx_box[3:]
             idx_range = max_idx - min_idx  # the number of cells along each axis in this box
             volume = np.multiply.reduce(idx_range)
-            min_value = self._grid.get_min_value(min_idx, max_idx) 
+            min_value = self._grid.get_min_value(min_idx, max_idx)
             max_value = self._grid.get_max_value(min_idx, max_idx)
             assert(volume >= 1)
             assert(min_value == 0.0 or min_value == 1.0)
             assert(max_value == 0.0 or max_value == 1.0)
-            if volume == 1 or max_value == 0.0:  
+            if volume == 1 or max_value == 0.0:
                 # we are either at the bottom of the hierarchy or all children are free
                 current_node.occupied = min_value == 1.0
                 current_node.num_occupied_leaves = volume if current_node.occupied else 0
@@ -130,6 +131,7 @@ class OccupancyOctree(object):
                         nodes_to_refine.append(child_node)
                         self._depth = max(self._depth, child_node.depth)
         # lastly, update num_occupied_leaves flags
+
         def compute_num_occupied_leaves(node):
             # helper function to recursively compute the number of occupied leaves
             if not node.children:
@@ -178,10 +180,10 @@ class OccupancyOctree(object):
                 # handle = self.draw_cell(cell)
                 if dist > cell.radius:  # none of the points in this cell can be in collision
                     continue
-                elif dist < -1.0 * cell.radius:  
+                elif dist < -1.0 * cell.radius:
                     # the cell lies so far inside of an obstacle, that it is completely in collision
                     num_intersecting_leaves += cell.num_occupied_leaves
-                    # regarding the distance cost, assume the worst case, i.e. add the maximum distance 
+                    # regarding the distance cost, assume the worst case, i.e. add the maximum distance
                     # that any child might have for all children
                     distance_cost += cell.num_occupied_leaves * (dist - cell.radius)
                 else:  # boundary, partly in collision
@@ -197,7 +199,7 @@ class OccupancyOctree(object):
             layer_idx += 1
         intersection_volume = num_intersecting_leaves * np.power(self._grid.get_cell_size(), 3)
         relative_volume = num_intersecting_leaves / float(self._root.num_occupied_leaves)
-        normalized_distance_cost = distance_cost / float(self._root.num_occupied_leaves) 
+        normalized_distance_cost = distance_cost / float(self._root.num_occupied_leaves)
         return intersection_volume, relative_volume, distance_cost, normalized_distance_cost
 
     def draw_cell(self, cell):
@@ -216,7 +218,7 @@ class OccupancyOctree(object):
             Return the maximal depth of the hierarchy.
         """
         return self._depth
-    
+
     def get_volume(self):
         """
             Return the total volume of occupied cells.

@@ -8,6 +8,8 @@ import rospy
 from rtree import index
 from std_msgs.msg import String
 from threading import RLock, Thread
+import gi
+gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk
 
 
@@ -57,7 +59,7 @@ class GUI(Gtk.Window):
         rospy.logdebug('update_graph called')
         with self.drawing_lock:
             self.graph = graph
-            self.layout = graph.layout('rt', root=0)
+            self.layout = graph.layout('rt')
             self._has_graph = True
             layer_sizes = self.compute_layer_sizes()
             max_nodes_per_layer = max(layer_sizes)
@@ -125,7 +127,7 @@ class GUI(Gtk.Window):
     def get_node(self, x, y):
         if self._node_index is None:
             raise ValueError('Node index is None')
-        query_pos = [x,y,x,y]
+        query_pos = [x, y, x, y]
         nns = list(self._node_index.nearest(query_pos))
         vidx = nns[0]
         position = self.get_screen_coordinates(vidx)
@@ -175,11 +177,13 @@ class GUIThread(Thread):
     def join(self):
         Gtk.main_quit()
 
+
 def main2():
     rospy.init_node('FreeSpaceProximitySamplerVisualizerServer')
     Gdk.threads_init()
     app = GUI()
     Gtk.main()
+
 
 def main():
     Gdk.threads_init()
@@ -187,6 +191,7 @@ def main():
     while not rospy.is_shutdown() and not app.terminated:
         Gtk.main_iteration()
         rospy.sleep(0.1)
+
 
 if __name__ == "__main__":
     sys.exit(main2())
