@@ -279,7 +279,9 @@ class SimplePlacementQuality(object):
             gamma, float - angle between virtual placement plane and placement plane
         """
         self._body.SetTransform(pose)
-        best_score = float('inf')
+        # best_score = float('inf')
+        # score, d_head, chull_distance, alpha, gamma
+        best_plane_results = (float('inf'), float('inf'), float('inf'), float('inf'), float('inf'))
         # TODO can we skip some placement planes? based on their normals?
         for plane in self._placement_planes:
             virtual_contacts, _, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
@@ -327,10 +329,12 @@ class SimplePlacementQuality(object):
             # stability by minizing the chull_distance (which is negative inside of the hull).
             # Minimizing alpha prefers placements on planar surfaces rather than on slopes.
             score = d_head + placement_value + self._parameters["slopiness_weight"] * alpha
-            best_score = min(score, best_score)
+            if score < best_plane_results[0]:
+                best_plane_results = score, d_head, chull_distance, alpha, gamma
         if return_terms:
-            return -1.0 * best_score, d_head, chull_distance, alpha, gamma
-        return -1.0 * best_score  # externally we want to maximize
+            return -1.0 * best_plane_results[0], best_plane_results[1],\
+                best_plane_results[2], best_plane_results[3], best_plane_results[4]
+        return -1.0 * best_plane_results[0]  # externally we want to maximize
 
     def set_target_object(self, body, model_name=None):
         """
@@ -1151,6 +1155,7 @@ class PlacementHeuristic(object):
             self._grasp_compatibility = None
         self._vol_approx = vol_approx
         self._grasp_tf = None
+        # self._env.SetViewer('qtcoin')
 
     def set_target_object(self, obj_name, model_name=None):
         """
@@ -1488,6 +1493,16 @@ class SE3Hierarchy(object):
     def get_depth(self):
         return self._max_depth
 
+    def get_bounds(self):
+        """
+            Return workspace represented by hierarchy.
+            -------
+            Returns
+            -------
+            bounds, numpy array of shape (6, 2) - each row represents min and max value for [x, y, z, theta, phi, psi]
+        """
+        return self._root.get_bounds()
+
 
 class PlacementGoalPlanner(GoalHierarchy):
     """This class allows to search for object placements in combination with
@@ -1666,7 +1681,11 @@ class PlacementGoalPlanner(GoalHierarchy):
             # get the initial value
             x0 = plcmt_result._hierarchy_node.get_representative_value(rtype=1)
             # get bounds
-            bounds = plcmt_result._hierarchy_node.get_bounds()
+            partition_bounds = plcmt_result._hierarchy_node.get_bounds()  # NOTE these are approximate bounds
+            partition_range = partition_bounds[:, 1] - partition_bounds[:, 0]
+            rhobeg = np.min(partition_range / 2.0)
+            assert(rhobeg > 0.0)
+            search_space_bounds = plcmt_result._hierarchy_node._hierarchy.get_bounds()
             constraints = [
                 {
                     'type': 'ineq',
@@ -1674,18 +1693,22 @@ class PlacementGoalPlanner(GoalHierarchy):
                 },
                 {
                     'type': 'ineq',
-                    'fun': lambda x: x - bounds[:, 0]  # TODO replace with real bounds
+                    'fun': lambda x: x - search_space_bounds[:, 0] 
                 },
                 {
                     'type': 'ineq',
-                    'fun': lambda x: bounds[:, 1] - x  # TODO replace with real bounds
+                    'fun': lambda x: search_space_bounds[:, 1] - x  
                 }
             ]
+            options = {
+                'rhobeg': rhobeg,
+                'disp': True
+            }
             opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, self.objective_fn, multiplier=-1.0),
-                                                 x0, method='COBYLA', constraints=constraints)
+                                                 x0, method='COBYLA', constraints=constraints, options=options)
             sol = opt_result.x
             plcmt_result.obj_pose = to_matrix(sol)
-            self.evaluate_result(plcmt_result)
+            # self.evaluate_result(plcmt_result)
 
         def evaluate_result(self, plcmt_result):
             """
@@ -1700,12 +1723,14 @@ class PlacementGoalPlanner(GoalHierarchy):
                 # TODO This validity check invalidates valid solutions due to inaccuracies in the collision cost
                 # plcmt_result._valid = self.collision_cost(plcmt_result.obj_pose) > 0.0
                 # TODO Are there any significant drawbacks for doing it like this?
-                plcmt_result._valid = self.env.CheckCollision(self.target_object)
+                # with self.target_object:
+                self.target_object.SetTransform(plcmt_result.obj_pose)
+                plcmt_result._valid = not self.env.CheckCollision(self.target_object)
             # compute whether it is a goal
             if plcmt_result._valid and plcmt_result.is_leaf():
                 # TODO could/should cache this value
                 # TODO this is specific to the simple placement heuristic
-                obj_val, falling_distance, chull_distance, alpha, gamma = self.objective_fn(plcmt_result.obj_pose, True)
+                _, falling_distance, chull_distance, alpha, gamma = self.objective_fn(plcmt_result.obj_pose, True)
                 plcmt_result._bgoal = falling_distance < self._parameters['max_falling_distance'] and \
                     chull_distance < self._parameters['min_chull_distance'] and \
                     alpha < self._parameters['max_slope_angle'] and \
@@ -1716,9 +1741,20 @@ class PlacementGoalPlanner(GoalHierarchy):
                 plcmt_result._bgoal = False
             plcmt_result._was_evaluated = True
 
-        def set_grasp_info(self, grasp_tf, grasp_config, obj_name):
+        def set_object(self, obj_name):
+            """
+                Set the target object.
+                ---------
+                Arguments
+                ---------
+                obj_name, string - name of the target object
+            """
+            self.target_object = self.env.GetKinBody(obj_name)
+
+        def set_grasp_info(self, grasp_tf, grasp_config):
             """
                 Set information about the grasp the target object is grasped with.
+                NOTE: You need to set an object before, otherwise this will fail.
                 ---------
                 Arguments
                 ---------
@@ -1727,8 +1763,9 @@ class PlacementGoalPlanner(GoalHierarchy):
                 obj_name, string - name of grasped object
             """
             if self.robot_interface:
-                self.robot_interface.set_grasp_info(grasp_tf, grasp_config, obj_name)
-            self.target_object = self.env.GetKinBody(obj_name)
+                if not self.target_object:
+                    raise ValueError("Setting grasp info before setting target object. Please set target object first")
+                self.robot_interface.set_grasp_info(grasp_tf, grasp_config, self.target_object.GetName())
 
     ############################ PlacementGoalPlanner methods ############################
     def __init__(self, base_path,
@@ -1820,6 +1857,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             @param model_id (optional) Name of the model data. If None, it is assumed to be identical to obj_id
         """
         self._placement_heuristic.set_target_object(obj_id, model_id)
+        self._leaf_stage.set_object(obj_id)
         self._initialized = False
 
     def setup(self, obj_name, grasp_tf, grasp_config, model_id=None):
@@ -1835,7 +1873,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             model_id, string (optional) - Name of the model data. If None, it is assumed to be identical to obj_id
         """
         self.set_object(obj_name, model_id=model_id)
-        self._leaf_stage.set_grasp_info(grasp_tf, grasp_config, obj_name)
+        self._leaf_stage.set_grasp_info(grasp_tf, grasp_config)
         self._placement_heuristic.set_grasp_info(grasp_tf, grasp_config)
 
     def set_max_iter(self, iterations):

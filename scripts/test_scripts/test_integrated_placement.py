@@ -9,6 +9,7 @@ import numpy as np
 import openravepy as orpy
 import hfts_grasp_planner.integrated_plcmt_planner as ipp_module
 import hfts_grasp_planner.ik_solver as ik_module
+import hfts_grasp_planner.utils as utils
 
 
 def draw_volume(env, volume):
@@ -43,7 +44,7 @@ def execute_placement_planner(planner, volume, problem_desc, ik_solver):
     robot.SetDOFValues(start_config, dofindices=manip.GetArmIndices())
     robot.SetDOFValues(problem_desc['grasp_config'], dofindices=manip.GetGripperIndices())
     target_object.Enable(True)
-    path, pose = planner.plan_placement(problem_desc["target_name"], volume, grasp_pose,
+    path, pose = planner.plan_placement(problem_desc["target_name"], volume, utils.inverse_transform(grasp_pose),
                                         problem_desc['grasp_config'], problem_desc["time_limit"])
     if path:
         # TODO visualize path by executing it

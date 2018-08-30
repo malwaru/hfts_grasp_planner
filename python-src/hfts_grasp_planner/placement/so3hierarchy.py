@@ -1,6 +1,7 @@
 import os
 import healpy
 import numpy as np
+# import functools
 from itertools import izip, product
 
 """
@@ -12,7 +13,7 @@ from itertools import izip, product
     At the root level, HEALPix has 12 patches, which for each subsequent level in the hierarchy are subdivided by 4.
     The grid on S^1 has 6 elements on the root level and each element is split by 2 for each subsequent level.
     Arguments in favor for this hierarchy:
-        - minimizes dispersion and discrepancy on each level of the hierarchy, 
+        - minimizes dispersion and discrepancy on each level of the hierarchy,
             i.e. we get a good cover of SO(3) on each level
         - children of hierarchy nodes are all nearest neighbors of their parents w.r.t. to
             metric p(x, y) = arccos(|x dot y|), where x and y are quaternions representing
@@ -119,12 +120,12 @@ def get_hopf_coordinates(key):
 def get_quaternion(key):
     """
         Return the quaternion representing the element of the hierarchy with the given key.
-        @param key - The key is expected to be a tuple (S^2_key, S^1_key), where 
-            S^2_key and S^1_key are expected to be lists of positive integers with maximum length 4.
+        @param key - The key is expected to be a tuple (S^2_key, S^1_key), where
+            S^2_key and S^1_key are expected to be lists of positive integers with equal lengths
             In both lists, each integer denotes the local id of a child, e.g. the key [3, 1] represents
             the first child of the third child on the root level. The integers must be between 0 and the maximum
             number of children on the respective level, i.e. all S^2_keys must be elementwise smaller than
-            [12, 4, 4, 4] and all S^1 keys must be elementwise smaller than [6, 2, 2, 2].
+            [12, 4, 4, 4, ...] and all S^1 keys must be elementwise smaller than [6, 2, 2, 2, ...].
         @return quaternion (x1, x2, x3, x4), where x1 is the real part, and x2, x3, x4 are associated with complex
             parts i,j,k respectively.
     """
@@ -178,15 +179,212 @@ def get_hopf_coordinate_range(key):
     assert(len(key) == 2)
     s2_key, s1_key = key[0], key[1]  # extract keys for both hierarchies
     assert(len(s2_key) == len(s1_key))
-    healpix_idx, s1_idx, level = key_to_indices(key)  # get indices
-    num_s1_values = 6 * pow(2, level)  # number of s1_values on this level for each healpix
-    nside = healpy.order2nside(level)  # compute nside for healpix
-    # we approximate the range of theta and phi by computing the corners of the healpix
-    thetas, phis = healpy.vec2ang(healpy.boundaries(nside, healpix_idx, nest=True).transpose())
-    result[0, 0] = np.min(thetas)
-    result[0, 1] = np.max(thetas)
-    result[1, 0] = np.min(phis)
-    result[1, 1] = np.max(phis)
-    result[2, 0] = float(s1_idx) / num_s1_values * np.pi
-    result[2, 1] = (s1_idx + 1.0) / num_s1_values * np.pi
+    if len(s2_key) == 0:  # root
+        result[0, :] = [0.0, np.pi]
+        result[1, :] = [0.0, 2.0 * np.pi]  # NOTE the 2pi should actually be exclusive
+        result[2, :] = [0.0, 2.0 * np.pi]  # NOTE the 2pi should actually be exclusive
+    else:
+        healpix_idx, s1_idx, level = key_to_indices(key)  # get indices
+        num_s1_values = 6 * pow(2, level)  # number of s1_values on this level for each healpix
+        nside = healpy.order2nside(level)  # compute nside for healpix
+        # we approximate the range of theta and phi by computing the corners of the healpix
+        thetas, phis = healpy.vec2ang(healpy.boundaries(nside, healpix_idx, nest=True).transpose())
+        result[0, 0] = np.min(thetas)
+        result[0, 1] = np.max(thetas)
+        result[1, 0] = np.min(phis)
+        result[1, 1] = np.max(phis)
+        result[2, 0] = float(s1_idx) / num_s1_values * np.pi
+        result[2, 1] = (s1_idx + 1.0) / num_s1_values * np.pi
     return result
+
+# def _compute_ks(s2_key, nside):
+#     """
+#         Compute the number of healpix splits that occur above for northern or
+#         below for southern pole pixels. The function does not produce meaningful results for equatorial pixels.
+#         This function is for internal use.
+#         ---------
+#         Arguments
+#         ---------
+#         s2_key - Key of the pixel in the hierarchy
+#         nside, int - nside of healpix hierarchy
+#         -------
+#         Returns
+#         -------
+#         k_left, int - split lines on top (on bottom) on the left
+#         k_right, int - split lines on top (on bottom) on the right
+#     """
+#     k_left, k_right = 0, 0
+#     if s2_key[0] <= 3:  # North Pole
+#         for d in xrange(1, len(s2_key)):
+#             if s2_key[d] == 0:
+#                 k_left += pow(2, len(s2_key) - 1 - d)
+#                 k_right += pow(2, len(s2_key) - 1 - d)
+#             elif s2_key[d] == 1:
+#                 k_right += pow(2, len(s2_key) - 1 - d)
+#             elif s2_key[d] == 2:
+#                 k_left += pow(2, len(s2_key) - 1 - d)
+#     elif s2_key[0] >= 8:  # South Pole
+#         for d in xrange(1, len(s2_key)):
+#             if s2_key[d] == 3:
+#                 k_left += pow(2, len(s2_key) - 1 - d)
+#                 k_right += pow(2, len(s2_key) - 1 - d)
+#             elif s2_key[d] == 1:
+#                 k_right += pow(2, len(s2_key) - 1 - d)
+#             elif s2_key[d] == 2:
+#                 k_left += pow(2, len(s2_key) - 1 - d)
+#     else:
+#         logging.warn("Computing ks for equatorial pixels does not make sense. This indicates a logic bug!")
+#     return k_left, k_right
+
+
+# def _domain_constr(min_values, max_values, sub_constr, vals):
+#     """
+#         Internal use!
+#         Contrain values to the proper domain and return violation values as well
+#         as violation of projected sub_constraint.
+#         ---------
+#         Arguments
+#         ---------
+#         min_values, numpy array of shape (2,) - minimum values for theta and phi
+#         max_values, numpy array of shape (2,) - maximum values for theta and phi
+#         sub_const, another constraint that depends on theta and phi to be within the specified box
+#         vals, numpy array of shape (2,) - [theta, phi]
+#     """
+#     assert(len(vals) == 2)
+#     # first project point to box spanned by min_values, max_values
+#     min_violation = vals - min_values  # negative values mean violation
+#     max_violation = max_values - vals  # negative values mean violation
+#     if min_violation[0] < 0.0 and min_violation[1] < 0.0:  # bottom left corner
+#         box_violation = -np.linalg.norm(min_violation)
+#         proj_vals = min_values
+#     elif min_violation[0] < 0.0 and min_violation[1] >= 0.0 and max_violation[1] >= 0:  # left side
+#         box_violation = min_violation[0]
+#         proj_vals = np.array([min_values[0], vals[1]])
+#     elif min_violation[0] < 0.0 and max_violation[1] < 0.0:  # top left corner
+#         box_violation = -np.linalg.norm(np.array([min_violation[0], max_violation[1]]))
+#         proj_vals = np.array([min_values[0], max_values[1]])
+#     elif min_violation[0] >= 0.0 and max_violation[0] >= 0.0 and max_violation[1] < 0.0:  # top side
+#         box_violation = max_violation[1]
+#         proj_vals = np.array([vals[0], max_values[1]])
+#     elif max_violation[0] < 0.0 and max_violation[1] < 0.0:  # top right corner
+#         box_violation = -np.linalg.norm(max_violation)
+#         proj_vals = max_values
+#     elif max_violation[0] < 0.0 and max_violation[1] >= 0.0 and min_violation[1] >= 0.0:  # right side
+#         box_violation = max_violation[0]
+#         proj_vals = np.array([max_values[0], vals[1]])
+#     elif max_violation[0] < 0.0 and min_violation[1] < 0.0:  # right bottom corner
+#         box_violation = -np.linalg.norm(np.array([max_violation[0], min_violation[1]]))
+#         proj_vals = np.array([max_values[0], min_values[1]])
+#     elif min_violation[1] < 0.0 and min_violation[0] >= 0.0 and max_violation[0] >= 0.0:  # bottom side
+#         box_violation = min_violation[1]
+#         proj_vals = np.array([vals[0], min_values[1]])
+#     else:  # values lie inside the box
+#         box_violation = 0.0
+#         proj_vals = vals
+#     return box_violation + sub_constr(proj_vals)
+
+
+# def _get_healpix_boundary_constraints(s2_key, s2_idx, nside):
+#     """
+#         Return the boundary constraints for the healpix identied by s2_key.
+#         This function is used internally and you probably want to call get_hopf_coordinate_range(key) instead.
+#         ---------
+#         Arguments
+#         ---------
+#         s2_key - Key in the s2 hierarchy
+#         s2_idx, int - healpix index in nested scheme
+#         nside, int - healpix nside
+#         -------
+#         Returns
+#         -------
+#         boundary_constr, list of length 4 - each element of this list is a function representing
+#             an edge of the healpix. The functions take theta and phi as arguments and return a value
+#             r > 0, if (cos(theta), phi) are on the correct side of the edge, r = 0 if on the edge and r < 0
+#             if on the wrong side.
+#     """
+#     boundary_constr = []
+
+#     if nside == 1:
+#         # TODO return root boundaries
+#         pass
+#     ring_idx = healpy.pix2ring(nside, np.array([s2_idx]), nest=True)
+#     if ring_idx <= nside - 1:  # North pole
+#         left_k, right_k = _compute_ks(s2_key, nside)
+
+#         def in_bounding_box()
+
+#         def left_upper_bound(k, nside, theta, phi):
+#             if phi >= np.pi:
+#                 return -
+#             phi_t = phi % (np.pi / 2.0)
+#             return 1.0 - k**2 / (3.0 * nside**2) * (np.pi / (2.0 * phi_t - np.pi))**2 - np.cos(theta)
+
+#         # TODO
+#     elif ring_idx <= 3 * nside:
+#         # equatorial zone, we have four lines. Compute the line parameters from the corner positions
+#         corner_thetas, corner_phis = healpy.vec2ang(healpy.boundaries(nside, s2_idx, nest=True))
+#         cos_thetas = np.cos(corner_thetas)
+#         b = np.pi * (cos_thetas[0] - cos_thetas[1]) / (corner_phis[0] - corner_phis[1])
+
+#         def constraint_1(a, b, c, theta, phi):
+#             return a + b * (phi - c) / (2.0 * np.pi) - np.cos(theta)
+
+#         def constraint_2(a, b, c, theta, phi):
+#             return a - b * (phi - c) / (2.0 * np.pi) - np.cos(theta)
+
+#         def constraint_3(a, b, c, theta, phi):
+#             return np.cos(theta) - a + b * (phi - c) / (2.0 * np.pi)
+
+#         def constraint_4(a, b, c, theta, phi):
+#             return np.cos(theta) - a - b * (phi - c) / (2.0 * np.pi)
+#         boundary_constr = [
+#             functools.partial(constraint_1, cos_thetas[1], b, corner_phis[1]),
+#             functools.partial(constraint_2, cos_thetas[0], b, corner_phis[1]),
+#             functools.partial(constraint_3, cos_thetas[1], b, corner_phis[1]),
+#             functools.partial(constraint_4, cos_thetas[2], b, corner_phis[1]),
+#         ]
+#     else:
+#         # South pole
+#         left_k, right_k = _compute_ks(s2_key, nside)
+#     return boundary_constr
+
+
+# def get_hopf_coordinate_range(key):
+#     """
+#         Return the range for the Hopf coordinates that are represented
+#         by the element with the given key. The range is implicitly described
+#         through inequality constraints, represented by two functions described in
+#         more detail below.
+#         ---------
+#         Arguments
+#         ---------
+#         key, tuple - A key identifying a node as described in get_quaternion(..).
+#         -------
+#         Returns
+#         -------
+#         theta_phi_constr, a function - call this function like this: r = theta_phi_constr(theta, phi),
+#             where theta and phi are the first two Hopf coordinates. r is negative if the pair (theta, phi)
+#             is out of bounds, 0 on the boundary and positive inside the range. The function is continuous.
+#         psi_constr, a function - call this function like this: r = psi_constr(psi),
+#             where psi is the third Hopf coordinate. r is negative if psi
+#             is out of bounds, 0 if on the boundary and positive if inside the range.
+#             The function is continuous.
+#     """
+#     assert(len(key) == 2)
+#     s2_key, s1_key = key[0], key[1]  # extract keys for both hierarchies
+#     assert(len(s2_key) == len(s1_key))
+#     s2_idx, s1_idx, level = key_to_indices(key)  # get indices
+#     num_s1_values = 6 * pow(2, level)  # number of s1_values on this level for each healpix
+#     boundary_constr = get_healpix_boundary_constraints(s2_idx, s2_key, healpy.order2nside(level))
+
+#     def interval_constr(lv, uv, x):
+#         return np.min(x - lv, uv - x)
+
+#     def pixel_constr(boundary_constr, theta, phi):
+#         return np.min(np.min(boundary_constr[0](theta, phi), boundary_constr[1](theta, phi)),
+#                       np.min(boundary_constr[2](theta, phi), boundary_constr[3](theta, phi)))
+
+#     psi_constr = functools.partial(interval_constr, float(s1_idx) / num_s1_values *
+#                                    np.pi, (s1_idx + 1.0) / num_s1_values * np.pi)
+#     theta_phi_constr = functools.partial(pixel_constr, boundary_constr)
+#     return theta_phi_constr, psi_constr

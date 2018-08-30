@@ -59,7 +59,7 @@ class GUI(Gtk.Window):
         rospy.logdebug('update_graph called')
         with self.drawing_lock:
             self.graph = graph
-            self.layout = graph.layout('rt')
+            self.layout = graph.layout('rt', root=[0])
             self._has_graph = True
             layer_sizes = self.compute_layer_sizes()
             max_nodes_per_layer = max(layer_sizes)
@@ -85,7 +85,7 @@ class GUI(Gtk.Window):
         # color = color * 255
         # return map(int, color)
         color_code = int(vertex['temperature'] / self.max_temp * 255.0)
-        return color_code
+        return min(color_code, 255)
 
     def expose(self, widget, cairo_context):
         cairo_surface = cairo_context.get_target()
@@ -186,12 +186,13 @@ def main2():
 
 
 def main():
+    rospy.init_node('FreeSpaceProximitySamplerVisualizerServer')
     Gdk.threads_init()
     app = GUI()
     while not rospy.is_shutdown() and not app.terminated:
         Gtk.main_iteration()
-        rospy.sleep(0.1)
+        rospy.sleep(0.02)
 
 
 if __name__ == "__main__":
-    sys.exit(main2())
+    sys.exit(main())

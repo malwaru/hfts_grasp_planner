@@ -1,6 +1,7 @@
 #! /usr/bin/python
 
 import os
+import logging
 import IPython
 import hfts_grasp_planner.sdf.core as sdf_module
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf_module
@@ -25,9 +26,10 @@ def execute_placement_planner(placement_planner, body):
     result = placement_planner.sample(placement_planner.get_max_depth())
     # print 'Best val is ', result.quality_value
     if result.is_valid():
-        print "Result is valid"
         if result.is_goal():
-            print "Result is a goal"
+            print "Result is a goal."
+        else:
+            print "Result is valid, but not a goal."
     else:
         print "Result is invalid"
     if result.obj_pose is not None:
@@ -39,6 +41,8 @@ def execute_placement_planner(placement_planner, body):
 
 if __name__ == "__main__":
     # NOTE If the OpenRAVE viewer is created too early, nothing works! Collision checks may be incorrect!
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
     env = orpy.Environment()
     env.Load(ENV_PATH)
     robot_name = env.GetRobots()[0].GetName()
@@ -56,7 +60,7 @@ if __name__ == "__main__":
         IPython.embed()
         scene_sdf.create_sdf(volume, resolution, resolution)
         scene_sdf.save(SDF_PATH)
-    target_obj_name = 'bunny'
+    target_obj_name = 'crayola'
     placement_planner = pp_module.PlacementGoalPlanner(DATA_PATH, env, scene_sdf)
     # placement_volume = (np.array([-0.35, 0.55, 0.66]), np.array([0.53, 0.9, 0.77]))  # on top of shelf
     placement_volume = (np.array([-0.35, 0.55, 0.42]), np.array([0.53, 0.9, 0.64]))  # inside shelf

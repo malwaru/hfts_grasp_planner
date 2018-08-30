@@ -25,7 +25,7 @@ class FreeSpaceProximitySamplerVisualizer(object):
             if config is not None:
                 logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Request to ' +
                               'show config ' + str(config))
-                self.robot.SetDOFValues(config)
+                self.robot.SetActiveDOFValues(config)
                 env = self.robot.GetEnv()
                 b_in_collision = env.CheckCollision(self.robot) or self.robot.CheckSelfCollision()
                 if not b_in_collision:
