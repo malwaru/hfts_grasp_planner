@@ -7,7 +7,7 @@ import random
 import numpy
 import time
 import math
-import logging
+import rospy
 import copy
 from rtree import index
 
@@ -296,7 +296,7 @@ class ConstPGoalProvider(PGoalProvider):
         self._pGoal = p_goal
 
     def compute_p_goal(self, num_trees):
-        logging.debug('[ConstPGoalProvider::compute_p_goal] Returning constant pGoal')
+        rospy.logdebug('[ConstPGoalProvider::compute_p_goal] Returning constant pGoal')
         if num_trees == 0:
             return 1.0
         return self._pGoal
@@ -309,7 +309,7 @@ class DynamicPGoalProvider(PGoalProvider):
         self._pGoalMin = p_goal_min
 
     def compute_p_goal(self, num_trees):
-        logging.debug('[DynamicPGoalProvider::compute_p_goal] Returning dynamic pGoal')
+        rospy.logdebug('[DynamicPGoalProvider::compute_p_goal] Returning dynamic pGoal')
         return self._pMax * math.exp(-self._goalW * num_trees) + self._pGoalMin
 
 
@@ -400,7 +400,7 @@ class StatsLogger:
 
 
 class RRT:
-    def __init__(self, p_goal_provider, c_free_sampler, goal_sampler, logger, pgoal_tree=0.8,
+    def __init__(self, p_goal_provider, c_free_sampler, goal_sampler, pgoal_tree=0.8,
                  constraints_manager=None):  # pForwardTree, pConnectTree
         """ Initializes the RRT planner
             @param pGoal - Instance of PGoalProvider that provides a probability of sampling a new goal
@@ -413,7 +413,6 @@ class RRT:
         self.p_goal_tree = pgoal_tree
         self.goal_sampler = goal_sampler
         self.c_free_sampler = c_free_sampler
-        self.logger = logger
         self.stats_logger = StatsLogger()
         # self.debugConfigList = []
         if constraints_manager is None:
@@ -426,7 +425,7 @@ class RRT:
         (bConnected, samples) = self.c_free_sampler.interpolate(nearest_node.get_sample_data(), random_sample,
                                                                 projection_function=self._constraints_manager.project)
         parent_node = nearest_node
-        self.logger.debug('[RRT::extend We have ' + str(len(samples) - 1) + " intermediate configurations")
+        rospy.logdebug('[RRT::extend We have ' + str(len(samples) - 1) + " intermediate configurations")
         if add_intermediates:
             for i in range(add_tree_step, len(samples) - 1, add_tree_step):
                 parent_node = tree.add(parent_node, samples[i].copy())
@@ -456,7 +455,7 @@ class RRT:
         """ Bidirectional RRT algorithm with hierarchical goal region that
             uses free space proximity to bias sampling. """
         if not self.c_free_sampler.is_valid(start_config):
-            self.logger.info('[RRT::proximityBiRRT] Start configuration is invalid. Aborting.')
+            rospy.loginfo('[RRT::proximityBiRRT] Start configuration is invalid. Aborting.')
             return None
         from sampler import FreeSpaceProximitySampler, FreeSpaceModel, ExtendedFreeSpaceModel
         assert type(self.goal_sampler) == FreeSpaceProximitySampler
@@ -485,74 +484,74 @@ class RRT:
         debug_function(forward_tree, backward_trees)
 
         # Main loop
-        self.logger.debug('[RRT::proximityBiRRT] Starting planning loop')
+        rospy.logdebug('[RRT::proximityBiRRT] Starting planning loop')
         while timer_function() < start_time + time_limit and not b_path_found:
             debug_function(forward_tree, backward_trees)
             p = random.random()
             p_goal = self.p_goal_provider.compute_p_goal(len(backward_trees))
-            self.logger.debug('[RRT::proximityBiRRT] Rolled a die: ' + str(p) + '. p_goal is ' +
-                              str(p_goal))
+            rospy.logdebug('[RRT::proximityBiRRT] Rolled a die: ' + str(p) + '. p_goal is ' +
+                           str(p_goal))
             if p < p_goal:
                 # Create a new backward tree
-                self.logger.debug('[RRT::proximityBiRRT] Sampling a new goal configuration')
+                rospy.logdebug('[RRT::proximityBiRRT] Sampling a new goal configuration')
                 goal_sample = self.goal_sampler.sample()
                 self.stats_logger.num_goals_sampled += 1
-                self.logger.debug('[RRT::proximityBiRRT] Sampled a new goal: ' + str(goal_sample))
+                rospy.logdebug('[RRT::proximityBiRRT] Sampled a new goal: ' + str(goal_sample))
                 if goal_sample.is_valid():
                     backward_tree = RTreeTree(goal_sample, self.c_free_sampler.get_space_dimension(),
                                               self.c_free_sampler.get_scaling_factors(), b_forward_tree=False)
                     self._constraints_manager.register_new_tree(backward_tree)
                     if self.goal_sampler.is_goal(goal_sample):
                         self.stats_logger.num_valid_goals_sampled += 1
-                        self.logger.debug('[RRT::proximityBiRRT] Goal sample is valid.' +
-                                          ' Created new backward tree')
+                        rospy.logdebug('[RRT::proximityBiRRT] Goal sample is valid.' +
+                                       ' Created new backward tree')
                         goal_tree_ids.append(backward_tree.get_id())
                     else:
                         self.stats_logger.num_approx_goals_sampled += 1
-                        self.logger.debug('[RRT::proximityBiRRT] Goal sample is valid, but approximate.' +
-                                          ' Created new approximate backward tree')
+                        rospy.logdebug('[RRT::proximityBiRRT] Goal sample is valid, but approximate.' +
+                                       ' Created new approximate backward tree')
                     self.stats_logger.num_backward_trees += 1
                     backward_trees.append(backward_tree)
                     non_connected_free_space.add_tree(backward_tree)
             else:
                 # Extend search trees
-                self.logger.debug('[RRT::proximityBiRRT] Extending search trees')
+                rospy.logdebug('[RRT::proximityBiRRT] Extending search trees')
                 self._constraints_manager.reset_constraints()
                 random_sample = self.c_free_sampler.sample()
-                self.logger.debug('[RRT::proximityBiRRT] Drew random sample: ' + str(random_sample))
+                rospy.logdebug('[RRT::proximityBiRRT] Drew random sample: ' + str(random_sample))
                 self.stats_logger.num_c_free_samples += 1
                 (forward_node, backward_node, backward_tree, b_connected) = (None, None, None, False)
                 if b_searching_forward or len(backward_trees) == 0:
-                    self.logger.debug('[RRT::proximityBiRRT] Extending forward tree to random sample')
+                    rospy.logdebug('[RRT::proximityBiRRT] Extending forward tree to random sample')
                     (forward_node, b_connected) = self.extend(forward_tree, random_sample)
-                    self.logger.debug('[RRT::proximityBiRRT] Forward tree connected to sample: ' + str(b_connected))
-                    self.logger.debug('[RRT::proximityBiRRT] New forward tree node: ' + str(forward_node))
+                    rospy.logdebug('[RRT::proximityBiRRT] Forward tree connected to sample: ' + str(b_connected))
+                    rospy.logdebug('[RRT::proximityBiRRT] New forward tree node: ' + str(forward_node))
                     if len(backward_trees) > 0:
-                        self.logger.debug('[RRT::proximityBiRRT] Attempting to connect forward tree ' +
-                                          'to backward tree')
+                        rospy.logdebug('[RRT::proximityBiRRT] Attempting to connect forward tree ' +
+                                       'to backward tree')
                         (backward_tree, nearest_node) = \
                             self.pick_nearest_tree(forward_node.get_sample_data(), backward_trees)
                         (backward_node, b_connected) = self.extend(backward_tree, forward_node.get_sample_data())
                     else:
                         b_connected = False
                 else:
-                    self.logger.debug('[RRT::proximityBiRRT] Extending backward tree to random sample')
+                    rospy.logdebug('[RRT::proximityBiRRT] Extending backward tree to random sample')
                     # TODO try closest tree instead
                     backward_tree = self.pick_backward_tree(backward_trees,
                                                             goal_tree_ids)
                     # (backward_tree, nearest_node) = self._biRRT_helper_nearestTree(random_sample, backward_trees)
                     if backward_tree.get_id() in goal_tree_ids:
-                        self.logger.debug('[RRT::proximityBiRRT] Attempting to connect goal tree!!!!')
+                        rospy.logdebug('[RRT::proximityBiRRT] Attempting to connect goal tree!!!!')
                     (backward_node, b_connected) = self.extend(backward_tree, random_sample)
-                    self.logger.debug('[RRT::proximityBiRRT] New backward tree node: ' + str(backward_node))
-                    self.logger.debug('[RRT::proximityBiRRT] Backward tree connected to sample: ' +
-                                      str(b_connected))
-                    self.logger.debug('[RRT::proximityBiRRT] Attempting to connect forward tree ' +
-                                      'to backward tree ' + str(backward_tree.get_id()))
+                    rospy.logdebug('[RRT::proximityBiRRT] New backward tree node: ' + str(backward_node))
+                    rospy.logdebug('[RRT::proximityBiRRT] Backward tree connected to sample: ' +
+                                   str(b_connected))
+                    rospy.logdebug('[RRT::proximityBiRRT] Attempting to connect forward tree ' +
+                                   'to backward tree ' + str(backward_tree.get_id()))
                     (forward_node, b_connected) = self.extend(forward_tree, backward_node.get_sample_data())
                 self.stats_logger.num_attempted_tree_connects += 1
                 if b_connected:
-                    self.logger.debug('[RRT::proximityBiRRT] Trees connected')
+                    rospy.logdebug('[RRT::proximityBiRRT] Trees connected')
                     self.stats_logger.num_successful_tree_connects += 1
                     tree_name = 'merged_backward_tree' + str(self.stats_logger.num_successful_tree_connects)
                     self.stats_logger.treeSizes[tree_name] = backward_tree.size()
@@ -564,7 +563,7 @@ class RRT:
                         goal_tree_ids.remove(backward_tree.get_id())
                         path = forward_tree.extract_path(root_b)
                         b_path_found = True
-                        self.logger.debug('[RRT::proximityBiRRT] Found a path!')
+                        rospy.logdebug('[RRT::proximityBiRRT] Found a path!')
                 b_searching_forward = not b_searching_forward
 
         self.stats_logger.treeSizes['forward_tree'] = forward_tree.size()
@@ -595,8 +594,8 @@ class RRT:
     def shortcut(self, path, time_limit):
         if path is None:
             return None
-        self.logger.debug('[RRT::shortcut] Shortcutting path of length %i with time limit %f' % (len(path),
-                                                                                                 time_limit))
+        rospy.logdebug('[RRT::shortcut] Shortcutting path of length %i with time limit %f' % (len(path),
+                                                                                              time_limit))
         start_time = time.clock()
         all_pairs = [(i, j) for i in range(len(path)) for j in range(i + 2, len(path))]
         random.shuffle(all_pairs)
@@ -607,5 +606,5 @@ class RRT:
                 path[index_pair[0] + 1:] = path[index_pair[1]:]
                 all_pairs = [(i, j) for i in range(len(path)) for j in range(i + 2, len(path))]
                 random.shuffle(all_pairs)
-        self.logger.debug('[RRT::shortcut] Shorcutting finished. New path length %i' % len(path))
+        rospy.logdebug('[RRT::shortcut] Shorcutting finished. New path length %i' % len(path))
         return path

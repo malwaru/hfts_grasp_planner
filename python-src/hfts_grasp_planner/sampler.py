@@ -2,7 +2,7 @@
 """ This module contains a general hierarchically organized goal region sampler. """
 
 import ast
-import logging
+import rospy
 import math
 import numpy
 import random
@@ -399,19 +399,19 @@ class NaiveGoalSampler:
         parent.add_child(new_node)
 
     def sample(self, b_dummy=False):
-        logging.debug('[NaiveGoalSampler::sample] Sampling a goal in the naive way')
+        rospy.logdebug('[NaiveGoalSampler::sample] Sampling a goal in the naive way')
         my_sample = self.goal_region.sample(self.depth_limit)
         self._add_new_sample(my_sample)
         if self._debug_drawer is not None:
             self._debug_drawer.draw_hierarchy(self._root_node)
         if not my_sample.is_valid() or not my_sample.is_goal():
-            logging.debug('[NaiveGoalSampler::sample] Failed. Did not get a valid goal!')
+            rospy.logdebug('[NaiveGoalSampler::sample] Failed. Did not get a valid goal!')
             return SampleData(None)
         else:
             my_sample.cacheId = len(self.cache)
             self.cache.append(my_sample)
 
-        logging.debug('[NaiveGoalSampler::sample] Success. Found a valid goal!')
+        rospy.logdebug('[NaiveGoalSampler::sample] Success. Found a valid goal!')
         return my_sample.to_sample_data()
 
     # def get_quality(self, sample_data):
@@ -619,8 +619,8 @@ class FreeSpaceProximityHierarchyNode(object):
             deleted_child = self._active_children[i]
             self._active_children.remove(deleted_child)
             self._inactive_children.append(deleted_child)
-            logging.debug('[FreeSpaceProximityHierarchyNode::updateActiveChildren] Removing child with ' +
-                          'temperature ' + str(deleted_child.get_T()) + '. It had index ' + str(i))
+            rospy.logdebug('[FreeSpaceProximityHierarchyNode::updateActiveChildren] Removing child with ' +
+                           'temperature ' + str(deleted_child.get_T()) + '. It had index ' + str(i))
         assert len(self._children) == len(self._inactive_children) + len(self._active_children)
 
     def add_child(self, child):
@@ -806,7 +806,7 @@ class FreeSpaceProximitySampler(object):
         self._b_return_approximates = b_return_approximates
 
     def clear(self):
-        logging.debug('[FreeSpaceProximitySampler::clear] Clearing caches etc')
+        rospy.logdebug('[FreeSpaceProximitySampler::clear] Clearing caches etc')
         self._connected_space = None
         self._non_connected_space = None
         self._label_cache = {}
@@ -855,7 +855,7 @@ class FreeSpaceProximitySampler(object):
         if label in self._label_cache:
             hierarchy_node = self._label_cache[label]
             hierarchy_node.add_goal_sample(goal_sample)
-            logging.warn('[FreeSpaceProximitySampler::_getHierarchyNode] Sampled a cached node!')
+            rospy.logwarn('[FreeSpaceProximitySampler::_getHierarchyNode] Sampled a cached node!')
         else:
             hierarchy_node = FreeSpaceProximityHierarchyNode(goal_node=goal_sample,
                                                              config=goal_sample.get_configuration())
@@ -894,7 +894,7 @@ class FreeSpaceProximitySampler(object):
         return math.exp(-dist)
 
     def _update_temperatures(self, node):
-        logging.debug('[FreeSpaceProximitySampler::_updateTemperatures] Updating temperatures')
+        rospy.logdebug('[FreeSpaceProximitySampler::_updateTemperatures] Updating temperatures')
         self._T(node)
 
     def _t(self, node):
@@ -980,7 +980,7 @@ class FreeSpaceProximitySampler(object):
 
     def _pick_random_approximate(self):
         random_approximate = self._non_connected_space.draw_random_approximate()
-        logging.debug('[FreeSpaceProximitySampler::_pickRandomApproximate] ' + str(random_approximate))
+        rospy.logdebug('[FreeSpaceProximitySampler::_pickRandomApproximate] ' + str(random_approximate))
         return random_approximate
 
     def _add_temporary(self, children):
@@ -1029,9 +1029,9 @@ class FreeSpaceProximitySampler(object):
                                                                label_cache=child_labels,
                                                                post_opt=do_post_opt)
         if new_goal_node.is_goal() and new_goal_node.is_valid():
-            logging.debug('[FreeSpaceProximitySampler::_sampleChild] We sampled a valid goal here!!!')
+            rospy.logdebug('[FreeSpaceProximitySampler::_sampleChild] We sampled a valid goal here!!!')
         elif new_goal_node.is_valid():
-            logging.debug('[FreeSpaceProximitySampler::_sampleChild] Valid sample here!')
+            rospy.logdebug('[FreeSpaceProximitySampler::_sampleChild] Valid sample here!')
         (hierarchy_node, b_new) = self._get_hierarchy_node(new_goal_node)
         if b_new:
             parent_node.add_child(hierarchy_node)
@@ -1046,14 +1046,14 @@ class FreeSpaceProximitySampler(object):
 
     def sample(self):
         current_node = self._root_node
-        logging.debug('[FreeSpaceProximitySampler::sample] Starting to sample a new goal candidate' +
-                      ' - the lazy way')
+        rospy.logdebug('[FreeSpaceProximitySampler::sample] Starting to sample a new goal candidate' +
+                       ' - the lazy way')
         num_samplings = self._k
         b_temperatures_invalid = True
         while num_samplings > 0:
             if self._debug_drawer is not None:
                 self._debug_drawer.draw_hierarchy(self._root_node)
-            logging.debug('[FreeSpaceProximitySampler::sample] Picking random cached child')
+            rospy.logdebug('[FreeSpaceProximitySampler::sample] Picking random cached child')
             if b_temperatures_invalid:
                 self._update_temperatures(current_node)
             child = self._pick_random_child(current_node)
@@ -1067,7 +1067,7 @@ class FreeSpaceProximitySampler(object):
                 # another chance here. Hence, we would also need to set the temperatures of such nodes
                 # to sth non-zero
                 if child.is_goal():
-                    logging.warn('[FreeSpaceProximitySampler::sample] Pretending to sample null space')
+                    rospy.logwarn('[FreeSpaceProximitySampler::sample] Pretending to sample null space')
                     # TODO actually sample null space here and return new configuration or approx
                     b_temperatures_invalid = True
                 num_samplings -= 1
@@ -1089,8 +1089,8 @@ class FreeSpaceProximitySampler(object):
 
         if self._debug_drawer is not None:
             self._debug_drawer.draw_hierarchy(self._root_node)
-        logging.debug('[FreeSpaceProximitySampler::sample] The search led to a dead end. Maybe there is '
-                      + 'sth in our approximate cache!')
+        rospy.logdebug('[FreeSpaceProximitySampler::sample] The search led to a dead end. Maybe there is '
+                       + 'sth in our approximate cache!')
         if self._b_return_approximates:
             return SampleData(self._pick_random_approximate())
         return SampleData(None)

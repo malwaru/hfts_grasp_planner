@@ -2,7 +2,7 @@ import numpy as np
 import transformations
 import math
 import os
-import logging
+import rospy
 from scipy.spatial import KDTree
 from utils import vec_angel_diff, dist_in_range
 
@@ -28,7 +28,7 @@ class RobotiqHand(object):
         # self._hand_mani = RobotiqHandVirtualManifold(self._or_hand)
         self._hand_mani = RobotiqHandKDTreeManifold(self, hand_cache_file)
 
-    def __getattr__(self, attr): # composition
+    def __getattr__(self, attr):  # composition
         return getattr(self._or_hand, attr)
 
     def get_hand_manifold(self):
@@ -46,14 +46,16 @@ class RobotiqHand(object):
             local_frame_rot = transformations.rotation_matrix(math.pi / 6., [0, 0, 1])[:3, :3]
             T[:3, :3] = T[:3, :3].dot(local_frame_rot)
 
-            offset = T[0:3,0:3].dot(self.get_tip_offsets())
-            T[0:3,3] = T[0:3,3] + offset
+            offset = T[0:3, 0:3].dot(self.get_tip_offsets())
+            T[0:3, 3] = T[0:3, 3] + offset
 
             position = T[:3, -1]
-            self._plot_handler.append(self._or_env.plot3(points=position, pointsize=point_size, colors=colors[i], drawstyle=1))
+            self._plot_handler.append(self._or_env.plot3(
+                points=position, pointsize=point_size, colors=colors[i], drawstyle=1))
             for j in range(3):
                 normal = T[:3, j]
-                self._plot_handler.append(self._or_env.drawarrow(p1=position, p2=position + 0.05 * normal, linewidth=0.001, color=colors[j]))
+                self._plot_handler.append(self._or_env.drawarrow(p1=position, p2=position +
+                                                                 0.05 * normal, linewidth=0.001, color=colors[j]))
 
     def get_tip_offsets(self):
         return np.array([0.025, 0.006, 0.0])
@@ -66,8 +68,8 @@ class RobotiqHand(object):
             T = link.GetGlobalMassFrame()
             local_frame_rot = transformations.rotation_matrix(math.pi / 6., [0, 0, 1])[:3, :3]
             T[:3, :3] = T[:3, :3].dot(local_frame_rot)
-            offset = T[0:3,0:3].dot(self.get_tip_offsets())
-            T[0:3,3] = T[0:3,3] + offset
+            offset = T[0:3, 0:3].dot(self.get_tip_offsets())
+            T[0:3, 3] = T[0:3, 3] + offset
             ret.append(T)
         return ret
 
@@ -206,12 +208,12 @@ class RobotiqHandKDTreeManifold:
 
     def load(self):
         if os.path.exists(self._cache_file_name):
-            logging.info('[RobotiqHandKDTreeManifold::load] Loading sample data set form disk.')
+            rospy.loginfo('[RobotiqHandKDTreeManifold::load] Loading sample data set form disk.')
             data = np.load(self._cache_file_name)
             self._codes = data[:, :self.CODE_DIMENSION]
             self._hand_configurations = data[:, self.CODE_DIMENSION:]
         else:
-            logging.info('[RobotiqHandKDTreeManifold::load] No data set available. Generating new...')
+            rospy.loginfo('[RobotiqHandKDTreeManifold::load] No data set available. Generating new...')
             self._sample_configuration_space()
             data = np.concatenate((self._codes, self._hand_configurations), axis=1)
             np.save(self._cache_file_name, data)
@@ -220,7 +222,7 @@ class RobotiqHandKDTreeManifold:
 
     def _sample_configuration_space(self):
         lower_limits, upper_limits = self._or_robot.GetDOFLimits()
-        #TODO can this be done in a niceer way? closing the hand all the way does not make sense
+        # TODO can this be done in a niceer way? closing the hand all the way does not make sense
         # TODO hence this limit instead
         upper_limits[1] = 0.93124747
         joint_ranges = np.array(upper_limits) - np.array(lower_limits)
@@ -230,7 +232,7 @@ class RobotiqHandKDTreeManifold:
         self._hand_configurations = np.zeros((self.NUM_SAMPLES, self._or_robot.GetDOF()))
         self._codes = np.zeros((self.NUM_SAMPLES, self.CODE_DIMENSION))
         sample_idx = 0
-        logging.info('[RobotiqHandKDTreeManifold::Sampling %i hand configurations.' % self.NUM_SAMPLES)
+        rospy.loginfo('[RobotiqHandKDTreeManifold::Sampling %i hand configurations.' % self.NUM_SAMPLES)
         for j0 in range(interpolation_steps):
             config[0] = j0 * step_sizes[0] + lower_limits[0]
             for j1 in range(interpolation_steps):
@@ -248,7 +250,8 @@ class RobotiqHandKDTreeManifold:
         self._hand_configurations = self._hand_configurations[:sample_idx, :]
         self._codes = self._codes[:sample_idx, :]
         # TODO see whether we wanna normalize codes
-        logging.info('[RobotiqHandKDTreeManifold::Sampling finished. Found %i collision-free hand configurations.' % sample_idx)
+        rospy.loginfo(
+            '[RobotiqHandKDTreeManifold::Sampling finished. Found %i collision-free hand configurations.' % sample_idx)
 
     def test_manifold(self):
         """
@@ -282,7 +285,8 @@ class RobotiqHandKDTreeManifold:
                 num_evaluations += 1
 
         avg_error = avg_error / num_evaluations
-        logging.info('[RobotiqHandKDTreeManifold::test_manifold] Average error: %f, max: %f, min: %f' %(avg_error, max_error, min_error))
+        rospy.loginfo('[RobotiqHandKDTreeManifold::test_manifold] Average error: %f, max: %f, min: %f' %
+                      (avg_error, max_error, min_error))
 
     def encode_grasp(self, grasp):
         """
@@ -344,6 +348,7 @@ class RobotiqHandVirtualManifold:
         Mimic the hand manifold interface from our ICRA'16 paper,
         it is not needed to model a reachability manifold for the Robotiq-S.
     """
+
     def __init__(self, or_hand, com_center_weight=0.5, pos_reach_weight=5.0, f01_parallelism_weight=1.0,
                  grasp_symmetry_weight=1.0, grasp_flatness_weight=1.0, f2_centralism_weight=1.0):
         self._or_hand = or_hand

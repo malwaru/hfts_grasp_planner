@@ -5,7 +5,7 @@ from __future__ import print_function
 import math
 import time
 import yaml
-import logging
+import rospy
 import os
 import operator
 import itertools
@@ -30,6 +30,7 @@ class VoxelGrid(object):
         """
             A voxel cell is a cell in a voxel grid and represents a voxel.
         """
+
         def __init__(self, grid, idx):
             self._grid = grid
             self._idx = idx
@@ -92,7 +93,8 @@ class VoxelGrid(object):
         if base_transform is not None:
             self._transform = base_transform
         self._inv_transform = inverse_transform(self._transform)
-        self._cells = np.zeros(self._num_cells + 2, dtype=dtype)  # first and last element per dimension is a dummy element for trilinear interpolation
+        # first and last element per dimension is a dummy element for trilinear interpolation
+        self._cells = np.zeros(self._num_cells + 2, dtype=dtype)
         self._homogeneous_point = np.ones(4)
 
     def __iter__(self):
@@ -117,7 +119,8 @@ class VoxelGrid(object):
         """
         data_file_name = file_name + '.data.npy'
         meta_file_name = file_name + '.meta.npy'
-        np.save(data_file_name, self._cells[1:-1, 1:-1, 1:-1]) # first and last element per dimension are dummy elements
+        # first and last element per dimension are dummy elements
+        np.save(data_file_name, self._cells[1:-1, 1:-1, 1:-1])
         np.save(meta_file_name, np.array([self._base_pos, self._cell_size, self._aabb, self._transform]))
 
     @staticmethod
@@ -343,7 +346,8 @@ class VoxelGrid(object):
             return isinstance(x, float) or isinstance(x, int) or isinstance(x, np.float_)
         valid_type = reduce(operator.and_, map(check_type, idx), True)
         if not valid_type:
-            raise ValueError("Indices must either be int or float. Instead, the types are: %s, %s, %s" % tuple(map(type, idx)))
+            raise ValueError("Indices must either be int or float. Instead, the types are: %s, %s, %s" %
+                             tuple(map(type, idx)))
         if cast_type is not None:
             if cast_type == int:
                 idx = map(int, idx)
@@ -426,6 +430,7 @@ class ORVoxelGridVisualization(object):
     """
         This class allows to visualize a voxel grid using an OpenRAVE environment.
     """
+
     def __init__(self, or_env, voxel_grid):
         """
             Creates a new visualization of a voxel grid using openrave.
@@ -461,6 +466,7 @@ class ORVoxelGridVisualization(object):
         blue_color = np.array([0.0, 0.0, 1.0, 0.05])
         red_color = np.array([1.0, 0.0, 0.0, 0.05])
         positions = np.array([cell.get_position() for cell in self._voxel_grid])
+
         def compute_color(value):
             """
                 Computes the color for the given value
@@ -487,7 +493,8 @@ class SDF(object):
     """
         This class represents a signed distance field.
     """
-    def __init__(self, grid, approximation_box=None) :
+
+    def __init__(self, grid, approximation_box=None):
         """
             Creates a new signed distance field.
             You may either create an SDF using a SDFBuilder or by loading it from file.
@@ -592,14 +599,14 @@ class SDF(object):
         """
         meta_data_filename = filename + '.meta.npy'
         if not os.path.exists(meta_data_filename):
-            logging.warning("Could not load SDF because meta data file " + meta_data_filename + " does not exist")
+            rospy.logwarn("Could not load SDF because meta data file " + meta_data_filename + " does not exist")
             return None
         meta_data = np.load(meta_data_filename)
         approximation_box = meta_data[0]
         try:
             grid = VoxelGrid.load(filename + '.grid')
         except IOError as io_err:
-            logging.warning("Could not load SDF because:" + str(io_err))
+            rospy.logwarn("Could not load SDF because:" + str(io_err))
             return None
         return SDF(grid=grid, approximation_box=approximation_box)
 
@@ -636,6 +643,7 @@ class OccupancyGridBuilder(object):
         """
             Internal helper class for managing box-shaped bodies for collision checking.
         """
+
         def __init__(self, env, cell_size):
             """
                 Create a new BodyManager
@@ -690,6 +698,7 @@ class OccupancyGridBuilder(object):
                 body.Destroy()
             self._bodies = {}
     ################################### Methods ###################################
+
     def __init__(self, env, cell_size):
         """
             Creates a new OccupancyGridBuilder object.
@@ -777,6 +786,7 @@ class SDFBuilder(object):
         If you intend to construct multiple SDFs with the same cell size, it is recommended to use a single
         SDFBuilder as this saves resource generation. It only checks collisions with enabled bodies.
     """
+
     def __init__(self, env, cell_size):
         """
             Creates a new SDFBuilder object.
@@ -880,6 +890,7 @@ class SceneSDF(object):
         are currently not supported, i.e. robots should always be excluded if they are expected to change their
         configuration.
     """
+
     def __init__(self, env, movable_body_names, excluded_bodies=None, sdf_paths=None, radii=None):
         """
             Constructor for SceneSDF. In order to actually use a SceneSDF you need to
@@ -1076,7 +1087,7 @@ class SceneSDF(object):
                 if name != '__static_sdf__':
                     body = self._env.GetKinBody(name)
                     if body is None:
-                        logging.log(logging.ERROR, "Could not find kinbody %s" % name)
+                        rospy.logerr("Could not find kinbody %s" % name)
                         continue
                     self._body_sdfs[name] = (body, SDF.load(path))
                     available_sdfs[name] = True
@@ -1095,6 +1106,7 @@ class ORSDFVisualization(object):
     """
         This class allows to visualize an SDF using an OpenRAVE environment.
     """
+
     def __init__(self, or_env):
         """
             Creates a new visualization of an SDF using openrave.
@@ -1120,8 +1132,8 @@ class ORSDFVisualization(object):
         num_samples = (volume[3:] - volume[:3]) / resolution
         start_time = time.time()
         positions = np.array([np.array([x, y, z, 1.0]) for x in np.linspace(volume[0], volume[3], num_samples[0])
-                               for y in np.linspace(volume[1], volume[4], num_samples[1])
-                               for z in np.linspace(volume[2], volume[5], num_samples[2])])
+                              for y in np.linspace(volume[1], volume[4], num_samples[1])
+                              for z in np.linspace(volume[2], volume[5], num_samples[2])])
         print ('Computation of positions took %f s' % (time.time() - start_time))
         start_time = time.time()
         # values = [sdf.get_distance(pos) for pos in positions]

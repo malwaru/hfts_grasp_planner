@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
 import os
-import logging
+import rospy
 import IPython
 import hfts_grasp_planner.sdf.core as sdf_module
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf_module
@@ -41,8 +41,7 @@ def execute_placement_planner(placement_planner, body):
 
 if __name__ == "__main__":
     # NOTE If the OpenRAVE viewer is created too early, nothing works! Collision checks may be incorrect!
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    rospy.init_node("Test placement", anonymous=True)
     env = orpy.Environment()
     env.Load(ENV_PATH)
     robot_name = env.GetRobots()[0].GetName()

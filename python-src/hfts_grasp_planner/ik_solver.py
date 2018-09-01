@@ -1,6 +1,6 @@
 #! /usr/bin/python
 
-import logging
+import rospy
 import numpy as np
 import openravepy as orpy
 import trac_ik_python.trac_ik as trac_ik
@@ -62,7 +62,7 @@ class IKSolver(object):
                 self._or_arm_ik.autogenerate()
                 return True
             except Exception as e:
-                logging.warn("Could not generate IKFast model: " + str(e))
+                rospy.logwarn("Could not generate IKFast model: " + str(e))
                 self._or_arm_ik = None
         return False
 
@@ -151,10 +151,10 @@ class IKSolver(object):
                     in_limits = np.logical_and.reduce(np.logical_and(
                         np_sol >= self._lower_limits, np_sol <= self._upper_limits))
                     if in_limits:
-                        with self._robot:
-                            self._robot.SetDOFValues(np_sol, dofindices=self._arm_indices)
-                            if not self._env.CheckCollision(self._robot):
-                                return np_sol, True
+                        # with self._robot:
+                        self._robot.SetDOFValues(np_sol, dofindices=self._arm_indices)
+                        if not self._env.CheckCollision(self._robot):
+                            return np_sol, True
             return np_sol, False
         else:
             raise RuntimeError("Neither IKFast nor TracIK is available. Can not solve IK queries!")

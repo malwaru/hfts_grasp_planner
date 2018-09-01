@@ -233,7 +233,7 @@ def get_hopf_coordinate_range(key):
 #             elif s2_key[d] == 2:
 #                 k_left += pow(2, len(s2_key) - 1 - d)
 #     else:
-#         logging.warn("Computing ks for equatorial pixels does not make sense. This indicates a logic bug!")
+#         rospy.logwarn("Computing ks for equatorial pixels does not make sense. This indicates a logic bug!")
 #     return k_left, k_right
 
 

@@ -3,7 +3,6 @@
 import rospy
 import rosgraph.roslogging
 import rospkg
-import logging
 import numpy
 import tf.transformations
 from hfts_grasp_planner.srv import *
@@ -147,7 +146,8 @@ class HandlerClass(object):
             for i in range(len(configuration.name)):
                 name_position_mapping[configuration.name[i]] = configuration.position[i]
             for joint in or_robot.GetJoints():
-                output_config[joint.GetDOFIndex()] = self.clamp_joint_value(name_position_mapping[joint.GetName()], joint)
+                output_config[joint.GetDOFIndex()] = self.clamp_joint_value(
+                    name_position_mapping[joint.GetName()], joint)
         elif type(configuration) is list or type(configuration) is numpy.array:
             # Convert from OpenRAVE (list-type) to Joint state
             output_config = JointState()
@@ -303,12 +303,13 @@ class HandlerClass(object):
         response.success = self._planner.remove_planning_scene_object(object_name=request.object_identifier)
         return response
 
+
 if __name__ == "__main__":
     rospy.init_node('hfts_integrated_planner_node', log_level=rospy.DEBUG)
     # reconnect logging calls to ros log system
     logging.getLogger().addHandler(rosgraph.roslogging.RosStreamHandler())
     # logs sent to children of trigger with a level >= this will be redirected to ROS
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(rospy.logdebug)
     # Build handler
     handler = HandlerClass()
     srv = Server(IntegratedHFTSPlannerConfig, handler.update_parameters)

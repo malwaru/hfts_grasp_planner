@@ -16,7 +16,7 @@ class OccupancyOctree(object):
         using an octree representation. Each cell of the octree stores whether
         it is part of the volume of the rigid body or not. Thus the octree provides
         a hierarchical representation of the body's volume. 
-        This class allows to efficiently compute to what degree a kinbody collides with its 
+        This class allows to efficiently compute to what degree a rigid body collides with its 
         environment, if a signed distance field for this environment exists.
     """
     class OccupancyOctreeCell(object):
@@ -43,12 +43,20 @@ class OccupancyOctree(object):
             min_cell_pos = tree._grid.get_cell_position(self.idx_box[:3], b_center=False)
             self.cart_center = min_cell_pos + 0.5 * self.cart_dimensions
 
-    def __init__(self, cell_size, body):
+        def is_leaf(self):
+            return len(self.children) == 0
+
+    def __init__(self, cell_size, link):
         """
             Construct a new OccupancyOctree.
-            @param cell_size - minimum edge length of a cell (all cells are cubes)
+            ---------
+            Arguments
+            ---------
+            cell_size, float - minimum edge length of a cell (all cells are cubes)
+            link, Link to create the tree for
         """
-        self._body = body
+        self._link = link
+        self._body = link.GetParent()
         self._grid = None
         self._root = None
         self._total_volume = 0.0
@@ -62,22 +70,22 @@ class OccupancyOctree(object):
         """
         env = self._body.GetEnv()
         with env:
-            original_tf = self._body.GetTransform()
-            self._body.SetTransform(np.eye(4))  # set body to origin frame
+            original_tf = self._link.GetTransform()
+            self._link.SetTransform(np.eye(4))  # set link to origin frame
             body_flags = []
             for body in env.GetBodies():
                 body_flags.append((body.IsEnabled(), body.IsVisible()))
                 body.Enable(False)
                 body.SetVisible(False)
-            self._body.Enable(True)
+            self._link.Enable(True)
             # construct a binary occupancy grid of the body
-            local_aabb = self._body.ComputeAABB()
+            local_aabb = self._link.ComputeAABB()
             self._grid = sdf_core.VoxelGrid((local_aabb.pos(), local_aabb.extents() * 2.0), cell_size)
             collision_map_builder = sdf_core.OccupancyGridBuilder(env, cell_size)
             collision_map_builder.compute_grid(self._grid)
             collision_map_builder.clear()
             # set the body back to its original pose
-            self._body.SetTransform(original_tf)
+            self._link.SetTransform(original_tf)
             # restore flags
             for body, body_flag in itertools.izip(env.GetBodies(), body_flags):
                 body.Enable(body_flag[0])
@@ -161,7 +169,7 @@ class OccupancyOctree(object):
         """
         if not self._root.occupied:
             return 0.0, 0.0, 0.0, 0.0
-        tf = self._body.GetTransform()
+        tf = self._link.GetTransform()
         num_intersecting_leaves = 0
         distance_cost = 0.0
         layer_idx = 0
@@ -208,7 +216,7 @@ class OccupancyOctree(object):
             @param cell - OccupancyOctreeCell to render
             @return handle - OpenRAVE handle
         """
-        tf = self._body.GetTransform()
+        tf = self._link.GetTransform()
         env = self._body.GetEnv()
         color = np.array([1.0, 0.0, 0.0, 1.0])
         return env.drawbox(cell.cart_center, cell.cart_dimensions / 2.0, color, tf)
@@ -224,6 +232,12 @@ class OccupancyOctree(object):
             Return the total volume of occupied cells.
         """
         return self._total_volume
+
+    def get_num_occupied_cells(self):
+        """
+            Get the total number of cells that are occupied.
+        """
+        return self._root.num_occupied_leaves
 
     def visualize(self, level):
         """

@@ -5,6 +5,7 @@ import yaml
 import rospy
 import IPython
 import argparse
+import rospy
 import numpy as np
 import openravepy as orpy
 import hfts_grasp_planner.integrated_plcmt_planner as ipp_module
@@ -60,17 +61,19 @@ def resolve_paths(problem_desc, yaml_file):
         cwd = os.getcwd()
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
-    for key in ['or_env', 'sdf_file', 'urdf_file', 'data_path']:
+    for key in ['or_env', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file']:
         problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
 
 if __name__ == "__main__":
-    # we need to have a ROS node for TRAC_IK
-    rospy.init_node("IntegratedPlacementPlannerTest", anonymous=True)
     parser = argparse.ArgumentParser()
     parser.add_argument('problem_desc', help="Path to a yaml file specifying what world, robot to use etc.", type=str)
     parser.add_argument('--debug', help="If provided, run in debug mode", action="store_true")
     args = parser.parse_args()
+    log_level = rospy.WARN
+    if args.debug:
+        log_level = rospy.DEBUG
+    rospy.init_node("IntegratedPlacementPlannerTest", anonymous=True, log_level=log_level)
     with open(args.problem_desc, 'r') as f:
         problem_desc = yaml.load(f)
         resolve_paths(problem_desc, args.problem_desc)
@@ -89,6 +92,7 @@ if __name__ == "__main__":
                                                     problem_desc['data_path'],
                                                     problem_desc['robot_name'],
                                                     problem_desc['manip_name'],
+                                                    gripper_file=problem_desc['gripper_file'],
                                                     urdf_file=problem_desc['urdf_file'],
                                                     draw_search_tree=args.debug,
                                                     draw_hierarchy=args.debug)
@@ -97,7 +101,9 @@ if __name__ == "__main__":
     # set a placement target volume
     placement_volume = (np.array(problem_desc["plcmnt_volume"][:3]),
                         np.array(problem_desc["plcmnt_volume"][3:]))  # inside shelf
-    planner._env.SetViewer('qtcoin')
+    # planner._env.SetViewer('qtcoin')
+    # planner._plcmt_planner._placement_heuristic._env.SetViewer('qtcoin')
+    planner._plcmt_planner._leaf_stage.robot_interface._env.SetViewer('qtcoin')
     handle = draw_volume(planner._env, placement_volume)
     print "Check the placement volume!", placement_volume
     IPython.embed()

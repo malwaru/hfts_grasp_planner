@@ -5,7 +5,7 @@
 import numpy
 import random
 import openravepy as orpy
-import logging
+import rospy
 from rrt import SampleData, Constraint, ConstraintsManager
 from sampler import CSpaceSampler
 
@@ -85,19 +85,19 @@ class GraspApproachConstraint(Constraint):
         with self.or_env:
             if self.is_active(old_config, config):
                 config_dir = config - old_config
-                # logging.debug('[GraspApproachConstraint::project] config: ' + str(config) + ' oldConfig: ' +
+                # rospy.logdebug('[GraspApproachConstraint::project] config: ' + str(config) + ' oldConfig: ' +
                 #              str(oldConfig))
                 h_dir = self.heuristic_gradient(old_config)
                 if h_dir is None:
-                    logging.warn('[GraspApproachConstraint::project] The heuristic gradient is None')
+                    rospy.logwarn('[GraspApproachConstraint::project] The heuristic gradient is None')
                     return config
                 delta_step = numpy.dot(config_dir, h_dir)
-                logging.debug('[GraspApproachConstraint::project] Projecting configuration to free' +
-                              'space, delta_step: ' + str(delta_step))
-                if delta_step <= MINIMAL_STEP_LENGTH: # 0.0:
+                rospy.logdebug('[GraspApproachConstraint::project] Projecting configuration to free' +
+                               'space, delta_step: ' + str(delta_step))
+                if delta_step <= MINIMAL_STEP_LENGTH:  # 0.0:
                     return config
                 return old_config + delta_step * h_dir
-            # logging.debug('[GraspApproachConstraint::project] Not active')
+            # rospy.logdebug('[GraspApproachConstraint::project] Not active')
             return config
 
 
@@ -189,6 +189,7 @@ class RobotCSpaceSampler(CSpaceSampler):
 
     def get_scaling_factors(self):
         return self._scaling_factors
+
 
 if __name__ == "__main__":
     raise NotImplementedError('Test not implemented')

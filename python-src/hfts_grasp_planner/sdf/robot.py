@@ -5,6 +5,81 @@
 import yaml
 import numpy as np
 from hfts_grasp_planner.sdf.core import SceneSDF
+from hfts_grasp_planner.sdf.kinbody import OccupancyOctree
+
+
+class RobotOccupancyOctree(object):
+    """
+        This class provides an occupancy octree representing a robot.
+        Each link is represented by a OccupancyOctree. For computing the intersection
+        of the robot with an obstacle, the intersections of all links together is summed up.
+    """
+
+    def __init__(self, cell_size, robot):
+        """
+            Construct new RobotOccupancyOctree.
+            ---------
+            Arguments
+            ---------
+            cell_size, float - minimum edge length of a cell (all cells are cubes)
+            robot, OpenRAVE robot - the robot
+        """
+        self._cell_size = cell_size
+        self._robot = robot
+        self._occupancy_trees = []
+        self._total_volume = 0.0
+        self._total_num_occupied_cells = 0
+        for link in self._robot.GetLinks():
+            self._occupancy_trees.append(OccupancyOctree(cell_size, link))
+            self._total_volume += self._occupancy_trees[-1].get_volume()
+            self._total_num_occupied_cells += self._occupancy_trees[-1].get_num_occupied_cells()
+
+    def compute_intersection(self, robot_pose, robot_config, scene_sdf):
+        """
+            Computes the intersection between the octrees of the robot's links 
+            and the geometry in the scene described by the provided scene sdf.
+            ---------
+            Arguments
+            ---------
+            robot_pose, numpy array of shape (4, 4) - pose of the robot
+            robot_config, numpy array of shape (q,) - configuration of active DOFs
+            scene_sdf, signed distance field
+            -------
+            Returns
+            -------
+            (v, rv, dc, adc) -
+                v is the total volume that is intersecting
+                rv is this volume relative to the robot's total volume, i.e. in range [0, 1]
+                dc is a cost that is computed by (approximately) summing up all signed
+                    distances of intersecting cells
+                adc is this cost divided by the number of intersecting cells, i.e. the average
+                    signed distance of the intersecting cells
+        """
+        self._robot.SetTransform(robot_pose)
+        self._robot.SetActiveDOFValues(robot_config)
+        v, dc = 0.0, 0.0
+        for tree in self._occupancy_trees:
+            tv, _, tdc, _ = tree.compute_intersection(scene_sdf)
+            v += tv
+            dc += tdc
+        return v, v / self._total_volume, dc, dc / self._total_num_occupied_cells
+
+    def visualize(self, level, config=None):
+        """
+            Visualize the octrees for the given level.
+            ---------
+            Arguments
+            ---------
+            level, int - level to draw
+            config, numpy array (q,) (optional) - robot configuration to draw for
+        """
+        if config:
+            self._robot.SetActiveDOFValues(config)
+        handles = []
+        for tree in self._occupancy_trees:
+            handles.extend(tree.visualize(level))
+        return handles
+
 
 class RobotSDF(object):
     """
@@ -15,6 +90,7 @@ class RobotSDF(object):
         for the OpenRAVE scene the robot is embedded in as well as a description file
         containing the definition of the approximating balls.
     """
+
     def __init__(self, robot, scene_sdf=None):
         """
             Creates a new RobotSDF.
@@ -101,7 +177,8 @@ class RobotSDF(object):
         link_tfs = self._robot.GetLinkTransformations()
         for link_idx in self._link_indices:
             nb, off = self._ball_indices[link_idx]  # number of balls, offset
-            self._query_positions[off:off + nb] = np.dot(self._ball_positions[off:off + nb], link_tfs[link_idx].transpose())
+            self._query_positions[off:off +
+                                  nb] = np.dot(self._ball_positions[off:off + nb], link_tfs[link_idx].transpose())
         return self._sdf.get_distances(self._query_positions) - self._ball_radii
 
     def visualize_balls(self):

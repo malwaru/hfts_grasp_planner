@@ -4,7 +4,7 @@
 
 from hfts_grasp_planner.core import HFTSSampler, HFTSNode
 from sampler import GoalHierarchy
-import logging
+import rospy
 import numpy
 
 
@@ -123,8 +123,8 @@ class GraspGoalSampler(GoalHierarchy):
 
     def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):
         """ Samples a grasp from the given node on. """
-        logging.debug('[GoalSamplerWrapper] Sampling a grasp from hierarchy depth ' +
-                      str(hierarchy_node.get_depth()))
+        rospy.logdebug('[GoalSamplerWrapper] Sampling a grasp from hierarchy depth ' +
+                       str(hierarchy_node.get_depth()))
         sampled_node = self.grasp_planner.sample_grasp(node=hierarchy_node._hfts_node, depth_limit=depth_limit,
                                                        post_opt=post_opt,
                                                        label_cache=label_cache,

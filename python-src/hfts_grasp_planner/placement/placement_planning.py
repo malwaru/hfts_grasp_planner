@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 import math
-import logging
+import rospy
 import itertools
 import collections
 import functools
@@ -9,6 +9,7 @@ import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
+import hfts_grasp_planner.sdf.robot as robot_sdf
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.ik_solver as ik_module
 from hfts_grasp_planner.sampler import GoalHierarchy
@@ -1072,10 +1073,10 @@ class SimpleGraspCompatibility(object):
     """
         Implements a heuristic to determine the grasp compatibility of an object pose.
         This heuristic simply punishes poses for which the object would fall towards the palm 
-        of the robot.
+        of the robot and for which the gripper is in collision.
     """
 
-    def __init__(self, manip):
+    def __init__(self, manip, gripper_file, cell_size):
         """
             Create a new instance of SimpleGraspCompatibility.
             ---------
@@ -1124,7 +1125,8 @@ class PlacementHeuristic(object):
         The grasp compatibility cost is optional and only active if a manipulator is passed on construction.
     """
 
-    def __init__(self, env, scene_sdf, object_base_path, robot_name=None, manip_name=None, vol_approx=0.005):
+    def __init__(self, env, scene_sdf, object_base_path, robot_name=None, manip_name=None,
+                 gripper_file=None, vol_approx=0.005):
         """
             Creates a new PlacementHeuristic
             ---------
@@ -1135,6 +1137,8 @@ class PlacementHeuristic(object):
             object_base_path, string - path to object files
             robot_name, string (optional) - name of OpenRAVE robot used to place the object.
             manip_name, string (optional) - name of OpenRAVE manipulator used to place the object.
+            gripper_file, string (optional, required if robot_name provided) - filename of OpenRAVE model of the gripper
+            vol_approx, float - size of octree cells for intersection costs
         """
         self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
         self._obj_name = None
@@ -1142,6 +1146,11 @@ class PlacementHeuristic(object):
         self._kinbody = None
         self._scene_sdf = scene_sdf
         self._kinbody_octree = None
+        self._gripper_octree = None
+        self._gripper = None
+        self._grasp_compatibility = None
+        self._inv_grasp_tf = None
+        self._grasp_config = None
         filter_io = SimplePlacementQuality.PreferenceFilterIO(object_base_path)
         self._stability_function = SimplePlacementQuality(env, filter_io)  # TODO make settable as parameter
         if robot_name is not None:
@@ -1150,11 +1159,14 @@ class PlacementHeuristic(object):
                 manip = robot.GetActiveManipulator()
             else:
                 manip = robot.GetManipulator(manip_name)
-            self._grasp_compatibility = SimpleGraspCompatibility(manip)  # TODO make settable as parameters
-        else:
-            self._grasp_compatibility = None
+            self._grasp_compatibility = SimpleGraspCompatibility(manip, gripper_file, vol_approx)  # TODO make settable as parameters
+            # We could also move the gripper collision into the GraspCompatilibity function, but this way we have a clear separation
+            # between hard constraint (collision-free) and soft constraint (preferred orientation)
+            tenv = orpy.Environment()  # TODO do we really need a separate environment here?
+            tenv.Load(gripper_file)
+            self._gripper = tenv.GetRobots()[0]
+            self._gripper_octree = robot_sdf.RobotOccupancyOctree(vol_approx, self._gripper)
         self._vol_approx = vol_approx
-        self._grasp_tf = None
         # self._env.SetViewer('qtcoin')
 
     def set_target_object(self, obj_name, model_name=None):
@@ -1168,7 +1180,10 @@ class PlacementHeuristic(object):
         # TODO we could/should disable the object within the scene_sdf if it is in it
         if not self._kinbody:
             raise ValueError("Could not set target object " + obj_name + " because it does not exist")
-        self._kinbody_octree = kinbody_sdf.OccupancyOctree(self._vol_approx, self._kinbody)
+        if len(self._kinbody.GetLinks()) != 1:
+            raise ValueError("Could not set target object " + obj_name +
+                             " because it has an invalid number of links (must be exactly 1)")
+        self._kinbody_octree = kinbody_sdf.OccupancyOctree(self._vol_approx, self._kinbody.GetLinks()[0])
         self._stability_function.set_target_object(self._kinbody, model_name)
 
     def set_placement_volume(self, workspace_volume):
@@ -1205,7 +1220,12 @@ class PlacementHeuristic(object):
         """
         self._kinbody.SetTransform(pose)
         _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
-        return col_val
+        if self._gripper_octree is not None:
+            robot_pose = np.dot(pose, self._inv_grasp_tf)
+            _, _, rob_col, _ = self._gripper_octree.compute_intersection(robot_pose, self._grasp_config, self._scene_sdf)
+        else:
+            rob_col = 0.0
+        return col_val + rob_col
 
     def evaluate_grasp_compatibility(self, pose):
         """
@@ -1250,6 +1270,8 @@ class PlacementHeuristic(object):
         """
         if self._grasp_compatibility:
             self._grasp_compatibility.set_grasp_info(grasp_tf, grasp_config)
+        self._grasp_config = grasp_config
+        self._inv_grasp_tf = utils.inverse_transform(grasp_tf)
 
 
 class SE3Hierarchy(object):
@@ -1632,11 +1654,11 @@ class PlacementGoalPlanner(GoalHierarchy):
                     exists.
                 b_col_free, bool - True if the configuration is collision free, else False
             """
-            with self._env:
-                # compute eef-pose from obj_pose
-                eef_pose = np.dot(obj_pose, self._inv_grasp_tf)
-                # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
-                return self._ik_solver.compute_collision_free_ik(eef_pose, seed)
+            # with self._env:
+            # compute eef-pose from obj_pose
+            eef_pose = np.dot(obj_pose, self._inv_grasp_tf)
+            # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
+            return self._ik_solver.compute_collision_free_ik(eef_pose, seed)
 
     class DefaultLeafStage(object):
         """
@@ -1735,7 +1757,7 @@ class PlacementGoalPlanner(GoalHierarchy):
                     chull_distance < self._parameters['min_chull_distance'] and \
                     alpha < self._parameters['max_slope_angle'] and \
                     gamma < self._parameters['max_misalignment_angle']
-                logging.debug('Candidate goal: falling_distance %f, chull_distance %f, alpha %f, gamma %f' %
+                rospy.logdebug('Candidate goal: falling_distance %f, chull_distance %f, alpha %f, gamma %f' %
                               (falling_distance, chull_distance, alpha, gamma))
             else:
                 plcmt_result._bgoal = False
@@ -1769,7 +1791,8 @@ class PlacementGoalPlanner(GoalHierarchy):
 
     ############################ PlacementGoalPlanner methods ############################
     def __init__(self, base_path,
-                 env, scene_sdf, robot_name=None, manip_name=None, urdf_file_name=None, visualize=False):
+                 env, scene_sdf, robot_name=None, manip_name=None, urdf_file_name=None,
+                 gripper_file=None, visualize=False):
         """
             Creates a PlacementGoalPlanner
             ---------
@@ -1781,6 +1804,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             robot_name, string (optional) - name of the robot to use for placing
             manip_name, string (optional) - in addition to robot name, name of the manipulator to use
             urdf_file_name, string (optional) - Filename of a URDF description of the robot
+            gripper_file, string (optional) - Filename of an OpenRAVE model of the robot's gripper
             @param visualize If true, the internal OpenRAVE environment is set to be visualized
         """
         self._hierarchy = None
@@ -1789,7 +1813,7 @@ class PlacementGoalPlanner(GoalHierarchy):
         if robot_name and manip_name is None:
             manip_name = robot_name.GetActiveManipulator().GetName()
         self._placement_heuristic = PlacementHeuristic(
-            env, scene_sdf, base_path, robot_name=robot_name, manip_name=manip_name)
+            env, scene_sdf, base_path, robot_name=robot_name, manip_name=manip_name, gripper_file=gripper_file)
         self._optimizer = optimization.StochasticOptimizer(self._placement_heuristic)
         robot_interface = None
         if robot_name:
@@ -1801,7 +1825,6 @@ class PlacementGoalPlanner(GoalHierarchy):
                                                                  self._placement_heuristic.evaluate_collision,
                                                                  robot_interface)
         self._placement_volume = None
-        self._env = env
         self._parameters = {'cart_branching': 3, 'max_depth': 4, 'num_iterations': 100}  # TODO update
         self._initialized = False
 
@@ -1831,9 +1854,9 @@ class PlacementGoalPlanner(GoalHierarchy):
         start_depth = current_node.get_depth()
         if start_depth + depth_limit > self.get_max_depth():
             depth_limit = self.get_max_depth() - start_depth
-            logging.warn("Specified depth limit exceeds maximal search depth. Capping search depth.")
+            rospy.logwarn("Specified depth limit exceeds maximal search depth. Capping search depth.")
         for depth in xrange(start_depth, start_depth + depth_limit):
-            logging.debug("Searching for placement pose on depth %i" % depth)
+            rospy.logdebug("Searching for placement pose on depth %i" % depth)
             best_val, best_node = self._optimizer.run(current_node, num_iterations)
             current_node = best_node
         # we are done with searching for a good node in the hierarchy

@@ -485,10 +485,10 @@ class OpenRAVEDrawer:
     def draw_trees(self, forward_tree, backward_trees=[]):
         if not self.debug:
             return
-        # logging.debug('Forward tree size is: ' + str(forwardTree.size()))
+        # rospy.logdebug('Forward tree size is: ' + str(forwardTree.size()))
         self.draw_tree(forward_tree, color=[1, 0, 0])
         for bTree in backward_trees:
-            # logging.debug('Backward tree of size: ' + str(bTree.size()))
+            # rospy.logdebug('Backward tree of size: ' + str(bTree.size()))
             self.draw_tree(bTree, color=[0, 0, 1])
 
     def draw_arrow(self, point, dir, length=0.04, width=0.01, color=None):

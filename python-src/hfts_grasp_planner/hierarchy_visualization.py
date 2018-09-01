@@ -1,4 +1,3 @@
-import logging
 import igraph
 import rospy
 from std_msgs.msg import String
@@ -21,24 +20,24 @@ class FreeSpaceProximitySamplerVisualizer(object):
         if unique_label in self._nodes_cache:
             node = self._nodes_cache[unique_label]
             config = node.get_active_configuration()
-            logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Got a request')
+            rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Got a request')
             if config is not None:
-                logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Request to ' +
-                              'show config ' + str(config))
+                rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Request to ' +
+                               'show config ' + str(config))
                 self.robot.SetActiveDOFValues(config)
                 env = self.robot.GetEnv()
                 b_in_collision = env.CheckCollision(self.robot) or self.robot.CheckSelfCollision()
                 if not b_in_collision:
-                    logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
-                                  ' is collision-free!')
+                    rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
+                                   ' is collision-free!')
                     if node.is_goal():
-                        logging.debug('FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] The ' +
-                                      ' selected config is a goal!')
+                        rospy.logdebug('FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] The ' +
+                                       ' selected config is a goal!')
                 else:
-                    logging.debug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
-                                  ' is in collision.')
+                    rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
+                                   ' is in collision.')
         else:
-            logging.warning('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Received unknown node label.')
+            rospy.logwarn('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Received unknown node label.')
 
     def _add_node(self, parent_id, node, b_is_active):
         label = node.get_hashable_label()
@@ -66,7 +65,7 @@ class FreeSpaceProximitySamplerVisualizer(object):
         return node_id
 
     def clear(self):
-        logging.info('Clearing FreeSpaceProximitySamplerVisualizer')
+        rospy.loginfo('Clearing FreeSpaceProximitySamplerVisualizer')
         self._labels_to_ids = {}
         self._graph = igraph.Graph()
         self._nodes_cache = {}

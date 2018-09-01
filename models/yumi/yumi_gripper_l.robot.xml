@@ -1,0 +1,4 @@
+<!--- Left hand gripper -->
+<Robot name="yumi_gripper">
+    <kinbody file="yumi_gripper_l.kinbody.xml"/>
+</Robot>

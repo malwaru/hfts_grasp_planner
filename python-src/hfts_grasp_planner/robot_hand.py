@@ -3,7 +3,7 @@ import hfts_grasp_planner.external.transformations as transformations
 import math
 import time
 import os
-import logging
+import rospy
 import yaml
 import itertools
 from scipy.spatial import KDTree
@@ -361,7 +361,7 @@ class ReachabilityKDTree(object):
 
     def load(self):
         if os.path.exists(self._cache_file_name):
-            logging.info('[ReachabilityKDTree::load] Loading sample data set from disk.')
+            rospy.loginfo('[ReachabilityKDTree::load] Loading sample data set from disk.')
             stored_data = np.load(self._cache_file_name)
             meta_data = stored_data[0]
             data = stored_data[1]
@@ -371,7 +371,7 @@ class ReachabilityKDTree(object):
             self._min_code = meta_data[0]
             self._max_code = meta_data[1]
         else:
-            logging.info('[ReachabilityKDTree::load] No data set available. Generating new...')
+            rospy.loginfo('[ReachabilityKDTree::load] No data set available. Generating new...')
             self._sample_and_create_codes()
             data = np.concatenate((self._codes, self._hand_configurations), axis=1)
             meta_data = np.array([self._min_code, self._max_code])
@@ -405,7 +405,7 @@ class ReachabilityKDTree(object):
             self._hand_configurations = np.apply_along_axis(
                 lambda row: lower_limits + row * joint_ranges, 1, random_data)
         self._codes = np.zeros((actual_num_samples, 2 * self._hand_params[NUM_FINGERTIPS_KEY]))
-        logging.info('[ReachabilityKDTree::Evaluating %i hand configurations.' % actual_num_samples)
+        rospy.loginfo('[ReachabilityKDTree::Evaluating %i hand configurations.' % actual_num_samples)
         # now compute codes for all configurations
         with self._or_robot.GetEnv():
             for (sample, idx) in itertools.izip(self._hand_configurations, xrange(self._hand_configurations.shape[0])):
@@ -422,8 +422,8 @@ class ReachabilityKDTree(object):
         self._min_code = np.min(self._codes, axis=0)
         self._max_code = np.max(self._codes, axis=0)
         self._codes = (self._codes - self._min_code) / (self._max_code - self._min_code)
-        logging.info('[ReachabilityKDTree::Sampling finished. Found %i collision-free hand configurations.' %
-                     self._hand_configurations.shape[0])
+        rospy.loginfo('[ReachabilityKDTree::Sampling finished. Found %i collision-free hand configurations.' %
+                      self._hand_configurations.shape[0])
 
     def _encode_grasp_non_normalized(self, grasp):
         """

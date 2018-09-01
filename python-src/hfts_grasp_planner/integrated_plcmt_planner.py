@@ -1,6 +1,6 @@
 import os
 import numpy
-import logging
+import rospy
 import openravepy as orpy
 from orsampler import RobotCSpaceSampler
 from sampler import FreeSpaceProximitySampler
@@ -21,10 +21,12 @@ class IntegratedPlacementPlanner(object):
         dof_weights, None or list of d floats - weights for the configuration space distance function for the 
             d degrees of freedom of the arm that is planned for
         draw_search_tree, bool - If true, draws motion planning tree in viewer
+        max_per_level_iterations, int - maximal number of iterations on each level of the placement hierarchy
+        min_per_level_iterations, int - minimal number of iterations on each level the placement hierarchy
     """
 
     def __init__(self, env_file, sdf_file, sdf_volume,
-                 data_path, robot_name, manip_name, urdf_file=None, **kwargs):
+                 data_path, robot_name, manip_name, gripper_file, urdf_file=None, **kwargs):
         """
             Creates a new integrated placement planner.
             ---------
@@ -39,6 +41,7 @@ class IntegratedPlacementPlanner(object):
                 preferences for different objects are stored.
             robot_name, string - name of the robot to plan for.
             manip_name, manipulator_name - name of the manipulator to use.
+            gripper_file, string - filename containing OpenRAVE description of gripper
             urdf_file, string (optional) - path to a urdf description of the robot. Needed if IKFast doesn't work
 
             Additionally, you may specify any parameter described in the class description.
@@ -47,6 +50,8 @@ class IntegratedPlacementPlanner(object):
             'sdf_resolution': 0.005,
             'dof_weights': None,
             'draw_search_tree': False,
+            'max_per_level_iterations': 80,
+            'min_per_level_iterations': 10,
         }
         self.set_parameters(**kwargs)
         self._env = orpy.Environment()
@@ -70,7 +75,7 @@ class IntegratedPlacementPlanner(object):
             self._scene_sdf.save(sdf_file)
         # TODO do we need to let the plctm planner know about the manipulator?
         self._plcmt_planner = plcmnt_module.PlacementGoalPlanner(
-            data_path, self._env, self._scene_sdf, robot_name, manip_name,
+            data_path, self._env, self._scene_sdf, robot_name, manip_name, gripper_file=gripper_file,
             urdf_file_name=urdf_file)
         self._c_sampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=self._parameters['dof_weights'])
         # TODO pass additional parameters
@@ -124,8 +129,10 @@ class IntegratedPlacementPlanner(object):
             def debug_fn(forward_tree, backward_trees):
                 pass
         goal_sampler = FreeSpaceProximitySampler(
-            self._plcmt_planner, self._c_sampler, debug_drawer=self._hierarchy_visualizer)
-        motion_planner = RRT(DynamicPGoalProvider(), self._c_sampler, goal_sampler, logging.getLogger())
+            self._plcmt_planner, self._c_sampler, debug_drawer=self._hierarchy_visualizer,
+            num_iterations=self._parameters['max_per_level_iterations'],
+            min_num_iterations=self._parameters['min_per_level_iterations'])
+        motion_planner = RRT(DynamicPGoalProvider(), self._c_sampler, goal_sampler)
         start_config = self._robot.GetActiveDOFValues()
         path = motion_planner.proximity_birrt(start_config, time_limit=time_limit, debug_function=debug_fn)
         return path, None  # TODO return placement pose, too

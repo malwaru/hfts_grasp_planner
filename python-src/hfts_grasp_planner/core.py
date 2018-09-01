@@ -4,7 +4,6 @@ import numpy as np
 import math
 import sys
 import time
-import logging
 import copy
 from scipy.spatial import KDTree
 import openravepy as orpy
@@ -606,11 +605,11 @@ class HFTSSampler(object):
                 grasp_conf = self._robot.GetDOFValues()
                 open_hand_offset = 0.0
 
-        logging.debug('[HFTSSampler::sample_grasp] We sampled a grasp on level ' + str(len(contact_label[0])))
+        rospy.logdebug('[HFTSSampler::sample_grasp] We sampled a grasp on level ' + str(len(contact_label[0])))
         if is_goal_sample:
-            logging.debug('[HFTSSampler::sample_grasp] We sampled a goal grasp (might be in collision)!')
+            rospy.logdebug('[HFTSSampler::sample_grasp] We sampled a goal grasp (might be in collision)!')
         if is_leaf:
-            logging.debug('[HFTSSampler::sample_grasp] We sampled a leaf')
+            rospy.logdebug('[HFTSSampler::sample_grasp] We sampled a leaf')
 
         if grasp_conf is not None and grasp_pose is not None:
             collision_free_arm_ik, arm_conf, pre_grasp_conf = \
@@ -660,7 +659,7 @@ class HFTSSampler(object):
             T = self._robot.hand_obj_transform(hand_contacts[:3, :3], object_contacts[:, :3])
             self._robot.SetTransform(T)
         except InvalidTriangleException as ite:
-            logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
+            rospy.logwarn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
             return False, grasp_conf, None
         if post_opt:
             self._post_optimization(object_contacts)
@@ -723,7 +722,7 @@ class HFTSSampler(object):
             self.cloud_plot.append(self._orEnv.plot3(points=points, pointsize=0.006, colors=colors[i], drawstyle=1))
 
     def _post_optimization(self, grasp_contacts):
-        logging.info('[HFTSSampler::_post_optimization] Performing post optimization.')
+        rospy.loginfo('[HFTSSampler::_post_optimization] Performing post optimization.')
         transform = self._robot.GetTransform()
         angle, axis, point = hfts_grasp_planner.external.transformations.rotation_from_matrix(transform)
         # further optimize hand configuration and pose

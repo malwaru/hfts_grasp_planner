@@ -3,7 +3,7 @@
 import os
 import time
 import IPython
-import logging
+import rospy
 import hfts_grasp_planner.utils
 from hfts_grasp_planner.integrated_hfts_planner import IntegratedHFTSPlanner
 
@@ -24,8 +24,6 @@ MANIPULATOR_NAME = 'arm_with_sdh'
 
 if __name__ == "__main__":
     object_name = 'crayola'
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
     planner = IntegratedHFTSPlanner(env_file=ENV_FILE, hand_file=HAND_FILE, hand_cache_file=HAND_CACHE_FILE,
                                     hand_config_file=HAND_CONFIG_FILE, hand_ball_file=HAND_BALL_FILE,
                                     robot_name=ROBOT_NAME, manipulator_name=MANIPULATOR_NAME,

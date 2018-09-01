@@ -1,6 +1,6 @@
 import string
 import openravepy as orpy
-import logging
+import rospy
 import numpy
 from orsampler import RobotCSpaceSampler, GraspApproachConstraintsManager
 from sampler import FreeSpaceProximitySampler
@@ -168,7 +168,7 @@ class IntegratedHFTSPlanner(object):
             traj = self._or_motion_planner.MoveToHandPosition(matrices=[target_pose], outputtraj=True,
                                                               outputtrajobj=True, execute=self._b_show_trajectory)
         except orpy.planning_error as pe:
-            logging.info('[IntegratedHFTSPlanner::plan_arm_motion] Planning arm motion to pose failed.')
+            rospy.loginfo('[IntegratedHFTSPlanner::plan_arm_motion] Planning arm motion to pose failed.')
             traj = None
         if grasped_object is not None:
             body = self._env.GetKinBody(grasped_object)
