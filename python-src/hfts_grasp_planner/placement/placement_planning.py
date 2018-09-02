@@ -1220,12 +1220,13 @@ class PlacementHeuristic(object):
         """
         self._kinbody.SetTransform(pose)
         _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
-        if self._gripper_octree is not None:
-            robot_pose = np.dot(pose, self._inv_grasp_tf)
-            _, _, rob_col, _ = self._gripper_octree.compute_intersection(robot_pose, self._grasp_config, self._scene_sdf)
-        else:
-            rob_col = 0.0
-        return col_val + rob_col
+        # if self._gripper_octree is not None:
+        #     robot_pose = np.dot(pose, self._inv_grasp_tf)
+        #     _, _, rob_col, _ = self._gripper_octree.compute_intersection(robot_pose, self._grasp_config, self._scene_sdf)
+        # else:
+        #     rob_col = 0.0
+        # return col_val + rob_col
+        return col_val
 
     def evaluate_grasp_compatibility(self, pose):
         """
@@ -1250,6 +1251,10 @@ class PlacementHeuristic(object):
         stability_val = self.evaluate_stability(representative)
         grasp_val = self.evaluate_grasp_compatibility(representative)
         # TODO add weights? different combination of different costs?
+        rospy.logdebug("Collision value: " + str(col_val))
+        rospy.logdebug("Stability value: " + str(stability_val))
+        rospy.logdebug("Grasp value: " + str(grasp_val))
+        rospy.logdebug("Total value: " + str(stability_val + col_val + grasp_val))
         return stability_val + col_val + grasp_val
 
     @staticmethod
@@ -1597,12 +1602,16 @@ class PlacementGoalPlanner(GoalHierarchy):
                 urdf_file_name, string (optional) - filename of the urdf to use
             """
             # clone the environment so we are sure it is always setup correctly
-            self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
+            # TODO either clone env again, or change API so it isn't misleadingly stating that we clone it
+            # self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
+            self._env = env
             self._robot = self._env.GetRobot(robot_name)
             if not self._robot:
                 raise ValueError("Could not find robot with name %s" % robot_name)
             if manip_name:
-                self._robot.SetActiveManipulator(manip_name)
+                # self._robot.SetActiveManipulator(manip_name)
+                active_manip = self._robot.GetActiveManipulator()
+                assert(active_manip.GetName() == manip_name)
             self._manip = self._robot.GetActiveManipulator()
             self._ik_solver = ik_module.IKSolver(self._env, robot_name, urdf_file_name)
             self._hand_config = None
@@ -1624,19 +1633,19 @@ class PlacementGoalPlanner(GoalHierarchy):
             self._grasp_tf = grasp_tf
             self._inv_grasp_tf = utils.inverse_transform(grasp_tf)
             self._hand_config = hand_config
-            with self._env:
-                # first ungrab all grabbed objects
-                self._robot.ReleaseAllGrabbed()
-                body = self._env.GetKinBody(obj_name)
-                if not body:
-                    raise ValueError("Could not find object with name %s in or environment" % obj_name)
-                # place the body relative to the end-effector
-                eef_tf = self._manip.GetEndEffectorTransform()
-                obj_tf = np.dot(eef_tf, grasp_tf)
-                body.SetTransform(obj_tf)
-                # set hand configuration and grab the body
-                self._robot.SetDOFValues(hand_config, self._hand_dofs)
-                self._robot.Grab(body)
+            # with self._env:  # TODO this is only needed if have a cloned environment
+            #     # first ungrab all grabbed objects
+            #     self._robot.ReleaseAllGrabbed()
+            #     body = self._env.GetKinBody(obj_name)
+            #     if not body:
+            #         raise ValueError("Could not find object with name %s in or environment" % obj_name)
+            #     # place the body relative to the end-effector
+            #     eef_tf = self._manip.GetEndEffectorTransform()
+            #     obj_tf = np.dot(eef_tf, grasp_tf)
+            #     body.SetTransform(obj_tf)
+            #     # set hand configuration and grab the body
+            #     self._robot.SetDOFValues(hand_config, self._hand_dofs)
+            #     self._robot.Grab(body)
 
         def check_arm_ik(self, obj_pose, seed=None):
             """

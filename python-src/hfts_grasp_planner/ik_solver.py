@@ -153,7 +153,7 @@ class IKSolver(object):
                     if in_limits:
                         # with self._robot:
                         self._robot.SetDOFValues(np_sol, dofindices=self._arm_indices)
-                        if not self._env.CheckCollision(self._robot):
+                        if not self._env.CheckCollision(self._robot) and not self._robot.CheckSelfCollision():
                             return np_sol, True
             return np_sol, False
         else:

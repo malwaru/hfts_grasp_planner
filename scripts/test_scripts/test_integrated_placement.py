@@ -28,6 +28,13 @@ def draw_volume(env, volume):
 #     },
 #     # TODO other objects
 # }
+def show_solution(result, planner):
+    if result is not None:
+        traj = utils.path_to_trajectory(planner._robot, result)
+        controller = planner._robot.GetController()
+        controller.SetPath(traj)
+        planner._robot.WaitForController(traj.GetDuration())
+        controller.Reset()
 
 
 def execute_placement_planner(planner, volume, problem_desc, ik_solver):
@@ -48,9 +55,11 @@ def execute_placement_planner(planner, volume, problem_desc, ik_solver):
     path, pose = planner.plan_placement(problem_desc["target_name"], volume, utils.inverse_transform(grasp_pose),
                                         problem_desc['grasp_config'], problem_desc["time_limit"])
     if path:
-        # TODO visualize path by executing it
         print "Success! Found a solution:", path
-        robot.SetActiveDOFValues(path[-1].get_configuration())
+        # robot.SetActiveDOFValues(path[-1].get_configuration())
+        # TODO only show solution when we want it
+        show_solution(path, planner)
+        # TODO reset to start configuration
     else:
         print "Failed! No solution found."
 
@@ -102,8 +111,8 @@ if __name__ == "__main__":
     placement_volume = (np.array(problem_desc["plcmnt_volume"][:3]),
                         np.array(problem_desc["plcmnt_volume"][3:]))  # inside shelf
     # planner._env.SetViewer('qtcoin')
-    # planner._plcmt_planner._placement_heuristic._env.SetViewer('qtcoin')
-    planner._plcmt_planner._leaf_stage.robot_interface._env.SetViewer('qtcoin')
+    planner._plcmt_planner._placement_heuristic._env.SetViewer('qtcoin')
+    # planner._plcmt_planner._leaf_stage.robot_interface._env.SetViewer('qtcoin')
     handle = draw_volume(planner._env, placement_volume)
     print "Check the placement volume!", placement_volume
     IPython.embed()

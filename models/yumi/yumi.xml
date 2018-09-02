@@ -1,5 +1,9 @@
 <Robot name="Yumi">
     <KinBody>
+        <adjacent>yumi_link_5_l gripper_l_base</adjacent>
+        <adjacent>yumi_link_5_l yumi_link_7_l</adjacent>
+        <adjacent>yumi_link_5_r gripper_r_base</adjacent>
+        <adjacent>yumi_link_5_r yumi_link_7_r</adjacent>
         <Body name="yumi_body" type="dynamic">
             <!-- <offsetfrom>robotiq_socket</offsetfrom> -->
             <Translation> 0 0 0</Translation>
@@ -382,13 +386,13 @@
     <effector>gripper_r_base</effector>
     <joints>gripper_r_joint</joints>
     <closingdirection>1</closingdirection>
-    <direction>1 0 0</direction>
+    <direction>0 0 1</direction>
 </manipulator>
 <manipulator name="left_arm_with_gripper">
     <base>yumi_body</base>
     <effector>gripper_l_base</effector>
     <joints>gripper_l_joint</joints>
     <closingdirection>1</closingdirection>
-    <direction>1 0 0</direction>
+    <direction>0 0 1</direction>
 </manipulator>
 </Robot>

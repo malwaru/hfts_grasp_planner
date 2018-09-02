@@ -51,7 +51,8 @@ class IntegratedPlacementPlanner(object):
             'dof_weights': None,
             'draw_search_tree': False,
             'max_per_level_iterations': 80,
-            'min_per_level_iterations': 10,
+            'min_per_level_iterations': 50,
+            "kappa": 5,
         }
         self.set_parameters(**kwargs)
         self._env = orpy.Environment()
@@ -131,7 +132,8 @@ class IntegratedPlacementPlanner(object):
         goal_sampler = FreeSpaceProximitySampler(
             self._plcmt_planner, self._c_sampler, debug_drawer=self._hierarchy_visualizer,
             num_iterations=self._parameters['max_per_level_iterations'],
-            min_num_iterations=self._parameters['min_per_level_iterations'])
+            min_num_iterations=self._parameters['min_per_level_iterations'],
+            k=self._parameters["kappa"])
         motion_planner = RRT(DynamicPGoalProvider(), self._c_sampler, goal_sampler)
         start_config = self._robot.GetActiveDOFValues()
         path = motion_planner.proximity_birrt(start_config, time_limit=time_limit, debug_function=debug_fn)

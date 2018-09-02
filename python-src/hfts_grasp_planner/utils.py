@@ -9,6 +9,7 @@ from sklearn.cluster import KMeans as KMeans
 import math
 import copy
 import os
+import string
 import operator
 import itertools
 from sklearn.neighbors import KDTree
@@ -344,6 +345,52 @@ def is_dynamic_body(body):
     """
     links = body.GetLinks()
     return reduce(operator.and_, [not link.IsStatic() for link in links])
+
+
+def path_to_trajectory(robot, path, vel_factor=0.2):
+    """
+        Create an OpenRAVE trajectory for the given path.
+        ---------
+        Arguments
+        ---------
+        robot, OpenRAVE robot that the path is for
+        path, list of SampleData
+        vel_factor, float - percentage (in [0, 1]) of maximal velocity
+        --------
+        Returns
+        --------
+        trajectory, OpenRAVE trajectory
+    """
+    if path is None:
+        return None
+    configurations_path = map(lambda x: x.get_configuration(), path)
+    # # The path ends in a pre-grasp configuration.
+    # # The final grasp configuration is stored as additional data in the last waypoint,
+    # # so we need to construct the final configuration here.
+    # grasp_hand_config = path[-1].get_data()
+    # last_config = numpy.array(configurations_path[-1])
+    # hand_idxs = self._robot.GetActiveManipulator().GetGripperIndices()
+    # assert len(hand_idxs) == len(grasp_hand_config)
+    # j = 0
+    # for i in hand_idxs:
+    #     last_config[i] = grasp_hand_config[j]
+    #     j += 1
+    # configurations_path.append(last_config)
+    active_dofs = robot.GetActiveDOFIndices()
+    assert(len(active_dofs) == len(configurations_path[0]))
+    vel_limits = robot.GetDOFVelocityLimits()
+    robot.SetDOFVelocityLimits(vel_factor * vel_limits)
+    traj = orpy.RaveCreateTrajectory(robot.GetEnv(), '')
+    cs = traj.GetConfigurationSpecification()
+    dof_string = string.join([' ' + str(x) for x in range(robot.GetActiveDOF())])
+    cs.AddGroup('joint_values ' + robot.GetName() + dof_string, robot.GetActiveDOF(), 'linear')
+    # cs.AddDerivativeGroups(1, True)
+    traj.Init(cs)
+    for idx in range(len(configurations_path)):
+        traj.Insert(idx, configurations_path[idx])
+    orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
+    robot.SetDOFVelocityLimits(vel_limits)
+    return traj
 
 
 def dist_in_range(d, r):
