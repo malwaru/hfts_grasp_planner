@@ -46,6 +46,21 @@
             </Geom>
         </Body>
     </KinBody>
+
+    <KinBody name="cube">
+        <Translation>-0.16 0.78 1.0</Translation>
+        <!-- <RotationAxis>0 0 1 20</RotationAxis> -->
+        <Body type="dynamic">
+            <!-- <Geom type="trimesh">
+                <Data>../cube.obj</Data>
+                <Render>../cube.obj</Render>
+            </Geom> -->
+            <Geom type="box">
+                <extents>0.0025 0.0025 0.0025</extents>
+            </Geom>
+        </Body>
+    </KinBody>
+
     <KinBody name="bunny">
         <Translation>-0.16 0.78 1.5</Translation>
         <Body type="dynamic">

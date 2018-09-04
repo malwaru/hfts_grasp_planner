@@ -21,6 +21,7 @@ def simulate_fall(env, start_tf, body, duration=10.0, dt=0.001):
 def setup_env():
     ENV_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/environments/simple_env.xml'
     env = orpy.Environment()
+    orpy.RaveSetDebugLevel(orpy.DebugLevel.Debug)
     env.Load(ENV_PATH)
     return env
 
@@ -33,16 +34,15 @@ def measure_time():
 
 
 if __name__ == "__main__":
-    measure_time()
-    # env = setup_env()
-    # orpy.RaveSetDebugLevel(orpy.DebugLevel.Debug)
-    # with env:
-    # physics_engine = orpy.RaveCreatePhysicsEngine(env, 'ode')
-    # physics_engine.SetGravity([0, 0, -9.81])
-    # env.SetPhysicsEngine(physics_engine)
-    # env.StopSimulation()
-    # env.SetViewer('qtcoin')
-    # IPython.embed()
-    # with env:
-    # env.StartSimulation(timestep=0.0001)
-    # IPython.embed()
+    # measure_time()
+    env = setup_env()
+    with env:
+        # physics_engine = orpy.RaveCreatePhysicsEngine(env, 'ode')
+        # physics_engine.SetGravity([0, 0, -9.81])
+        # env.SetPhysicsEngine(physics_engine)
+        env.StopSimulation()
+    env.SetViewer('qtcoin')
+    IPython.embed()
+    with env:
+        env.StartSimulation(timestep=0.001)
+    IPython.embed()

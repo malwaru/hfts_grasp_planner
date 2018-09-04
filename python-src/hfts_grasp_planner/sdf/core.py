@@ -25,6 +25,7 @@ class VoxelGrid(object):
     """"
         A voxel grid is a 3D discretization of a robot's workspace.
         For each voxel in this grid, this voxel grid saves a single floating point number.
+        Additionally, it may store for each voxel optional data of any type.
     """
     class VoxelCell(object):
         """
@@ -34,6 +35,17 @@ class VoxelGrid(object):
         def __init__(self, grid, idx):
             self._grid = grid
             self._idx = idx
+
+        def get_neighbor_index_iter(self):
+            """
+                Return an iterator over the valid neighbors of this cell.
+            """
+            for ix in xrange(max(0, idx[0] - 1), min(idx[0] + 2, self._grid_num_cells[0])):
+                for iy in xrange(max(0, idx[1] - 1), min(idx[1] + 2, self._grid_num_cells[1])):
+                    for iz in xrange(max(0, idx[2] - 1), min(idx[2] + 2, self._grid_num_cells[2])):
+                        idx = (ix, iy, iz)
+                        if idx != self._idx:
+                            yield idx
 
         def get_idx(self):
             """
@@ -65,7 +77,13 @@ class VoxelGrid(object):
             """
             self._grid.set_cell_value(self._idx, value)
 
-    def __init__(self, workspace_aabb, cell_size=0.02, base_transform=None, dtype=np.float_):
+        def get_additional_data(self):
+            return self._grid.get_additional_data(self._idx)
+
+        def set_additional_data(self, data):
+            self._grid.set_additional_data(self._idx, data)
+
+    def __init__(self, workspace_aabb, cell_size=0.02, base_transform=None, dtype=np.float_, b_additional_data=False):
         """
             Creates a new voxel grid covering the specified workspace volume.
             @param workspace_aabb - bounding box of the workspace as numpy array of form
@@ -74,6 +92,7 @@ class VoxelGrid(object):
                                     and wx, wy, wz are the dimensions of the box
             @param cell_size - cell size of the voxel grid (in meters)
             @param base_transform - if not None, any query point is transformed by base_transform
+            b_additional_data - if True, each voxel can be associated with additional data of object type
         """
         self._cell_size = cell_size
         if isinstance(workspace_aabb, tuple):
@@ -95,6 +114,9 @@ class VoxelGrid(object):
         self._inv_transform = inverse_transform(self._transform)
         # first and last element per dimension is a dummy element for trilinear interpolation
         self._cells = np.zeros(self._num_cells + 2, dtype=dtype)
+        self._additional_data = None
+        if b_additional_data:
+            self._additional_data = np.empty(self._num_cells, dtype=object)
         self._homogeneous_point = np.ones(4)
 
     def __iter__(self):
@@ -118,10 +140,13 @@ class VoxelGrid(object):
             @param file_name - filename
         """
         data_file_name = file_name + '.data.npy'
+        add_data_file_name = file_name + '.adddata.npy'
         meta_file_name = file_name + '.meta.npy'
         # first and last element per dimension are dummy elements
         np.save(data_file_name, self._cells[1:-1, 1:-1, 1:-1])
         np.save(meta_file_name, np.array([self._base_pos, self._cell_size, self._aabb, self._transform]))
+        if self._additional_data is not None:
+            np.save(add_data_file_name, self._additional_data)
 
     @staticmethod
     def load(file_name, b_restore_transform=False):
@@ -131,6 +156,7 @@ class VoxelGrid(object):
             - :b_restore_transform: (optional) - If true, the transform is loaded as well, else identity transform is set
         """
         data_file_name = file_name + '.data.npy'
+        add_data_file_name = file_name + '.adddata.npy'
         meta_file_name = file_name + '.meta.npy'
         if not os.path.exists(data_file_name) or not os.path.exists(meta_file_name):
             raise IOError("Could not load grid for filename prefix " + file_name)
@@ -148,6 +174,8 @@ class VoxelGrid(object):
             grid._transform = meta_data[3]
         else:
             grid._transform = np.eye(4)
+        if os.path.exists(add_data_file_name):
+            grid._additional_data = np.load(add_data_file_name)
         return grid
 
     def get_index_generator(self):
@@ -270,6 +298,37 @@ class VoxelGrid(object):
             return self.get_interpolated_values(indices)
         return self._cells[indices[:, 0] + 1, indices[:, 1] + 1, indices[:, 2] + 1]
 
+    def get_additional_data(self, idx):
+        """
+            Return additional data for the given cell, if it exists.
+            ---------
+            Arguments
+            ---------
+            idx - a tuple/list of length 3 (ix, iy, iz) specifying the voxel
+            -------
+            Returns
+            -------
+            additoinal data for the cell, None if not available
+        """
+        if self._additional_data is not None:
+            idx = self.sanitize_idx(idx)
+            return self._additional_data[idx[0], idx[1], idx[2]]
+        return None
+
+    def set_additional_data(self, idx, data):
+        """
+            Set additional data for the given cell.
+            ---------
+            Arguments
+            ---------
+            idx - a tuple/list of length 3 (ix, iy, iz) specifying the voxel
+            data, object - any pickable data to store
+        """
+        if self._additional_data is None:
+            self._additional_data = np.empty(self._num_cells, dtype=object)
+        idx = self.sanitize_idx(idx)
+        self._additional_data[idx[0], idx[1], idx[2]] = data
+
     def get_interpolated_values(self, indices):
         """
             Return grid values for the given floating point indices.
@@ -310,6 +369,13 @@ class VoxelGrid(object):
             Use with caution!
         """
         return self._cells[1:-1, 1:-1, 1:-1]
+
+    def get_raw_additional_data(self):
+        """
+            Returns a reference to the underlying additional data data structure.
+            This data structure is a numpy array of shape num_cells, but of type object.
+        """
+        return self._additional_data
 
     def set_raw_data(self, data):
         """
@@ -425,6 +491,12 @@ class VoxelGrid(object):
         """
         return self._transform
 
+    def has_additional_data(self):
+        """
+            Return whether there is additional data stored in this grid.
+        """
+        return self._additional_data is not None
+
 
 class ORVoxelGridVisualization(object):
     """
@@ -538,16 +610,27 @@ class SDF(object):
         local_point, idx = self._grid.map_to_grid(point)
         return self._get_heuristic_distance_local(local_point)
 
-    def get_distance(self, point):
+    def get_distance(self, point, b_return_dir=False):
         """
             Returns the shortest distance of the given point to the closest obstacle surface.
             @param point - point as a numpy array (x, y, z).
+            b_return_dir, bool - if True, also return the direction to the closest free point
         """
+        v = None
+        dist = None
         local_point, idx = self._grid.map_to_grid(point)
         if idx is not None:
-            return self._grid.get_cell_value(idx)
-        # the point is out of range of our grid, we need to approximate the distance
-        return self._get_heuristic_distance_local(local_point)
+            dist = self._grid.get_cell_value(idx)
+        else:
+            # point is outside of the grid, need to copmute heuristic value
+            dist = self._get_heuristic_distance_local(local_point)
+        if b_return_dir:
+            if idx is not None:
+                v = self._grid.get_additional_data(idx)
+            if v is None:
+                v = np.array([0.0, 0.0, 0.0])
+            return dist, v
+        return dist
 
     def get_distances(self, positions, b_interpolate=True):
         """
@@ -572,6 +655,32 @@ class SDF(object):
         else:
             distances = map(self._get_heuristic_distance_local, local_points[:, :3])
         return distances
+
+    def get_direction(self, point):
+        """
+            Return the direction to the closest non-penetrating point (this is approximate and up to the value of resolution wrong).
+            ---------
+            Arguments
+            ---------
+            point, numpy array of shape (3,) - position
+            -------
+            Returns
+            -------
+            numpy array of shape (3,)
+        """
+        v = None
+        _, idx = self._grid.map_to_grid(point)
+        if idx is not None:
+            v = self._grid.get_additional_data(idx)
+        if v is None:  # means we are outside of collisions
+            v = np.array([0.0, 0.0, 0.0])
+        return v
+
+    def has_directions(self):
+        """
+            Return whether this sdf supports direction queries.
+        """
+        return self._grid.has_additional_data()
 
     def clear_visualization(self):
         """
@@ -629,6 +738,18 @@ class SDF(object):
             the distance of the query point to this approximation box is computed.
         """
         self._approximation_box = box
+
+    def min(self):
+        """
+            Return minimal signed distance.
+        """
+        return self._grid.get_min_value()
+
+    def max(self):
+        """
+            Return maximal signed distance.
+        """
+        return self._grid.get_max_value()
 
 
 class OccupancyGridBuilder(object):
@@ -796,15 +917,17 @@ class SDFBuilder(object):
         self._cell_size = cell_size
         self._occupancy_builder = OccupancyGridBuilder(env, cell_size)
 
-    def _compute_sdf(self, grid):
+    @staticmethod
+    def compute_sdf(grid, b_compute_dirs=False):
         """
             Compute a signed distance field from the given occupancy grid.
 
             Arguments
             ---------
             grid - VoxelGrid that is an occupancy map. The cell type must be bool
-
-            Return
+            b_compute_dirs, bool - If true, the function also computes for each voxel
+                a vector pointing to the closest collision free voxel. This vector is stored
+                in the sdf as additional data.
             ---------
             distance grid - VoxelGrid with cells of type float. Each cell contains the signed
                 distance to the closest obstacle surface point
@@ -828,15 +951,27 @@ class SDFBuilder(object):
         interior_collision_map = scipy.ndimage.morphology.binary_erosion(raw_grid)
         inside_distances = scipy.ndimage.morphology.distance_transform_edt(interior_collision_map,
                                                                            sampling=grid.get_cell_size())
-        print('min inside', np.min(inside_distances))
-        print('max inisde', np.max(inside_distances))
-        print('min outside', np.min(outside_distances))
-        print('max outside', np.max(outside_distances))
-        sdf_grid = VoxelGrid(grid.get_workspace(), cell_size=self._cell_size, dtype=np.float_)
+        # create sdf grid
+        sdf_grid = VoxelGrid(grid.get_workspace(), cell_size=grid.get_cell_size(), dtype=np.float_,
+                             b_additional_data=b_compute_dirs)
         sdf_grid.set_raw_data(outside_distances - inside_distances)
+        # compute directions, if requested
+        if b_compute_dirs:
+            # we compute these also for the borders
+            x_indices, y_indices, z_indices = scipy.ndimage.morphology.distance_transform_edt(raw_grid,
+                                                                                              return_distances=False,
+                                                                                              return_indices=True,
+                                                                                              sampling=grid.get_cell_size())
+            for cell in sdf_grid:
+                idx = cell.get_idx()
+                nearest_free_idx = (x_indices[idx], y_indices[idx], z_indices[idx])
+                if idx != nearest_free_idx:
+                    delta_idx = np.array((nearest_free_idx)) - np.array(idx)
+                    dir_vec = delta_idx * grid.get_cell_size()
+                    cell.set_additional_data(dir_vec)
         return sdf_grid
 
-    def create_sdf(self, workspace_aabb):
+    def create_sdf(self, workspace_aabb, b_compute_dirs=False):
         """
             Creates a new sdf for the current state of the OpenRAVE environment provided on construction.
             The SDF is created in world frame of the environment. You can later change its transform.
@@ -850,7 +985,7 @@ class SDFBuilder(object):
         print ('Computation of collision binary map took %f s' % (time.time() - start_time))
         # next compute sdf
         start_time = time.time()
-        distance_grid = self._compute_sdf(occupancy_grid)
+        distance_grid = SDFBuilder.compute_sdf(occupancy_grid, b_compute_dirs=b_compute_dirs)
         print ('Computation of sdf took %f s' % (time.time() - start_time))
         return SDF(grid=distance_grid)
 
@@ -934,7 +1069,7 @@ class SceneSDF(object):
         return SDFBuilder.compute_sdf_size(aabb, approx_error, radius)
 
     def create_sdf(self, workspace_bounds, static_resolution=0.02, moveable_resolution=0.02,
-                   approx_error=0.1):
+                   approx_error=0.1, b_compute_dirs=False):
         """
             Creates a new scene sdf. This process takes time!
             @param workspace_bounds - the volume of the environment this sdf should cover
@@ -942,6 +1077,7 @@ class SceneSDF(object):
             @param moveable_resolution - the resolution of sdfs for movable kinbodies
             @param approx_error - a relativ error between 0 and 1 that is allowed to occur
                                   at boundaries of movable kinbody sdfs
+            @param b_compute_dirs, bool, If true also computes directions to closest collision-free cells.
         """
         # before we do anything, save which bodies are enabled
         body_enable_status = {}
@@ -956,7 +1092,7 @@ class SceneSDF(object):
             # for that disable all movable objects
             for body_name in self._movable_body_names:
                 self._enable_body(body_name, False)
-            self._static_sdf = builder.create_sdf(workspace_bounds)
+            self._static_sdf = builder.create_sdf(workspace_bounds, b_compute_dirs)
         # Now we build SDFs for all movable object
         # if we have different resolutions for static and movables, we need a new builder
         if static_resolution != moveable_resolution:
@@ -972,6 +1108,8 @@ class SceneSDF(object):
             if self._sdf_paths is not None and body_name in self._sdf_paths:  # we have a path for a body sdf
                 # load an sdf
                 body_sdf = SDF.load(self._sdf_paths[body_name])
+                if b_compute_dirs and not body_sdf.has_directions():
+                    body_sdf = None  # cannot use body sdf because it does not provide directions
             # if we do not have an sdf to load for this body or failed at doing so, create a new
             if body_sdf is None:
                 # Prepare sdf creation for this body
@@ -985,7 +1123,7 @@ class SceneSDF(object):
                 # Compute the size of the sdf that we need to ensure the maximum relative error
                 sdf_bounds = self._compute_sdf_size(aabb, approx_error, body_name)
                 # create the sdf
-                body_sdf = builder.create_sdf(sdf_bounds)
+                body_sdf = builder.create_sdf(sdf_bounds, b_compute_dirs=b_compute_dirs)
                 body_sdf.set_approximation_box(body_bounds)  # set the actual body aabb as approx box
                 body.SetTransform(old_tf)  # restore transform
                 body.Enable(False)  # disable body again
@@ -1026,6 +1164,32 @@ class SceneSDF(object):
         if self._static_sdf is not None:
             min_distances = np.minimum(min_distances, self._static_sdf.get_distances(positions))
         return min_distances
+
+    def get_direction(self, position):
+        """
+            Return the approximate direction to the closest obstacle free point from the give position.
+            ---------
+            Arguments
+            ---------
+            position, numpy array of shape (3,)
+            -------
+            Returns
+            -------
+            dir, numpy array of shape (3,)
+        """
+        min_distance = float('inf')
+        v = np.array([0.0, 0.0, 0.0])
+        for (body, body_sdf) in self._body_sdfs.itervalues():
+            body_sdf.set_transform(body.GetTransform())
+            dist, tv = body_sdf.get_distance(position, b_return_dist=True)
+            if dist < min_distance:
+                min_distance = dist
+                v = tv
+        if self._static_sdf is not None:
+            dist, tv = self._static_sdf.get_distance(position, b_return_dir=True)
+            if dist < min_distance:
+                v = tv
+        return v
 
     def save(self, filename, body_dir=None):
         """
@@ -1100,6 +1264,17 @@ class SceneSDF(object):
                     raise IOError("Could not load sdf for kinbody %s" % name)
             if '__static_sdf__' not in available_sdfs and len(self._movable_body_names) < len(self._env.GetBodies()):
                 raise IOError("Could not load sdf for static environment")
+
+    def has_directions(self):
+        """
+            Return whether this sdf supports direction queries.
+        """
+        if not self._static_sdf.has_directions():
+            return False
+        for body_sdf in self._body_sdfs:
+            if not body_sdf.has_direction():
+                return False
+        return True
 
 
 class ORSDFVisualization(object):

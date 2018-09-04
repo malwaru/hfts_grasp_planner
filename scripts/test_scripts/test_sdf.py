@@ -38,7 +38,7 @@ ROBOT_BALL_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_plann
 #     IPython.embed()
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
     # test_ball_sdf(volume, 0.4, 0.01)
     env = orpy.Environment()
@@ -52,11 +52,12 @@ if __name__=="__main__":
     movable_names = ['crayola']
     robot_name = 'r850_robotiq'
     robot = env.GetRobot(robot_name)
-    scene_sdf = sdf_module.SceneSDF(env, movable_names, excluded_bodies=[robot_name, 'bunny'])
+    scene_sdf = sdf_module.SceneSDF(env, movable_names, excluded_bodies=[
+                                    robot_name, 'bunny'])
     volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
-    scene_sdf.load(SDF_PATH)
-    # scene_sdf.create_sdf(volume, 0.02, 0.01)
-    # scene_sdf.save(SDF_PATH)
+    # scene_sdf.load(SDF_PATH)
+    scene_sdf.create_sdf(volume, 0.02, 0.01, b_compute_dirs=True)
+    scene_sdf.save(SDF_PATH)
     sdf_vis = sdf_module.ORSDFVisualization(env)
     sdf_vis.visualize(scene_sdf, volume, resolution=0.05, max_sat_value=0.7, style='sprites')
     # robot_sdf = robot_sdf_module.RobotSDF(robot, scene_sdf)

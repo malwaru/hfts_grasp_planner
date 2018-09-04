@@ -53,12 +53,12 @@ if __name__ == "__main__":
     env.Load(ENV_PATH)
     env.SetViewer('qtcoin')
     robot_name = env.GetRobots()[0].GetName()
-    scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=[robot_name, 'bunny', 'crayola', 'stick'])
+    scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=[robot_name, 'bunny', 'crayola', 'stick', 'cube'])
     if os.path.exists(SDF_PATH):
         scene_sdf.load(SDF_PATH)
         volume = np.array([-0.6, 0.3, 0.3, 0.7, 1.2, 0.8])
-        sdf_vis = sdf_module.ORSDFVisualization(env)
-        sdf_vis.visualize(scene_sdf, volume, resolution=0.01, max_sat_value=0.4, style='sprites')
+        # sdf_vis = sdf_module.ORSDFVisualization(env)
+        # sdf_vis.visualize(scene_sdf, volume, resolution=0.01, max_sat_value=0.4, style='sprites')
     else:
         # volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
         volume = np.array([-0.6, 0.3, 0.3, 0.7, 1.2, 0.8])
@@ -67,10 +67,10 @@ if __name__ == "__main__":
         resolution = 0.005
         print 'Check volume!'
         IPython.embed()
-        scene_sdf.create_sdf(volume, resolution, resolution)
+        scene_sdf.create_sdf(volume, resolution, resolution, b_compute_dirs=True)
         scene_sdf.save(SDF_PATH)
-        sdf_vis = sdf_module.ORSDFVisualization(env)
-        sdf_vis.visualize(scene_sdf, volume, resolution=0.01, max_sat_value=0.7, style='sprites')
-    test_body = env.GetKinBody('stick')
-    test_octree = kinbody_sdf_module.OccupancyOctree(0.005, test_body)
+        # sdf_vis = sdf_module.ORSDFVisualization(env)
+        # sdf_vis.visualize(scene_sdf, volume, resolution=0.01, max_sat_value=0.7, style='sprites')
+    test_body = env.GetKinBody('bunny')
+    test_octree = kinbody_sdf_module.OccupancyOctree(0.005, test_body.GetLinks()[0])
     IPython.embed()

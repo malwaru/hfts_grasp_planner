@@ -15,8 +15,8 @@ class OccupancyOctree(object):
         This class represents an occupancy map for a rigid body
         using an octree representation. Each cell of the octree stores whether
         it is part of the volume of the rigid body or not. Thus the octree provides
-        a hierarchical representation of the body's volume. 
-        This class allows to efficiently compute to what degree a rigid body collides with its 
+        a hierarchical representation of the body's volume.
+        This class allows to efficiently compute to what degree a rigid body collides with its
         environment, if a signed distance field for this environment exists.
     """
     class OccupancyOctreeCell(object):
@@ -37,6 +37,7 @@ class OccupancyOctree(object):
             self.children = []
             self.depth = depth
             self.num_occupied_leaves = 0
+            self.max_int_distance = 0.0
             self.tree = tree
             self.cart_dimensions = (idx_box[3:] - idx_box[:3]) * tree._grid.get_cell_size()
             self.radius = np.linalg.norm(self.cart_dimensions / 2.0)
@@ -62,6 +63,8 @@ class OccupancyOctree(object):
         self._total_volume = 0.0
         self._depth = 0
         self._construct_grid(cell_size)
+        self._sdf = sdf_core.SDF(sdf_core.SDFBuilder.compute_sdf(self._grid))
+        self._max_possible_penetration = np.abs(self._sdf.min())
         self._construct_octree(cell_size)
 
     def _construct_grid(self, cell_size):
@@ -80,7 +83,7 @@ class OccupancyOctree(object):
             self._link.Enable(True)
             # construct a binary occupancy grid of the body
             local_aabb = self._link.ComputeAABB()
-            self._grid = sdf_core.VoxelGrid((local_aabb.pos(), local_aabb.extents() * 2.0), cell_size)
+            self._grid = sdf_core.VoxelGrid((local_aabb.pos(), local_aabb.extents() * 2.0), cell_size, dtype=bool)
             collision_map_builder = sdf_core.OccupancyGridBuilder(env, cell_size)
             collision_map_builder.compute_grid(self._grid)
             collision_map_builder.clear()
@@ -115,8 +118,11 @@ class OccupancyOctree(object):
             assert(max_value == 0.0 or max_value == 1.0)
             if volume == 1 or max_value == 0.0:
                 # we are either at the bottom of the hierarchy or all children are free
-                current_node.occupied = min_value == 1.0
+                current_node.occupied = min_value == 1
                 current_node.num_occupied_leaves = volume if current_node.occupied else 0
+                # NOTE there is an error of up to the cell radius here
+                current_node.max_int_distance = abs(self._sdf.get_distance(
+                    current_node.cart_center)) if current_node.occupied else 0.0
             else:
                 # we want to refine nodes that are mixed, or in collision and
                 # do not have minimal size
@@ -140,17 +146,20 @@ class OccupancyOctree(object):
                         self._depth = max(self._depth, child_node.depth)
         # lastly, update num_occupied_leaves flags
 
-        def compute_num_occupied_leaves(node):
-            # helper function to recursively compute the number of occupied leaves
+        def update_bottom_up(node):
+            # helper function to recursively compute the number of occupied leaves and penetration distances
             if not node.children:
-                return node.num_occupied_leaves
+                return node.num_occupied_leaves, node.max_int_distance
             if not node.occupied:
                 assert(node.num_occupied_leaves == 0)
-                return 0
+                assert(node.max_int_distance == 0.0)
+                return 0, 0.0
             for child in node.children:
-                node.num_occupied_leaves += compute_num_occupied_leaves(child)
-            return node.num_occupied_leaves
-        compute_num_occupied_leaves(self._root)
+                child_leaves, child_int_dist = update_bottom_up(child)
+                node.num_occupied_leaves += child_leaves
+                node.max_int_distance = max(child_int_dist, node.max_int_distance)
+            return node.num_occupied_leaves, node.max_int_distance
+        update_bottom_up(self._root)
         self._total_volume = self._root.num_occupied_leaves * np.power(self._grid.get_cell_size(), 3)
 
     def compute_intersection(self, scene_sdf):
@@ -159,20 +168,24 @@ class OccupancyOctree(object):
             of the scene described by the provided scene sdf.
             @param scene_sdf - signed distance field of the environment that the body
                 this map belongs to resides in
-            @return (v, rv, dc, adc) -
+            @return (v, rv, dc, adc, mid, med) -
                 v is the total volume that is intersecting
                 rv is this volume relative to the body's total volume, i.e. in range [0, 1]
                 dc is a cost that is computed by (approximately) summing up all signed
                     distances of intersecting cells
                 adc is this cost divided by the number of intersecting cells, i.e. the average
                     signed distance of the intersecting cells
+                max_int_distance, float - maximal interior distance of a colliding cell
+                max_ext_distance, float - maximal exterior distance of a colliding cell
         """
         if not self._root.occupied:
-            return 0.0, 0.0, 0.0, 0.0
+            return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         tf = self._link.GetTransform()
         num_intersecting_leaves = 0
         distance_cost = 0.0
         layer_idx = 0
+        max_int_distance = 0.0  # maximal interior penetration distance
+        max_ext_distance = 0.0  # maximal exterior penetration distance
         # current_layer = [self._root]  # invariant current_layer items are occupied
         current_layer = collections.deque([self._root])  # invariant current_layer items are occupied
         next_layer = collections.deque()
@@ -193,14 +206,20 @@ class OccupancyOctree(object):
                     num_intersecting_leaves += cell.num_occupied_leaves
                     # regarding the distance cost, assume the worst case, i.e. add the maximum distance
                     # that any child might have for all children
-                    distance_cost += cell.num_occupied_leaves * (dist - cell.radius)
+                    ext_distance = (dist - cell.radius)
+                    distance_cost += cell.num_occupied_leaves * ext_distance
+                    max_ext_distance = max(max_ext_distance, abs(ext_distance))
+                    max_int_distance = max(max_int_distance, cell.max_int_distance)
                 else:  # boundary, partly in collision
                     if cell.children:  # as long as there are children, we can descend
                         next_layer.extend([child for child in cell.children if child.occupied])
                     else:
                         num_intersecting_leaves += cell.num_occupied_leaves
                         # subtracting the radius here guarantees that distance_cost is always negative
-                        distance_cost += dist - cell.radius
+                        ext_distance = dist - cell.radius
+                        distance_cost += ext_distance
+                        max_ext_distance = max(max_ext_distance, abs(ext_distance))
+                        max_int_distance = max(max_int_distance, cell.max_int_distance)
             # switch to next layer
             current_layer, next_layer = next_layer, current_layer
             next_layer.clear()
@@ -208,7 +227,58 @@ class OccupancyOctree(object):
         intersection_volume = num_intersecting_leaves * np.power(self._grid.get_cell_size(), 3)
         relative_volume = num_intersecting_leaves / float(self._root.num_occupied_leaves)
         normalized_distance_cost = distance_cost / float(self._root.num_occupied_leaves)
-        return intersection_volume, relative_volume, distance_cost, normalized_distance_cost
+        return intersection_volume, relative_volume, distance_cost, normalized_distance_cost, max_int_distance, max_ext_distance
+
+    def compute_max_penetration(self, scene_sdf, b_compute_dir=False):
+        """
+            Computes the maximum penetration of this link with the given sdf.
+            The maximum penetration is the minimal signed distance in this link's volume
+            in the given scene_sdf.
+            ---------
+            Arguments
+            ---------
+            scene_sdf, SceneSDF
+            b_compute_dir, bool - If True, also retrieve the direction from the maximally penetrating
+                cell to the closest free cell.
+            -------
+            Returns
+            -------
+            penetration distance, float - minimum in scene_sdf in the volume covered by this link.
+            v_to_border, numpy array of shape (3,) - translation vector to move the cell with maximum penetration
+                out of collision (None if b_compute_dir is False)
+        """
+        max_penetration = 0.0
+        direction = np.array([0.0, 0.0, 0.0]) if b_compute_dir else None
+        if not self._root.occupied:
+            return max_penetration, direction
+        tf = self._link.GetTransform()
+        current_layer = collections.deque([self._root])  # invariant current_layer items are occupied
+        next_layer = collections.deque()
+        # iterate through hierarchy layer by layer (bfs) - this way we can perform more efficient batch distance queries
+        while current_layer:
+            # first get the positions of all cells on the current layer
+            query_positions = np.ones((len(current_layer), 4))
+            query_positions[:, :3] = np.array([cell.cart_center for cell in current_layer])
+            query_positions = np.dot(query_positions, tf.transpose())
+            # query distances for all cells on this layer
+            distances = scene_sdf.get_distances(query_positions)
+            for dist, cell, pos in itertools.izip(distances, current_layer, query_positions):
+                # handle = self.draw_cell(cell)
+                if dist > cell.radius:  # none of the points in this cell can be in collision
+                    continue
+                else:
+                    if cell.children:  # as long as there are children, we can descend
+                        if max_penetration > dist - cell.radius:  # a child of this cell might have a larger penetration
+                            next_layer.extend([child for child in cell.children if child.occupied])
+                    else:
+                        if max_penetration > dist:
+                            max_penetration = dist
+                            if b_compute_dir:  # retrieve direction
+                                direction = scene_sdf.get_direction(pos[:3])
+            # switch to next layer
+            current_layer, next_layer = next_layer, current_layer
+            next_layer.clear()
+        return max_penetration, direction
 
     def draw_cell(self, cell):
         """
@@ -218,7 +288,7 @@ class OccupancyOctree(object):
         """
         tf = self._link.GetTransform()
         env = self._body.GetEnv()
-        color = np.array([1.0, 0.0, 0.0, 1.0])
+        color = np.array([cell.max_int_distance / self.get_maximal_peneration_depth(), 0.0, 0.0, 1.0])
         return env.drawbox(cell.cart_center, cell.cart_dimensions / 2.0, color, tf)
 
     def get_depth(self):
@@ -238,6 +308,12 @@ class OccupancyOctree(object):
             Get the total number of cells that are occupied.
         """
         return self._root.num_occupied_leaves
+
+    def get_maximal_peneration_depth(self):
+        """
+            Return the maximal depth any obstacle can penetrate this body.
+        """
+        return self._max_possible_penetration
 
     def visualize(self, level):
         """
@@ -268,7 +344,8 @@ if __name__ == '__main__':
     env.Load(os.path.dirname(__file__) + '/../../../data/bunny/objectModel.ply')
     env.SetViewer('qtcoin')
     body = env.GetBodies()[0]
-    octree = OccupancyOctree(0.005, body)
+    # body.SetVisible(False)
+    octree = OccupancyOctree(0.005, body.GetLinks()[0])
     # octree._grid.save('/tmp/test_grid')
     handles = octree.visualize(10)
     import IPython

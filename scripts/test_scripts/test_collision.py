@@ -41,6 +41,15 @@ def test_ccd(env, body, target_tf=None, b_overwrite_pose=True):
     return report
 
 
+def test_ray_trace(env, positions, dirs, length):
+    start_time = time.time()
+    rays = np.empty((len(positions), 6))
+    rays[:, :3] = positions
+    rays[:, 3:] = length * dirs
+    contacts = env.CheckCollisionRays(rays)
+    print contacts, 'It took: ', time.time() - start_time
+
+
 def test_dcd_contact(env, body, b_overwrite_pose=True):
     if b_overwrite_pose:
         tf = np.array([[1.00000000e+00,   0.00000000e+00,   0.00000000e+00,
@@ -83,7 +92,7 @@ if __name__ == '__main__':
     path = os.path.abspath(os.path.dirname(__file__))
     env_path = path + '/../../data/environments/cluttered_env.xml'
     if env.Load(env_path):
-        ode_col_checker = orpy.RaveCreateCollisionChecker(env, 'bullet')
+        ode_col_checker = orpy.RaveCreateCollisionChecker(env, 'ode')
         ode_col_checker.SetCollisionOptions(orpy.CollisionOptions.Contacts |
                                             orpy.CollisionOptions.AllGeometryContacts |
                                             orpy.CollisionOptions.AllLinkCollisions)

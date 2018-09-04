@@ -225,7 +225,7 @@ class SimplePlacementQuality(object):
                     return new_filters
             return None
 
-    def __init__(self, env, filter_io, parameters=None):
+    def __init__(self, env, filter_io, scene_sdf, parameters=None):
         """
             Create a new SimplePlacementQuality function object.
             ---------
@@ -234,6 +234,7 @@ class SimplePlacementQuality(object):
             env - fully initialized OpenRAVE environment. Note that the environment is cloned.
             filter_io - Object of class PreferenceFilterIO that allows reading
                 in object-specific placement plane filters.
+            scene_sdf, SceneSDF - signed distance field of the scene
             parameters - dictionary with parameters. Available parameters are:
                 min_com_distance, float - minimal distance for center of mass from convex hull boundary TODO better description
                 min_normal_similarity, float - minimal value for dot product between similar faces TODO better description
@@ -245,11 +246,16 @@ class SimplePlacementQuality(object):
         self._env.SetCollisionChecker(col_checker)
         # self._env.SetViewer('qtcoin')  # for debug only
         self._body = None
-        self._placement_planes = None
+        self._scene_sdf = scene_sdf
+        self._placement_planes = None  # list of placement planes, where each plane is a matrix (n +1, 3) matrix
+        self._com_distances = None  # list of tuples (dist2d, dist3d), i.e. one for each placement plane, where dist2d is the maximal
+                                    # distance between the projected center of mass and edges of the support, and the distance between the plane
+                                    # and the 3d center of mass
         self._dir_gravity = np.array([0.0, 0.0, -1.0])
         self._local_com = None
         self._parameters = {"min_com_distance": 0.001, "min_normal_similarity": 0.97,
-                            "falling_height_tolerance": 0.005, "slopiness_weight": 1.6 / math.pi}
+                            "falling_height_tolerance": 0.005, "slopiness_weight": 1.6 / math.pi,
+                            "alpha_weight": 1.0, "d_weight": 1.0, "p_weight": 1.0,}
         self._max_ray_length = 2.0
         if parameters:
             for (key, value) in parameters:
@@ -284,52 +290,78 @@ class SimplePlacementQuality(object):
         # score, d_head, chull_distance, alpha, gamma
         best_plane_results = (float('inf'), float('inf'), float('inf'), float('inf'), float('inf'))
         # TODO can we skip some placement planes? based on their normals?
-        for plane in self._placement_planes:
-            virtual_contacts, _, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
-            if virtual_contacts.size > 0:
-                # we have some virtual contacts and thus finite distances
-                # rerieve the largest distance between a placement point and its virtual contact
+        for plane, dist_pair in itertools.izip(self._placement_planes, self._com_distances):
+            plane_normal = np.dot(pose[:3, :3], plane[0])
+            if plane_normal[2] > 0.0:  # this plane is facing upwards
+                distances, _, _, _ = self._project_placement_plane(plane, pose)
                 finite_distances = [d for d in distances if d < float('inf')]
-                d_head = np.max(finite_distances)
-                # d_head = np.min(finite_distances)
-                if virtual_plane_axes is not None:
-                    # we have a virtual contact plane and can compute the full heuristic
-                    # project the virtual contacts to the x, y plane and compute their convex hull
-                    contact_footprint = scipy.spatial.ConvexHull(virtual_contacts[:, :2])
-                    # retrieve the distance to the closest edge
-                    chull_distance, _ = compute_hull_distance(contact_footprint, self._body.GetCenterOfMass()[:2])
-                    # angle between virtual placement plane and z-axis
-                    dot_product = np.dot(virtual_plane_axes[:, 2], np.abs(self._dir_gravity))
-                    alpha = np.arccos(np.clip(dot_product, -1.0, 1.0))
-                    # angle between the placement plane and the virtual placement plane. Our stability estimate
-                    # is only somehow accurate if these two align. It's completely nonsense if the plane is upside down
-                    dot_product = np.dot(virtual_plane_axes[:, 2], -1.0 * np.dot(pose[:3, :3], plane[0]))
-                    gamma = np.arccos(np.clip(dot_product, -1.0, 1.0))
-                    # thus penalize invalid angles through the following score
-                    # TODO maybe choose a different formula for this weight here
-                    weight = 1.0 / (1.0 + np.exp(-8.0 / np.pi * (gamma - np.pi / 2.0)))
-                    placement_value = (1.0 - weight) * chull_distance + weight * self._max_ray_length
+                if len(finite_distances) > 0:
+                    d_head = np.max(finite_distances)
                 else:
-                    # we have contacts, but insufficiently many to fit a plane, so give it bad
-                    # scores for anything related to the virtual placement plane
-                    placement_value = self._max_ray_length
-                    alpha = 1.57
-                    chull_distance = float('inf')
-                    gamma = 1.57
+                    d_head = self._max_ray_length
+                d_value = 1.0  # TODO should we return a value here that decreases as the angle of the plane is getting better?
+                p_value = 1.0
+                alpha_value = 1.0
+                alpha = np.pi / 2.0
+                gamma = np.pi / 2.0
+            else:  # plane is facing downwards
+                virtual_contacts, _, virtual_plane_axes, distances = self._compute_virtual_contact_plane(plane, pose)
+                if virtual_contacts.size > 0:
+                    # we have some virtual contacts and thus finite distances
+                    # rerieve the largest distance between a placement point and its virtual contact
+                    finite_distances = [d for d in distances if d < float('inf')]
+                    d_head = np.max(finite_distances)
+                    d_value = d_head / self._max_ray_length
+                    # d_head = np.min(finite_distances)
+                    if virtual_plane_axes is not None:
+                        # we have a virtual contact plane and can compute the full heuristic
+                        # project the virtual contacts to the x, y plane and compute their convex hull
+                        contact_footprint = scipy.spatial.ConvexHull(virtual_contacts[:, :2])
+                        # retrieve the distance to the closest edge
+                        chull_distance, _ = compute_hull_distance(contact_footprint, self._body.GetCenterOfMass()[:2])
+                        # angle between virtual placement plane and z-axis
+                        dot_product = np.dot(virtual_plane_axes[:, 2], np.abs(self._dir_gravity))
+                        alpha = np.arccos(np.clip(dot_product, -1.0, 1.0))
+                        alpha_value = 2.0 * alpha / np.pi
+                        # angle between the placement plane and the virtual placement plane. Our stability estimate
+                        # is only somehow accurate if these two align. It's completely nonsense if the plane is upside down
+                        dot_product = np.dot(virtual_plane_axes[:, 2], -1.0 * np.dot(pose[:3, :3], plane[0]))
+                        gamma = np.arccos(np.clip(dot_product, -1.0, 1.0))
+                        # thus penalize invalid angles through the following score
+                        # TODO maybe choose a different formula for this weight here
+                        weight = 1.0 / (1.0 + np.exp(-8.0 / np.pi * (gamma - np.pi / 2.0)))
+                        stability = (1.0 - weight) * chull_distance + weight * dist_pair[1]
+                        p_value = (stability + dist_pair[0]) / dist_pair[1]
+                    else:
+                        # we have contacts, but insufficiently many to fit a plane, so give it bad
+                        # scores for anything related to the virtual placement plane
+                        p_value = 1.0
+                        alpha_value = 1.0
+                        p_value = 1.0
+                        alpha_value = 1.0
+                        alpha = np.pi / 2.0
+                        gamma = np.pi / 2.0
             else:
                 # we have no contacts, so there isn't anything we can say
-                d_head = float('inf')
-                chull_distance = float('inf')
-                gamma = float('inf')
-                placement_value = float('inf')
+                d_head = self._max_ray_length
+                chull_distance = dist_pair[1]
+                gamma = np.pi
                 alpha = float('inf')
+                d_value = 1.0
+                p_value = 1.0
+                alpha_value = 1.0
+            # TODO update docs
             # we want to minimize the following score
             # minimizing d_head drives the placement plane downwards and aligns the placement plane with the surface
             # minimizing the placement_value leads to rotating the object (fixes upside down planes) so that the
             # placement plane gets aligned with the surface, or if the plane is already aligned, maximizes the
             # stability by minizing the chull_distance (which is negative inside of the hull).
             # Minimizing alpha prefers placements on planar surfaces rather than on slopes.
-            score = d_head + placement_value + self._parameters["slopiness_weight"] * alpha
+            # score = d_head + placement_value + self._parameters["slopiness_weight"] * alpha
+            assert(d_value >= 0.0 and d_value <= 1.0)
+            assert(p_value >= 0.0 and p_value <= 1.0)
+            assert(alpha_value >= 0.0 and alpha_value <= 1.0)
+            score = self._parameters['d_weight'] * d_value + self._parameters['p_weight'] * p_value + self._parameters['alpha_weight'] * alpha_value
             if score < best_plane_results[0]:
                 best_plane_results = score, d_head, chull_distance, alpha, gamma
         if return_terms:
@@ -399,6 +431,7 @@ class SimplePlacementQuality(object):
         # project the center of mass also on this plane
         projected_com = self._local_com - mean_point - \
             np.dot(self._local_com - mean_point, plane[0].transpose()) * plane[0]
+        dist3d = np.linalg.norm(self._local_com - projected_com)
         com2d = np.dot(projected_com, axes)
         # compute the convex hull of the projected points
         convex_hull = scipy.spatial.ConvexHull(points_2d)
@@ -416,8 +449,8 @@ class SimplePlacementQuality(object):
         #                                  np.array([0.29, 0, 0.5]), tf))
         # ##### DRAW PROJECTED COM - END ######
         # accept the point if the projected center of mass is inside of the convex hull
-        dist, _ = compute_hull_distance(convex_hull, com2d)
-        return dist < -1.0 * self._parameters["min_com_distance"]
+        dist2d, _ = compute_hull_distance(convex_hull, com2d)
+        return dist2d < -1.0 * self._parameters["min_com_distance"], np.abs(dist2d), dist3d
 
     def _compute_placement_planes(self, user_filters):
         # first compute the convex hull of the body
@@ -447,10 +480,12 @@ class SimplePlacementQuality(object):
                 if not acceptances.any():
                     continue
             # filter based on stability
-            if not self._is_stable_placement_plane(plane):
+            b_stable, dist2d, dist3d = self._is_stable_placement_plane(plane)
+            if not b_stable:
                 continue
             # if this plane passed all filters, we accept it
             self._placement_planes.append(plane)
+            self._com_distances.append((dist2d, dist3d))
         if not self._placement_planes:
             raise ValueError("Failed to compute placement planes for body %s." % self._body.GetName())
         handles = self._visualize_placement_planes()
@@ -464,6 +499,50 @@ class SimplePlacementQuality(object):
                     if not my_body:
                         raise RuntimeError("Could not find body with name " + body.GetName() + " in cloned environment")
                     my_body.SetTransform(body.GetTransform())
+
+    def _project_placement_plane(self, placement_plane, pose):
+        """
+            Project the given placement plane along the direction of gravity to the surface.
+            ---------
+            Arguments
+            ---------
+            placement_plane, numpy array of shape (n+1, 3), where n is the number of points
+                on the plane and placement_plane[0, :] is its normal.
+            pose, numpy array of shape (4, 4), current pose of the body
+            ---------
+            Returns
+            ---------
+            distance, numpy array of shape (n,) - distances between projected and non-projected points
+            virtual_contacts, numpy array of shape (n, 6) - project contact points
+            tf_plane - placement plane transformed by pose.
+            collisions, np array of shape (n,) of type bool - True if projection it a surface
+        """
+        # first transform the placement plane to global frame
+        tf_plane = np.dot(placement_plane, pose[:3, :3].transpose())
+        tf_plane[1:] += pose[:3, 3]
+        assert(tf_plane.shape[0] >= 4)
+        # next check which of placement plane points are not in collision already
+        query_points = np.empty((tf_plane.shape[0] - 1, 4))
+        query_points[:, 3] = 1
+        query_points[:, :3] = tf_plane[1:]
+        omni_dir_distances = self._scene_sdf.get_distances(query_points)
+        colliding = np.where(omni_dir_distances <= 0.0)[0]
+        non_colliding = np.where(omni_dir_distances > 0.0)[0]
+        collisions = np.array((tf_plane.shape[0] - 1) * [True])
+        virtual_contacts = np.empty((tf_plane.shape[0] - 1, 6))
+        virtual_contacts[colliding, :3] = tf_plane[1 + colliding]
+        virtual_contacts[colliding, 3:] = -tf_plane[0]
+        # perform ray tracing to compute projected contact points for those that are not in collision
+        if non_colliding.shape[0] > 0:
+            rays = np.zeros((non_colliding.shape[0], 6))
+            rays[:, 3:] = self._max_ray_length * self._dir_gravity
+            rays[:, :3] = tf_plane[1 + non_colliding]
+            self._body.Enable(False)
+            collisions[non_colliding], virtual_contacts[non_colliding] = self._env.CheckCollisionRays(rays)
+            self._body.Enable(True)
+        distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
+        distances[np.invert(collisions)] = np.inf
+        return distances, virtual_contacts, tf_plane, collisions
 
     def _compute_virtual_contact_plane(self, placement_plane, pose):
         """
@@ -494,19 +573,7 @@ class SimplePlacementQuality(object):
                 Note that some of these distances may be infinity, if there is no surface within
                 self._max_ray_length below this body. Distances are in the order of placement_plane points.
         """
-        # first transform the placement plane to global frame
-        tf_plane = np.dot(placement_plane, pose[:3, :3].transpose())
-        tf_plane[1:] += pose[:3, 3]
-        assert(tf_plane.shape[0] >= 4)
-        # perform ray tracing to compute projected contact points
-        rays = np.zeros((tf_plane.shape[0] - 1, 6))
-        rays[:, 3:] = self._max_ray_length * self._dir_gravity
-        rays[:, :3] = tf_plane[1:]
-        self._body.Enable(False)
-        collisions, virtual_contacts = self._env.CheckCollisionRays(rays)
-        self._body.Enable(True)
-        distances = np.linalg.norm(tf_plane[1:] - virtual_contacts[:, :3], axis=1)
-        distances[np.invert(collisions)] = np.inf
+        distances, virtual_contacts, tf_plane, collisions = self._project_placement_plane(placement_plane, pose)
         # # DRAW CONTACT ARROWS ###### TODO remove
         # handles = []
         # for idx, contact in enumerate(virtual_contacts):
@@ -1152,7 +1219,7 @@ class PlacementHeuristic(object):
         self._inv_grasp_tf = None
         self._grasp_config = None
         filter_io = SimplePlacementQuality.PreferenceFilterIO(object_base_path)
-        self._stability_function = SimplePlacementQuality(env, filter_io)  # TODO make settable as parameter
+        self._stability_function = SimplePlacementQuality(env, filter_io, scene_sdf)  # TODO make settable as parameter
         if robot_name is not None:
             robot = self._env.GetRobot(robot_name)
             if manip_name is None:
@@ -1200,38 +1267,66 @@ class PlacementHeuristic(object):
         """
         return self._obj_name
 
-    def evaluate_stability(self, pose, return_details=False):
+    def evaluate_stability(self, node, return_details=False):
         """
-            Evalute the stability cost function for the given pose.
+            Evalute the stability cost function for the given pose or node.
             ---------
             Arguments
             ---------
-            pose, numpy array of shape (4, 4) - pose to evaluate
+            node, SE3Hierarchy.SE3HierarchyNode or numpy array of shape (4, 4) - partition or pose to evaluate
             return_details, bool - if True, return additionaly information computed
                 by stability function. What values are returned, depends on the stability
                 function.
         """
+        if type(node) == SE3Hierarchy.SE3HierarchyNode:
+            pose = node.get_representative_value()
+        else:
+            pose = node  # we got a pose as argument
         self._kinbody.SetTransform(pose)
         return self._stability_function.compute_quality(pose, return_details)
 
-    def evaluate_collision(self, pose):
+    def evaluate_collision(self, node):
         """
             Evalute the collision cost function for the given pose.
         """
-        self._kinbody.SetTransform(pose)
-        _, _, col_val, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
+        if type(node) == SE3Hierarchy.SE3HierarchyNode:
+            pose = node.get_representative_value()
+            self._kinbody.SetTransform(pose)
+            dist, vdir = self._kinbody_octree.compute_max_penetration(self._scene_sdf, b_compute_dir=True)
+            if dist < 0.0:
+                vdir = vdir / np.linalg.norm(vdir)
+                node_bounds = node.get_bounds()
+                box_extents = (node_bounds[:3, 1] - node_bounds[:3, 0]) / 2.0
+                non_zero = np.abs(vdir) > 1e-9
+                ts = np.abs(box_extents[non_zero] / vdir[non_zero])
+                t = np.min(ts)
+                assert(t > 0.0)
+                score = 1.0 - np.abs(dist) / t
+            else:
+                score = 1.0
+        else:
+            pose = node  # we got a pose as argument
+            self._kinbody.SetTransform(pose)
+            # We get a pose as argument when we are evaluating a single pose, which is currently only
+            # done for computing a constraint in the leaf stage.
+            _, _, _, score, _, _  = self._kinbody_octree.compute_intersection(self._scene_sdf)
+        # _, _, _, avg_dist,  = self._kinbody_octree.compute_intersection(self._scene_sdf)
         # if self._gripper_octree is not None:
         #     robot_pose = np.dot(pose, self._inv_grasp_tf)
-        #     _, _, rob_col, _ = self._gripper_octree.compute_intersection(robot_pose, self._grasp_config, self._scene_sdf)
+        #     _, _, _, col_val = self._gripper_octree.compute_intersection(robot_pose, self._grasp_config, self._scene_sdf)
         # else:
         #     rob_col = 0.0
         # return col_val + rob_col
-        return col_val
+        return score
 
-    def evaluate_grasp_compatibility(self, pose):
+    def evaluate_grasp_compatibility(self, node):
         """
-            Evalute the grasp compatibility cost for the given pose.
+            Evalute the grasp compatibility cost for the given node or pose.
         """
+        if type(node) == SE3Hierarchy.SE3HierarchyNode:
+            pose = node.get_representative_value()
+        else:
+            pose = node  # we got a pose as argument
         if self._grasp_compatibility:
             self._kinbody.SetTransform(pose)
             return self._grasp_compatibility.compute_compatibility(pose)
@@ -1247,9 +1342,9 @@ class PlacementHeuristic(object):
         # set the transform to the pose to evaluate
         representative = node.get_representative_value()
         # compute the collision cost for this pose
-        col_val = self.evaluate_collision(representative)
-        stability_val = self.evaluate_stability(representative)
-        grasp_val = self.evaluate_grasp_compatibility(representative)
+        col_val = self.evaluate_collision(node)
+        stability_val = self.evaluate_stability(node)
+        grasp_val = self.evaluate_grasp_compatibility(node)
         # TODO add weights? different combination of different costs?
         rospy.logdebug("Collision value: " + str(col_val))
         rospy.logdebug("Stability value: " + str(stability_val))
