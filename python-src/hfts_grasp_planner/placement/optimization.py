@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+import numpy as np
+import IPython
+import rospy
 
 
 class StochasticOptimizer(object):
@@ -7,6 +10,14 @@ class StochasticOptimizer(object):
             Initializes this stochastic optimizer with the specified objective function.
         """
         self._objective_fn = objective_fn
+
+    def debug(self, root):
+        IPython.embed()
+        # for i in range(12):
+        #     for j in range(6):
+        #         key = np.array([0, 0, 0, i, j])
+        #         node = root.get_child_node(key)
+        #         self._objective_fn.evaluate(node)
 
     def run(self, root, num_iterations):
         """
@@ -18,6 +29,8 @@ class StochasticOptimizer(object):
         """
         best_node = root.get_random_node()
         best_value = self._objective_fn.evaluate(best_node)
+        self.debug(root)
+        # TODO might be a good idea to implement a small cache here
         for i in xrange(num_iterations):
             tmp_node = root.get_random_node()
             o_val = self._objective_fn.evaluate(tmp_node)
@@ -54,4 +67,3 @@ class StochasticGradientDescent(object):
                 best_value = o_val
                 best_node = tmp_node
         return best_value, best_node
-
