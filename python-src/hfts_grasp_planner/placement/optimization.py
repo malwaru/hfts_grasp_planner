@@ -29,7 +29,7 @@ class StochasticOptimizer(object):
         """
         best_node = root.get_random_node()
         best_value = self._objective_fn.evaluate(best_node)
-        self.debug(root)
+        # self.debug(root)
         # TODO might be a good idea to implement a small cache here
         for i in xrange(num_iterations):
             tmp_node = root.get_random_node()

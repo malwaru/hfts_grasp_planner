@@ -5,6 +5,7 @@
 """
 import itertools
 import collections
+# import rospy
 import numpy as np
 import openravepy as orpy
 import hfts_grasp_planner.sdf.core as sdf_core
@@ -59,6 +60,7 @@ class OccupancyOctree(object):
         self._ray = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         self._link = link
         self._body = link.GetParent()
+        # self._object_diameter = 2.0 * np.linalg.norm(self._link.ComputeLocalAABB().extents())
         self._grid = None
         self._root = None
         self._total_volume = 0.0
@@ -247,12 +249,12 @@ class OccupancyOctree(object):
             penetration distance, float - minimum in scene_sdf in the volume covered by this link.
             v_to_border, numpy array of shape (3,) - translation vector to move the cell with maximum penetration
                 out of collision (None if b_compute_dir is False)
-            dist_to_surface, float - if b_compute_dir is True, the distance from the point of maximum 
-                penetration towards the body's surface along -v_to_border
+            DISABLED: dist_to_surface, float - if b_compute_dir is True, the distance from the point of maximum 
+                     penetration towards the body's surface along -v_to_border
         """
         env = self._body.GetEnv()
         max_penetration = 0.0
-        dist_to_surface = 0.0  # distance to object surface along the direction of penetration
+        # dist_to_surface = 0.0  # distance to object surface along the direction of penetration
         direction = np.array([0.0, 0.0, 0.0]) if b_compute_dir else None
         if not self._root.occupied:
             return max_penetration, direction
@@ -279,20 +281,26 @@ class OccupancyOctree(object):
                         if max_penetration > dist:
                             max_penetration = dist
                             if b_compute_dir:  # retrieve direction
-                                direction = scene_sdf.get_direction(pos[:3])
+                                direction = np.array(scene_sdf.get_direction(pos[:3]))
                                 # compute the distance from this cell to the object's surface along the direction
-                                self._ray[:3] = pos[:3]
-                                self._ray[3:] = -direction
-                                collisions, contacts = env.CheckCollisionRays(
-                                    np.array([self._ray], copy=False), self._body)
-                                if collisions[0]:
-                                    dist_to_surface = np.linalg.norm(contacts[0, :3] - pos[:3])
-                                else:
-                                    dist_to_surface = cell.radius
+                                # self._ray[:3] = pos[:3]
+                                # self._ray[3:] = -self._object_diameter * direction / np.linalg.norm(direction)
+                                # handle = env.drawarrow(self._ray[:3], self._ray[:3] + self._ray[3:], linewidth=0.002)
+                                # collisions, contacts = env.CheckCollisionRays(
+                                #     np.array([self._ray]), self._body)
+                                # rospy.logdebug("Cell with id " + str(cell.idx_box) + " is new maximal penetrator.")
+                                # rospy.logdebug("Distance is " + str(dist) + "dir is " + str(direction))
+                                # rospy.logdebug("Ray is " + str(self._ray) + "dir is " + str(direction))
+                                # rospy.logdebug("Collision result is " + str(collisions) +
+                                #                " Found contacts " + str(contacts))
+                                # if collisions[0]:
+                                #     dist_to_surface = np.linalg.norm(contacts[0, :3] - pos[:3])
+                                # else:
+                                #     dist_to_surface = cell.radius
             # switch to next layer
             current_layer, next_layer = next_layer, current_layer
             next_layer.clear()
-        return max_penetration, direction, dist_to_surface
+        return max_penetration, direction  # , dist_to_surface
 
     def draw_cell(self, cell):
         """

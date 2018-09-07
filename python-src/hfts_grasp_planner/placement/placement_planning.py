@@ -1324,7 +1324,7 @@ class PlacementHeuristic(object):
         if type(node) == SE3Hierarchy.SE3HierarchyNode:
             pose = node.get_representative_value()
             self._kinbody.SetTransform(pose)
-            dist, vdir, body_dist = self._kinbody_octree.compute_max_penetration(self._scene_sdf, b_compute_dir=True)
+            dist, vdir = self._kinbody_octree.compute_max_penetration(self._scene_sdf, b_compute_dir=True)
             if dist < 0.0:
                 vdir = vdir / np.linalg.norm(vdir)
                 node_bounds = node.get_bounds()
@@ -1333,8 +1333,8 @@ class PlacementHeuristic(object):
                 ts = np.abs(box_extents[non_zero] / vdir[non_zero])
                 t = np.min(ts)
                 assert(t > 0.0)
-                score = 1.0 - np.abs(dist - body_dist) / t
-                rospy.logdebug("Collision heuristic: signed distance: " + str(dist) + ", body_dist: " + str(body_dist) + ", t: " + str(t) + " vdir: " + str(vdir))
+                score = 1.0 - np.abs(dist) / t
+                rospy.logdebug("Collision heuristic: signed distance: " + str(dist) + ", t: " + str(t) + " vdir: " + str(vdir))
             else:
                 score = 1.0
         else:
