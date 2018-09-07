@@ -3,12 +3,14 @@
 
 import ast
 import rospy
+import copy
 import math
 import numpy
 import random
 import abc
 from rtree import index
 from hfts_grasp_planner.rrt import SampleData
+from hfts_grasp_planner.sdf.robot import RobotOccupancyOctree
 
 NUMERICAL_EPSILON = 0.00001
 
@@ -113,19 +115,16 @@ class GoalHierarchy(object):
             Represents a node of a GoalHierarchy.
         """
 
-        def __init__(self, configuration, data_extractor=None, cache_id=-1):
+        def __init__(self, configuration, cache_id=-1):
             self.configuration = configuration
-            self.data_extractor = data_extractor
             self.cache_id = cache_id
 
         def get_configuration(self):
             return self.configuration
 
         def to_sample_data(self):
-            if self.data_extractor is not None:
-                return SampleData(self.configuration, self.data_extractor.extractData(self.hierarchy_info),
-                                  self.data_extractor.getCopyFunction(), id_num=self.cache_id)
-            return SampleData(self.configuration, id_num=self.cache_id)
+            return SampleData(self.configuration, self.get_additional_data(),
+                              self.get_data_copy_fn(), id_num=self.cache_id)
 
         @abc.abstractmethod
         def is_valid(self):
@@ -196,6 +195,13 @@ class GoalHierarchy(object):
                 policy for dropping an object, etc.
             """
             pass
+
+        def get_data_copy_fn(self):
+            """
+                Return a function that when passed an object returned by self.get_additional_data() produces
+                a copy of that object. Defaults to copy.deepcopy
+            """
+            return copy.deepcopy
 
         @abc.abstractmethod
         def is_extendible(self):
@@ -463,7 +469,7 @@ class ExtendedFreeSpaceModel(FreeSpaceModel):
         - temporary
         An approximate sample is a configuration that is individually stored in a nearest neighbor data structure
         and represents a configuration of an approximate goal.
-        A temporary sample is a configuration that is individually stored in a list and is used for that exactly?
+        A temporary sample is a configuration that is individually stored in a list and is used for what exactly?
 
     """
 
@@ -534,6 +540,233 @@ class ExtendedFreeSpaceModel(FreeSpaceModel):
         point_list = map(lambda x, y: math.sqrt(x) * y, self._scaling_factors, point_list)
         point_list += point_list
         return point_list
+
+
+class NodeRating(object):
+    __metaclass__ = abc.ABCMeta
+
+    def __init__(self):
+        self._parameters = {}
+        self._connected_space = None
+        self._non_connected_space = None
+
+    @abc.abstractmethod
+    def max_rating(self):
+        pass
+
+    @abc.abstractmethod
+    def update_ratings(self, node):
+        """
+            Update cached ratings of the branch rooted at node.
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_root_rating(self):
+        pass
+
+    @abc.abstractmethod
+    def t(self, node):
+        pass
+
+    def set_parameters(self, **kwargs):
+        for (key, value) in kwargs.iteritems():
+            if key in self._parameters.iteritems():
+                self._parameters[key] = value
+
+    def set_connected_space(self, connected_space):
+        self._connected_space = connected_space
+
+    def set_non_connected_space(self, non_connected_space):
+        self._non_connected_space = non_connected_space
+
+    def T(self, node):
+        temps_children = 0.0
+        t_node = self.t(node)
+        avg_child_temp = t_node
+        if len(node.get_active_children()) > 0:
+            for child in node.get_active_children():
+                temps_children += self.T(child)
+            avg_child_temp = temps_children / float(len(node.get_active_children()))
+        node.set_T((t_node + avg_child_temp) / 2.0)
+        NodeRating.T_c(node)
+        NodeRating.T_p(node)
+        return node.get_T()
+
+    @staticmethod
+    def T_c(node):
+        mod_branch_coverage = node.get_num_leaves_in_branch() / (node.get_max_num_leaves_in_branch() + 1)
+        T_c = node.get_T() * (1.0 - mod_branch_coverage)
+        node.set_T_c(T_c)
+        return T_c
+
+    @staticmethod
+    def T_p(node):
+        T_p = node.get_T() * (1.0 - node.get_coverage())
+        node.set_T_p(T_p)
+        return T_p
+
+
+class ProximityRating(NodeRating):
+    def __init__(self, cspace_diameter, **kwargs):
+        """
+            ---------
+            Arguments
+            ---------
+            connected_space, FreeSpaceModel - free configuration space that is connected to the forward search tree
+            non_connected_space, ExtendedFreeSpaceModel - free configuration space that is not yet connected to the forward search tree
+            cspace_diameter, float - Diameter of the bounding box spanned by the configuration space limits.
+            kwargs, parameters
+        """
+        super(ProximityRating, self).__init__()
+        self._min_connection_chance = self._distance_kernel(cspace_diameter)
+        self._min_free_space_chance = self._distance_kernel(cspace_diameter)
+        self._parameters = {
+            'connected_weight': 10.0,
+            'free_space_weight': 5.0,
+        }
+        self.set_parameters(**kwargs)
+
+    def max_rating(self):
+        return self._parameters['connected_weight'] + self._parameters['free_space_weight']
+
+    def update_ratings(self, node):
+        """
+            Update cached ratings of the branch rooted at node.
+        """
+        rospy.logdebug('[ProximityRating::update_ratings] Updating ratings')
+        self.T(node)
+
+    def get_root_rating(self):
+        return self._parameters['free_space_weight']
+
+    def t(self, node):
+        if node.is_root():
+            node.set_t(self._parameters['free_space_weight'])
+            return self._parameters['free_space_weight']
+        if not node.has_configuration() and node.is_extendible():
+            parent = node.get_parent()
+            assert parent is not None
+            tN = parent.get_coverage() * parent.get_t()
+            node.set_t(tN)
+            return tN
+        elif not node.has_configuration() and node.is_leaf():
+            # TODO: we should actually set this to 0.0 and prune covered useless branches
+            minimal_temp = self._min_connection_chance + self._min_free_space_chance
+            node.set_t(minimal_temp)
+            return minimal_temp
+        max_temp = 0.0
+        config_id = 0
+        for config in node.get_configurations():
+            connected_temp = self._parameters['connected_weight'] * self._compute_connection_chance(config)
+            free_space_temp = self._parameters['free_space_weight'] * self._compute_free_space_chance(config)
+            temp = connected_temp + free_space_temp
+            if max_temp < temp:
+                node.set_active_configuration(config_id)
+                max_temp = temp
+            config_id += 1
+        node.set_t(max_temp)
+        # if not ((node.is_valid() and max_temp >= self._free_space_weight) or not node.is_valid()):
+        #     print "WTF Assertion fail here"
+        #     import IPython
+        #     IPython.embed()
+        # TODO this assertion failed once. This indicates a serious bug, but did not manage to reproduce it!
+        assert not node.is_valid() or max_temp >= self._parameters['free_space_weight']
+        return node.get_t()
+
+    def _compute_connection_chance(self, config):
+        (dist, nearest_config) = self._connected_space.get_nearest_configuration(config)
+        if nearest_config is None:
+            return self._min_connection_chance
+        return self._distance_kernel(dist)
+
+    def _compute_free_space_chance(self, config):
+        (dist, nearest_config) = self._non_connected_space.get_nearest_configuration(config)
+        if nearest_config is None:
+            return self._min_free_space_chance
+        return self._distance_kernel(dist)
+
+    def _distance_kernel(self, dist):
+        return math.exp(-dist)
+
+
+class SDFIntersectionRating(NodeRating):
+
+    def __init__(self, scene_sdf, robot, link_names, b_include_attached=False,
+                 cell_size=0.01):
+        """
+            Create a new SDFIntersectionRating.
+            ---------
+            Arguments
+            ---------
+            scene_sdf, SceneSDF - signed distance field used for intersection computation
+            robot, OpenRAVE robot - the robot to plan for (its active manipulator and active DOFs are used)
+            link_name, list of strings - names of the robot arm links for which to compute intersection
+            b_include_attached, bool - if True, also computes intersection with attached bodies # TODO not supported yet
+        """
+        super(SDFIntersectionRating, self).__init__()
+        self._scene_sdf = scene_sdf
+        self._robot_occupancy_tree = RobotOccupancyOctree(cell_size, robot, link_names)
+        self._robot = robot
+        self._min_connection_chance = 1e-8  # TODO figure sth out here
+        self._min_collision_free_chance = 1e-8  # TODO
+        self._parameters = {
+            'connected_weight': 5.0,
+            'collision_weight': 2.0,
+            'collision_cost_scale': 1.0,
+        }
+
+    def max_rating(self):
+        return self._parameters['connected_weight'] + self._parameters['collision_weight']
+
+    def update_ratings(self, node):
+        self.T(node)
+
+    def get_root_rating(self):
+        return self._parameters['collision_weight']
+
+    def t(self, node):
+        if node.is_root():
+            node.set_t(self.get_root_rating())
+            return self.get_root_rating()
+        if not node.has_configuration() and node.is_extendible():
+            parent = node.get_parent()
+            assert parent is not None
+            tN = parent.get_coverage() * parent.get_t()
+            node.set_t(tN)
+            return tN
+        elif not node.has_configuration() and node.is_leaf():
+            # TODO figure some reasonable values out here
+            minimal_val = self._min_collision_free_chance + self._min_connection_chance
+            node.set_t(minimal_val)
+            return minimal_val
+        max_rating = 0.0
+        config_id = 0
+        for config in node.get_configurations():
+            connected_temp = self._parameters['connected_weight'] * self._compute_connection_chance(config)
+            free_space_temp = self._parameters['collision_weight'] * self._compute_collision_value(config)
+            temp = connected_temp + free_space_temp
+            if max_rating < temp:
+                node.set_active_configuration(config_id)
+                max_rating = temp
+            config_id += 1
+        node.set_t(max_rating)
+        return node.get_t()
+
+    def _compute_connection_chance(self, config):
+        (dist, nearest_config) = self._connected_space.get_nearest_configuration(config)
+        if nearest_config is None:
+            return self._min_connection_chance
+        return self._distance_kernel(dist)
+
+    def _compute_collision_value(self, config):
+        # TODO figure out which value to use
+        _, _, dc, _ = self._robot_occupancy_tree.compute_intersection(self._robot.GetTransform(),
+                                                                      config, self._scene_sdf)
+        return self._distance_kernel(numpy.abs(dc), self._parameters["collision_cost_scale"])
+
+    def _distance_kernel(self, dist, w=1.0):
+        return math.exp(-w * dist)
 
 
 class FreeSpaceProximityHierarchyNode(object):
@@ -726,7 +959,7 @@ class FreeSpaceProximityHierarchyNode(object):
         return self._goal_nodes[self._active_goal_node_idx].is_goal() and self.is_valid()
 
     def is_valid(self):
-        b_is_valid = self._goal_nodes[self._active_goal_node_idx].is_valid()
+        # b_is_valid = self._goal_nodes[self._active_goal_node_idx].is_valid()
         # TODO had to remove the following assertion. If the grasp optimization is non deterministic
         # TODO it can happen that a result is once invalid and once valid. However, the label_cache
         # TODO should prevent this from happening
@@ -766,43 +999,28 @@ class FreeSpaceProximityHierarchyNode(object):
         self._configs_registered.append(not sample.is_valid())
 
 
-class FreeSpaceProximitySampler(object):
+class LazyHierarchySampler(object):
     """
-        A goal hierarchy sampler that utilizes proximity to known free-space samples to guide
+        A goal hierarchy sampler that utilizes a rating function to guide
         goal sampling from a hierarchy.
     """
 
-    def __init__(self, goal_sampler, c_free_sampler, k=4, num_iterations=10,
-                 min_num_iterations=8,
-                 b_return_approximates=True,
-                 connected_weight=10.0, free_space_weight=5.0, debug_drawer=None):
+    def __init__(self, goal_sampler, rating_function, k=4, num_iterations=10,
+                 min_num_iterations=8, b_return_approximates=True, debug_drawer=None):
         self._goal_hierarchy = goal_sampler
         self._k = k
-        # if numIterations is None:
-        #     numIterations = goalSampler.getMaxDepth() * [10]
-        # elif type(numIterations) == int:
-        #     numIterations = goalSampler.getMaxDepth() * [numIterations]
-        # elif type(numIterations) == list:
-        #     numIterations = numIterations
-        # else:
-        #     raise ValueError('numIterations has invalid type %s. Supported are int, list and None' %
-        #                      str(type(numIterations)))
-        # TODO decide how we wanna do this properly. Should the user be able to define level specific num iterations?
+        # TODO decide how to set iterations properly
         self._num_iterations = max(1, goal_sampler.get_max_depth()) * [num_iterations]
         self._min_num_iterations = min_num_iterations
-        self._connected_weight = connected_weight
-        self._free_space_weight = free_space_weight
+        # TODO set rating function externally
+        self._rating_function = rating_function
         self._connected_space = None
         self._non_connected_space = None
         self._debug_drawer = debug_drawer
-        self._c_free_sampler = c_free_sampler
         self._label_cache = {}
         self._goal_labels = []
         self._root_node = FreeSpaceProximityHierarchyNode(goal_node=self._goal_hierarchy.get_root(),
-                                                          initial_temp=self._free_space_weight)
-        max_dist = numpy.linalg.norm(c_free_sampler.get_upper_bounds() - c_free_sampler.get_lower_bounds())
-        self._min_connection_chance = self._distance_kernel(max_dist)
-        self._min_free_space_chance = self._distance_kernel(max_dist)
+                                                          initial_temp=self._rating_function.get_root_rating())
         self._b_return_approximates = b_return_approximates
 
     def clear(self):
@@ -812,7 +1030,7 @@ class FreeSpaceProximitySampler(object):
         self._label_cache = {}
         self._goal_labels = []
         self._root_node = FreeSpaceProximityHierarchyNode(goal_node=self._goal_hierarchy.get_root(),
-                                                          initial_temp=self._free_space_weight)
+                                                          initial_temp=self._rating_function.get_root_rating())
         self._num_iterations = self._goal_hierarchy.get_max_depth() * [self._num_iterations[0]]
         if self._debug_drawer is not None:
             self._debug_drawer.clear()
@@ -827,22 +1045,19 @@ class FreeSpaceProximitySampler(object):
 
     def set_connected_space(self, connected_space):
         self._connected_space = connected_space
+        self._rating_function.set_connected_space(connected_space)
 
     def set_non_connected_space(self, non_connected_space):
         self._non_connected_space = non_connected_space
+        self._rating_function.set_non_connected_space(non_connected_space)
 
     def set_parameters(self, min_iterations=None, max_iterations=None,
-                       free_space_weight=None, connected_space_weight=None,
                        use_approximates=None, k=None):
         if min_iterations is not None:
             self._min_num_iterations = min_iterations
         if max_iterations is not None:
             max_iterations = max(self._min_num_iterations, max_iterations)
             self._num_iterations = max(1, self._goal_hierarchy.get_max_depth()) * [max_iterations]
-        if free_space_weight is not None:
-            self._free_space_weight = free_space_weight
-        if connected_space_weight is not None:
-            self._connected_weight = connected_space_weight
         if use_approximates is not None:
             self._b_return_approximates = use_approximates
         if k is not None:
@@ -878,85 +1093,8 @@ class FreeSpaceProximitySampler(object):
     #         prev_label = labeledChild[0]
     #     return filtered_children
 
-    def _compute_connection_chance(self, config):
-        (dist, nearest_config) = self._connected_space.get_nearest_configuration(config)
-        if nearest_config is None:
-            return self._min_connection_chance
-        return self._distance_kernel(dist)
-
-    def _compute_free_space_chance(self, config):
-        (dist, nearest_config) = self._non_connected_space.get_nearest_configuration(config)
-        if nearest_config is None:
-            return self._min_free_space_chance
-        return self._distance_kernel(dist)
-
-    def _distance_kernel(self, dist):
-        return math.exp(-dist)
-
-    def _update_temperatures(self, node):
-        rospy.logdebug('[FreeSpaceProximitySampler::_updateTemperatures] Updating temperatures')
-        self._T(node)
-
-    def _t(self, node):
-        if node.is_root():
-            node.set_t(self._free_space_weight)
-            return self._free_space_weight
-        if not node.has_configuration() and node.is_extendible():
-            parent = node.get_parent()
-            assert parent is not None
-            tN = parent.get_coverage() * parent.get_t()
-            node.set_t(tN)
-            return tN
-        elif not node.has_configuration() and node.is_leaf():
-            # TODO: we should actually set this to 0.0 and prune covered useless branches
-            minimal_temp = self._min_connection_chance + self._min_free_space_chance
-            node.set_t(minimal_temp)
-            return minimal_temp
-        max_temp = 0.0
-        config_id = 0
-        for config in node.get_configurations():
-            connected_temp = self._connected_weight * self._compute_connection_chance(config)
-            free_space_temp = self._free_space_weight * self._compute_free_space_chance(config)
-            temp = connected_temp + free_space_temp
-            if max_temp < temp:
-                node.set_active_configuration(config_id)
-                max_temp = temp
-            config_id += 1
-        node.set_t(max_temp)
-        # if not ((node.is_valid() and max_temp >= self._free_space_weight) or not node.is_valid()):
-        #     print "WTF Assertion fail here"
-        #     import IPython
-        #     IPython.embed()
-        # TODO this assertion failed once. This indicates a serious bug, but did not manage to reproduce it!
-        assert not node.is_valid() or max_temp >= self._free_space_weight
-        return node.get_t()
-
-    def _T(self, node):
-        temps_children = 0.0
-        t_node = self._t(node)
-        avg_child_temp = t_node
-        if len(node.get_active_children()) > 0:
-            for child in node.get_active_children():
-                temps_children += self._T(child)
-            avg_child_temp = temps_children / float(len(node.get_active_children()))
-        node.set_T((t_node + avg_child_temp) / 2.0)
-        self._T_c(node)
-        self._T_p(node)
-        return node.get_T()
-
-    def _T_c(self, node):
-        mod_branch_coverage = node.get_num_leaves_in_branch() / (node.get_max_num_leaves_in_branch() + 1)
-        T_c = node.get_T() * (1.0 - mod_branch_coverage)
-        node.set_T_c(T_c)
-        return T_c
-
-    def _T_p(self, node):
-        T_p = node.get_T() * (1.0 - node.get_coverage())
-        node.set_T_p(T_p)
-        return T_p
-
     def _pick_random_node(self, p, nodes):
-        modified_temps = [self._T_c(x) for x in nodes]
+        modified_temps = [self._rating_function.T_c(x) for x in nodes]
         acc_temp = sum(modified_temps)
         assert acc_temp > 0.0
         i = 0
@@ -994,9 +1132,9 @@ class FreeSpaceProximitySampler(object):
     def _pick_random_child(self, node):
         if not node.has_children():
             return None
-        node.update_active_children(self._update_temperatures)
+        node.update_active_children(self._rating_function.update_ratings)
         p = random.random()
-        (child, otherChildren) = self._pick_random_node(p, node.get_active_children())
+        child, _ = self._pick_random_node(p, node.get_active_children())
         return child
 
     def _should_descend(self, parent, child):
@@ -1007,8 +1145,8 @@ class FreeSpaceProximitySampler(object):
         if parent.is_all_covered():
             return True
         p = random.random()
-        tP = self._T_p(parent)
-        sum_temp = tP + self._T_c(child)
+        tP = self._rating_function.T_p(parent)
+        sum_temp = tP + self._rating_function.T_c(child)
         if p <= tP / sum_temp:
             return False
         return True
@@ -1017,7 +1155,7 @@ class FreeSpaceProximitySampler(object):
         goal_node = parent_node.get_goal_sampler_hierarchy_node()
         depth = parent_node.get_depth()
         num_iterations = int(self._min_num_iterations +
-                             parent_node.get_T() / (self._connected_weight + self._free_space_weight) *
+                             parent_node.get_T() / (self._rating_function.max_rating()) *
                              (self._num_iterations[depth] - self._min_num_iterations))
         # num_iterations = max(self._minNumIterations, int(num_iterations))
         assert num_iterations >= self._min_num_iterations
@@ -1055,7 +1193,7 @@ class FreeSpaceProximitySampler(object):
                 self._debug_drawer.draw_hierarchy(self._root_node)
             rospy.logdebug('[FreeSpaceProximitySampler::sample] Picking random cached child')
             if b_temperatures_invalid:
-                self._update_temperatures(current_node)
+                self._rating_function.update_ratings(current_node)
             child = self._pick_random_child(current_node)
             if self._should_descend(current_node, child):
                 current_node = child
@@ -1102,5 +1240,5 @@ class FreeSpaceProximitySampler(object):
         # nextNode = nodesToUpdate.pop()
         # nodesToUpdate.extend(nextNode.getChildren())
         if self._debug_drawer is not None:
-            self._update_temperatures(self._root_node)
+            self._rating_function.update_ratings(self._root_node)
             self._debug_drawer.draw_hierarchy(self._root_node)

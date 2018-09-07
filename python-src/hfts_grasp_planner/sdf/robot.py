@@ -15,7 +15,7 @@ class RobotOccupancyOctree(object):
         of the robot with an obstacle, the intersections of all links together is summed up.
     """
 
-    def __init__(self, cell_size, robot):
+    def __init__(self, cell_size, robot, link_names=None):
         """
             Construct new RobotOccupancyOctree.
             ---------
@@ -23,6 +23,8 @@ class RobotOccupancyOctree(object):
             ---------
             cell_size, float - minimum edge length of a cell (all cells are cubes)
             robot, OpenRAVE robot - the robot
+            link_names, list of strings - if provided, limits the intersection cost to 
+                the specified links
         """
         self._cell_size = cell_size
         self._robot = robot
@@ -30,6 +32,8 @@ class RobotOccupancyOctree(object):
         self._total_volume = 0.0
         self._total_num_occupied_cells = 0
         for link in self._robot.GetLinks():
+            if link_names is not None and link.GetName() not in link_names:
+                continue
             self._occupancy_trees.append(OccupancyOctree(cell_size, link))
             self._total_volume += self._occupancy_trees[-1].get_volume()
             self._total_num_occupied_cells += self._occupancy_trees[-1].get_num_occupied_cells()
@@ -59,7 +63,7 @@ class RobotOccupancyOctree(object):
         self._robot.SetActiveDOFValues(robot_config)
         v, dc = 0.0, 0.0
         for tree in self._occupancy_trees:
-            tv, _, tdc, _ = tree.compute_intersection(scene_sdf)
+            tv, _, tdc, _, _, _ = tree.compute_intersection(scene_sdf)
             v += tv
             dc += tdc
         return v, v / self._total_volume, dc, dc / self._total_num_occupied_cells

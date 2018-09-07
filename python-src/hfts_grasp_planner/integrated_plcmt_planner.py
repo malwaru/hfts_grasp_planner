@@ -3,7 +3,7 @@ import numpy
 import rospy
 import openravepy as orpy
 from orsampler import RobotCSpaceSampler
-from sampler import FreeSpaceProximitySampler
+from sampler import LazyHierarchySampler, ProximityRating, SDFIntersectionRating
 from rrt import DynamicPGoalProvider, RRT
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.placement_planning as plcmnt_module
@@ -129,11 +129,19 @@ class IntegratedPlacementPlanner(object):
         else:
             def debug_fn(forward_tree, backward_trees):
                 pass
-        goal_sampler = FreeSpaceProximitySampler(
-            self._plcmt_planner, self._c_sampler, debug_drawer=self._hierarchy_visualizer,
-            num_iterations=self._parameters['max_per_level_iterations'],
-            min_num_iterations=self._parameters['min_per_level_iterations'],
-            k=self._parameters["kappa"])
+        joints = self._robot.GetJoints(self._manip.GetArmJoints())
+        # TODO set link_names properly
+        link_names = [joint.GetSecondAttached().GetName() for joint in joints]
+        link_names.extend(["yumi_gripper_l_base"])
+        # link_names = None
+        rating_function = SDFIntersectionRating(self._scene_sdf, self._robot, link_names)
+        # cspace_diameter = numpy.linalg.norm(self._c_sampler.get_upper_bounds() - self._c_sampler.get_lower_bounds())
+        # rating_function = ProximityRating(cspace_diameter, **self._parameters)
+        goal_sampler = LazyHierarchySampler(self._plcmt_planner, rating_function,
+                                            debug_drawer=self._hierarchy_visualizer,
+                                            num_iterations=self._parameters['max_per_level_iterations'],
+                                            min_num_iterations=self._parameters['min_per_level_iterations'],
+                                            k=self._parameters["kappa"])
         motion_planner = RRT(DynamicPGoalProvider(), self._c_sampler, goal_sampler)
         start_config = self._robot.GetActiveDOFValues()
         path = motion_planner.proximity_birrt(start_config, time_limit=time_limit, debug_function=debug_fn)

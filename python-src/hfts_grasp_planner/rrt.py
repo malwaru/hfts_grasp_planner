@@ -450,6 +450,7 @@ class RRT:
                 tree = treeTemp
         return tree, nn
 
+    # TODO rename
     def proximity_birrt(self, start_config, time_limit=60, debug_function=lambda x, y: None,
                         shortcut_time=5.0, timer_function=time.time):
         """ Bidirectional RRT algorithm with hierarchical goal region that
@@ -457,8 +458,8 @@ class RRT:
         if not self.c_free_sampler.is_valid(start_config):
             rospy.loginfo('[RRT::proximityBiRRT] Start configuration is invalid. Aborting.')
             return None
-        from sampler import FreeSpaceProximitySampler, FreeSpaceModel, ExtendedFreeSpaceModel
-        assert type(self.goal_sampler) == FreeSpaceProximitySampler
+        from sampler import LazyHierarchySampler, FreeSpaceModel, ExtendedFreeSpaceModel
+        assert type(self.goal_sampler) == LazyHierarchySampler
         self.goal_sampler.clear()
         self.stats_logger.clear()
         self._constraints_manager.clear()

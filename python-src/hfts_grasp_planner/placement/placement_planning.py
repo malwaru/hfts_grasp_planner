@@ -1818,10 +1818,12 @@ class PlacementGoalPlanner(GoalHierarchy):
             self.env = env
             self.target_object = None
             self._parameters = {
-                'max_falling_distance': 0.04,
+                'max_falling_distance': 0.03,
                 'max_misalignment_angle': 0.2,
                 'max_slope_angle': 0.2,
                 'min_chull_distance': -0.008,
+                'rhobeg': 0.01,
+                'max_iter': 500,
             }
 
         def post_optimize(self, plcmt_result):
@@ -1843,18 +1845,15 @@ class PlacementGoalPlanner(GoalHierarchy):
             def pose_wrapper_fn(fn, x, multiplier=1.0):
                 # extract pose from x and pass it to fn
                 val = multiplier * fn(to_matrix(x))
-                if val == float('inf'):
-                    val = 10e9  # TODO this is a hack
+                assert(val != float('inf'))
+                # if val == float('inf'):
+                    # val = 10e9  # TODO this is a hack
                 return val
 
             # get the initial value
             x0 = plcmt_result._hierarchy_node.get_representative_value(rtype=1)
-            # get bounds
-            partition_bounds = plcmt_result._hierarchy_node.get_bounds()  # NOTE these are approximate bounds
-            partition_range = partition_bounds[:, 1] - partition_bounds[:, 0]
-            rhobeg = 0.001
+            # rhobeg = 0.001
             # rhobeg = np.min(partition_range / 2.0)
-            assert(rhobeg > 0.0)
             search_space_bounds = plcmt_result._hierarchy_node._hierarchy.get_bounds()
             constraints = [
                 {
@@ -1871,8 +1870,9 @@ class PlacementGoalPlanner(GoalHierarchy):
                 }
             ]
             options = {
-                'rhobeg': rhobeg,
-                'disp': True
+                'maxiter': self._parameters["max_iter"],
+                'rhobeg': self._parameters["rhobeg"],
+                'disp': True,
             }
             opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, self.objective_fn, multiplier=-1.0),
                                                  x0, method='COBYLA', constraints=constraints, options=options)
@@ -1900,6 +1900,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             if plcmt_result._valid and plcmt_result.is_leaf():
                 # TODO could/should cache this value
                 # TODO this is specific to the simple placement heuristic
+                # TODO this should do more checks, physics simulation or falling model
                 _, falling_distance, chull_distance, alpha, gamma = self.objective_fn(plcmt_result.obj_pose, True)
                 plcmt_result._bgoal = falling_distance < self._parameters['max_falling_distance'] and \
                     chull_distance < self._parameters['min_chull_distance'] and \
