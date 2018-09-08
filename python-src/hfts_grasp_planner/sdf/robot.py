@@ -68,6 +68,36 @@ class RobotOccupancyOctree(object):
             dc += tdc
         return v, v / self._total_volume, dc, dc / self._total_num_occupied_cells
 
+    def compute_max_penetration(self, robot_pose, robot_config, scene_sdf, b_compute_dir=False):
+        """
+            Computes the maximum penetration of this robot with the given sdf.
+            The maximum penetration is the minimal signed distance in this robot's volume
+            in the given scene_sdf.
+            ---------
+            Arguments
+            ---------
+            robot_pose, numpy array of shape (4, 4) - pose of the robot
+            robot_config, numpy array of shape (q,) - configuration of active DOFs
+            scene_sdf, SceneSDF
+            b_compute_dir, bool - If True, also retrieve the direction from the maximally penetrating
+                cell to the closest free cell.
+            -------
+            Returns
+            -------
+            penetration distance, float - minimum in scene_sdf in the volume covered by this link.
+            v_to_border, numpy array of shape (3,) - translation vector to move the cell with maximum penetration
+                out of collision (None if b_compute_dir is False)
+        """
+        self._robot.SetTransform(robot_pose)
+        self._robot.SetActiveDOFValues(robot_config)
+        pdist, vdir = 0.0, None
+        for tree in self._occupancy_trees:
+            tdist, tdir = tree.compute_max_penetration(scene_sdf, b_compute_dir=b_compute_dir)
+            if tdist < pdist:
+                pdist = tdist
+                vdir = tdir
+        return pdist, vdir
+
     def visualize(self, level, config=None):
         """
             Visualize the octrees for the given level.

@@ -888,7 +888,8 @@ class OccupancyGridBuilder(object):
             grid - 3d numpy array of type bool, will be modified
         """
         # compute for each cell whether it collides with anything
-        self._compute_bcm_rec(np.array([0, 0, 0]), grid.get_num_cells(), grid, 0)
+        covered_volume = self._compute_bcm_rec(np.array([0, 0, 0]), grid.get_num_cells(), grid, 0)
+        assert(covered_volume == np.multiply.reduce(grid.get_num_cells()))
         # The above function can not detect the interior of meshes, therefore we need to fill holes
         filled_holes = scipy.ndimage.morphology.binary_fill_holes(grid.get_raw_data().astype(bool))
         grid.set_raw_data(filled_holes)

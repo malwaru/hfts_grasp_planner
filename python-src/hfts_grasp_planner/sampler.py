@@ -210,6 +210,14 @@ class GoalHierarchy(object):
             """
             pass
 
+        @abc.abstractmethod
+        def get_quality(self):
+            """
+                Return the quality associated with this node.
+                The quality is assumed to be floating point number in range (-infty, 1.0]
+            """
+            pass
+
         def is_leaf(self):
             """
                 Return whether this node is a leaf. This is equivalent to not self.is_extendible()
@@ -761,15 +769,15 @@ class SDFIntersectionRating(NodeRating):
 
     def _compute_collision_value(self, config):
         # TODO figure out which value to use
-        _, _, dc, _ = self._robot_occupancy_tree.compute_intersection(self._robot.GetTransform(),
-                                                                      config, self._scene_sdf)
-        return self._distance_kernel(numpy.abs(dc), self._parameters["collision_cost_scale"])
+        _, _, _, ndc = self._robot_occupancy_tree.compute_intersection(self._robot.GetTransform(),
+                                                                       config, self._scene_sdf)
+        return self._distance_kernel(numpy.abs(ndc), self._parameters["collision_cost_scale"])
 
     def _distance_kernel(self, dist, w=1.0):
         return math.exp(-w * dist)
 
 
-class FreeSpaceProximityHierarchyNode(object):
+class HierarchyCacheNode(object):
     """
         This class represents a node in the hierarchy built by the FreeSpaceProximitySampler
     """
@@ -852,7 +860,7 @@ class FreeSpaceProximityHierarchyNode(object):
             deleted_child = self._active_children[i]
             self._active_children.remove(deleted_child)
             self._inactive_children.append(deleted_child)
-            rospy.logdebug('[FreeSpaceProximityHierarchyNode::updateActiveChildren] Removing child with ' +
+            rospy.logdebug('[HierarchyCacheNode::updateActiveChildren] Removing child with ' +
                            'temperature ' + str(deleted_child.get_T()) + '. It had index ' + str(i))
         assert len(self._children) == len(self._inactive_children) + len(self._active_children)
 
@@ -1012,15 +1020,14 @@ class LazyHierarchySampler(object):
         # TODO decide how to set iterations properly
         self._num_iterations = max(1, goal_sampler.get_max_depth()) * [num_iterations]
         self._min_num_iterations = min_num_iterations
-        # TODO set rating function externally
         self._rating_function = rating_function
         self._connected_space = None
         self._non_connected_space = None
         self._debug_drawer = debug_drawer
         self._label_cache = {}
         self._goal_labels = []
-        self._root_node = FreeSpaceProximityHierarchyNode(goal_node=self._goal_hierarchy.get_root(),
-                                                          initial_temp=self._rating_function.get_root_rating())
+        self._root_node = HierarchyCacheNode(goal_node=self._goal_hierarchy.get_root(),
+                                             initial_temp=self._rating_function.get_root_rating())
         self._b_return_approximates = b_return_approximates
 
     def clear(self):
@@ -1029,8 +1036,8 @@ class LazyHierarchySampler(object):
         self._non_connected_space = None
         self._label_cache = {}
         self._goal_labels = []
-        self._root_node = FreeSpaceProximityHierarchyNode(goal_node=self._goal_hierarchy.get_root(),
-                                                          initial_temp=self._rating_function.get_root_rating())
+        self._root_node = HierarchyCacheNode(goal_node=self._goal_hierarchy.get_root(),
+                                             initial_temp=self._rating_function.get_root_rating())
         self._num_iterations = self._goal_hierarchy.get_max_depth() * [self._num_iterations[0]]
         if self._debug_drawer is not None:
             self._debug_drawer.clear()
@@ -1072,8 +1079,8 @@ class LazyHierarchySampler(object):
             hierarchy_node.add_goal_sample(goal_sample)
             rospy.logwarn('[FreeSpaceProximitySampler::_getHierarchyNode] Sampled a cached node!')
         else:
-            hierarchy_node = FreeSpaceProximityHierarchyNode(goal_node=goal_sample,
-                                                             config=goal_sample.get_configuration())
+            hierarchy_node = HierarchyCacheNode(goal_node=goal_sample,
+                                                config=goal_sample.get_configuration())
             self._label_cache[label] = hierarchy_node
             b_new = True
         return hierarchy_node, b_new
@@ -1242,3 +1249,25 @@ class LazyHierarchySampler(object):
         if self._debug_drawer is not None:
             self._rating_function.update_ratings(self._root_node)
             self._debug_drawer.draw_hierarchy(self._root_node)
+
+
+class UCTLazyHierarchySampler(object):
+    """
+        Lazy hierarchy sampler that uses UCT like approach.
+    """
+
+    def __init__(self, goal_sampler, rating_function, k=4, num_iterations=60,
+                 b_return_approx=True, debug_drawer=None):
+        self._goal_hierarchy = goal_sampler
+        self._k = k
+        self._num_iterations = num_iterations
+        self._rating_function = rating_function
+        self._connected_space = None
+        self._non_connected_space = None
+        self._debug_drawer = debug_drawer
+        self._label_cache = {}
+        self._goal_labels = []
+        self._root_node = HierarchyCacheNode(goal_node=self._goal_hierarchy.get_root(),
+                                             initial_temp=self._rating_function.get_root_rating())
+        self._b_return_approximates = b_return_approx
+        # TODO implement rest

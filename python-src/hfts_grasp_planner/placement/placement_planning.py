@@ -1325,6 +1325,13 @@ class PlacementHeuristic(object):
             pose = node.get_representative_value()
             self._kinbody.SetTransform(pose)
             dist, vdir = self._kinbody_octree.compute_max_penetration(self._scene_sdf, b_compute_dir=True)
+            if self._gripper_octree is not None:
+                robot_pose = np.dot(pose, self._inv_grasp_tf)
+                rdist, rdir = self._gripper_octree.compute_max_penetration(robot_pose, self._grasp_config,
+                                                                           self._scene_sdf, b_compute_dir=True)
+                if rdist < dist:
+                    dist = rdist
+                    vdir = rdir
             if dist < 0.0:
                 vdir = vdir / np.linalg.norm(vdir)
                 node_bounds = node.get_bounds()
@@ -1342,14 +1349,12 @@ class PlacementHeuristic(object):
             self._kinbody.SetTransform(pose)
             # We get a pose as argument when we are evaluating a single pose, which is currently only
             # done for computing a constraint in the leaf stage.
-            _, _, _, score, _, _  = self._kinbody_octree.compute_intersection(self._scene_sdf)
-        # _, _, _, avg_dist,  = self._kinbody_octree.compute_intersection(self._scene_sdf)
-        # if self._gripper_octree is not None:
-        #     robot_pose = np.dot(pose, self._inv_grasp_tf)
-        #     _, _, _, col_val = self._gripper_octree.compute_intersection(robot_pose, self._grasp_config, self._scene_sdf)
-        # else:
-        #     rob_col = 0.0
-        # return col_val + rob_col
+            _, _, _, score, _, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
+            rob_col = 0.0
+            if self._gripper_octree is not None:
+                robot_pose = np.dot(pose, self._inv_grasp_tf)
+                _, _, _, rob_col = self._gripper_octree.compute_intersection(robot_pose, self._grasp_config, self._scene_sdf)
+            score += rob_col
         # self._env.SetCollisionChecker(self._fcl_colchecker)
         return score
 
@@ -1384,6 +1389,8 @@ class PlacementHeuristic(object):
         rospy.logdebug("Grasp value: " + str(grasp_val))
         total_value = self._parameters['plcmt_weight'] * stability_val + self._parameters['col_weight'] * col_val + \
             self._parameters['grasp_weight'] * grasp_val
+        total_value /= (self._parameters['plcmt_weight'] + self._parameters['col_weight'] +
+                        self._parameters['grasp_weight'])
         rospy.logdebug("Total value: " + str(total_value))
         return total_value
 
@@ -1716,10 +1723,13 @@ class PlacementGoalPlanner(GoalHierarchy):
 
         def get_additional_data(self):
             # TODO here we could return sth like an open-hand policy
-            return None
+            return self.obj_pose
 
         def is_extendible(self):
             return not self._hierarchy_node.is_leaf()
+
+        def get_quality(self):
+            return self._quality_value
 
     class RobotInterface(object):
         """
@@ -1974,7 +1984,7 @@ class PlacementGoalPlanner(GoalHierarchy):
                                                                  self._placement_heuristic.evaluate_collision,
                                                                  robot_interface)
         self._placement_volume = None
-        self._parameters = {'cart_branching': 10, 'max_depth': 4, 'num_iterations': 100}  # TODO compute cartesian branching based on placement volume
+        self._parameters = {'cart_branching': 4, 'max_depth': 4, 'num_iterations': 100}  # TODO compute cartesian branching based on placement volume
         self._initialized = False
 
     def set_placement_volume(self, workspace_volume):

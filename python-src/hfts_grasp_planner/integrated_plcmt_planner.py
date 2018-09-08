@@ -65,14 +65,14 @@ class IntegratedPlacementPlanner(object):
             raise ValueError("Could not retrieve manipulator with name %s" % manip_name)
         self._robot.SetActiveDOFs(self._manip.GetArmIndices())
         self._robot.SetActiveManipulator(manip_name)
-        dynamic_bodies = [body for body in self._env.GetBodies() if utils.is_dynamic_body(body)]
+        dynamic_bodies = [body.GetName() for body in self._env.GetBodies() if utils.is_dynamic_body(body)]
         # TODO instead of excluding all dynamic bodies we could also simply activate and deactivate bodies as we need them
         self._scene_sdf = sdf_module.SceneSDF(self._env, [], excluded_bodies=dynamic_bodies)
         if os.path.exists(sdf_file):
             self._scene_sdf.load(sdf_file)
         else:
             self._scene_sdf.create_sdf(
-                sdf_volume, self._parameters['sdf_resolution'], self._parameters['sdf_resolution'])
+                sdf_volume, self._parameters['sdf_resolution'], self._parameters['sdf_resolution'], b_compute_dirs=True)
             self._scene_sdf.save(sdf_file)
         # TODO do we need to let the plctm planner know about the manipulator?
         self._plcmt_planner = plcmnt_module.PlacementGoalPlanner(
@@ -132,7 +132,7 @@ class IntegratedPlacementPlanner(object):
         joints = self._robot.GetJoints(self._manip.GetArmJoints())
         # TODO set link_names properly
         link_names = [joint.GetSecondAttached().GetName() for joint in joints]
-        link_names.extend(["yumi_gripper_l_base"])
+        link_names.extend(["gripper_l_base"])
         # link_names = None
         rating_function = SDFIntersectionRating(self._scene_sdf, self._robot, link_names)
         # cspace_diameter = numpy.linalg.norm(self._c_sampler.get_upper_bounds() - self._c_sampler.get_lower_bounds())

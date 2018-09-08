@@ -5,6 +5,7 @@
         <RotationAxis>0 0 1 90</RotationAxis>
         -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
         <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
+        <Translation>0 0 0.2</Translation>
     </Robot>
  
     <KinBody name="floor">

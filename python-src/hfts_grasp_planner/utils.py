@@ -382,7 +382,7 @@ def path_to_trajectory(robot, path, vel_factor=0.2):
     robot.SetDOFVelocityLimits(vel_factor * vel_limits)
     traj = orpy.RaveCreateTrajectory(robot.GetEnv(), '')
     cs = traj.GetConfigurationSpecification()
-    dof_string = string.join([' ' + str(x) for x in range(robot.GetActiveDOF())])
+    dof_string = string.join([' ' + str(x) for x in active_dofs])
     cs.AddGroup('joint_values ' + robot.GetName() + dof_string, robot.GetActiveDOF(), 'linear')
     # cs.AddDerivativeGroups(1, True)
     traj.Init(cs)
@@ -390,6 +390,9 @@ def path_to_trajectory(robot, path, vel_factor=0.2):
         traj.Insert(idx, configurations_path[idx])
     orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
     robot.SetDOFVelocityLimits(vel_limits)
+    # print "TRAJECTORY FOUND, TRY THINGS OUT!"
+    # import IPython
+    # IPython.embed()
     return traj
 
 
