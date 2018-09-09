@@ -2,6 +2,7 @@
 import os
 import math
 import rospy
+import random
 import itertools
 import collections
 import functools
@@ -1378,20 +1379,21 @@ class PlacementHeuristic(object):
         """
         assert(self._kinbody_octree)
         assert(self._scene_sdf)
-        self._handle = self.visualize_node(node)  # TODO delete
-        rospy.logdebug("Evaluating node with ID: " + str(node.get_id()))
+        if node.cached_value is not None:
+            rospy.logdebug("Node has cached value. Returning cached value.")
+            return node.cached_value
+        # self._handle = self.visualize_node(node)  # TODO delete
         # compute the collision cost for this pose
         col_val = self.evaluate_collision(node)
         stability_val = self.evaluate_stability(node)
         grasp_val = self.evaluate_grasp_compatibility(node)
-        rospy.logdebug("Collision value: " + str(col_val))
-        rospy.logdebug("Stability value: " + str(stability_val))
-        rospy.logdebug("Grasp value: " + str(grasp_val))
         total_value = self._parameters['plcmt_weight'] * stability_val + self._parameters['col_weight'] * col_val + \
             self._parameters['grasp_weight'] * grasp_val
         total_value /= (self._parameters['plcmt_weight'] + self._parameters['col_weight'] +
                         self._parameters['grasp_weight'])
-        rospy.logdebug("Total value: " + str(total_value))
+        rospy.logdebug("Evaluated node %s. Collision: %f, Stability: %f, Grasp: %f, Total value: %f" %
+                       (str(node.get_id()), col_val, stability_val, grasp_val, total_value))
+        node.cached_value = total_value
         return total_value
 
     @staticmethod
@@ -1454,37 +1456,53 @@ class SE3Hierarchy(object):
             self._cartesian_range = cartesian_box[1] - cartesian_box[0]
             self._child_dimensions = self._cartesian_range / self._hierarchy._cart_branching
             self._child_cache = {}
+            self.cached_value = None
 
-        def get_random_node(self):
+        def get_random_node(self, white_list=None):
             """
                 Return a random child node, as required by optimizers defined in
                 the optimization module. This function simply calls get_random_child().
+                ---------
+                Arguments
+                ---------
+                white_list, set - if provided the random node is only sampled from the given white list
             """
-            return self.get_random_child()
+            return self.get_random_child(white_list)
 
-        def get_random_child(self):
+        def get_random_child(self, white_list=None):
             """
                 Returns a randomly selected child node of this node.
-                This selection respects the node blacklist of the hierarchy.
+                ---------
+                Arguments
+                ---------
+                white_list, set - if provided the random node is only sampled from the given white list
+
                 Returns None, if this node is at the bottom of the hierarchy.
             """
             if self._depth == self._hierarchy._max_depth:
                 return None
-            bfs = so3hierarchy.get_branching_factors(self._depth)
-            random_child = np.array([np.random.randint(self._hierarchy._cart_branching),
-                                     np.random.randint(self._hierarchy._cart_branching),
-                                     np.random.randint(self._hierarchy._cart_branching),
-                                     np.random.randint(bfs[0]),
-                                     np.random.randint(bfs[1])], np.int)
-            # TODO respect blacklist
+            if white_list is not None:
+                random_child = random.sample(white_list, 1)[0]
+            else:
+                bfs = so3hierarchy.get_branching_factors(self._depth)
+                # TODO update this to also work with different cartesian branching
+                random_child = np.array([np.random.randint(self._hierarchy._cart_branching),
+                                        np.random.randint(self._hierarchy._cart_branching),
+                                        np.random.randint(self._hierarchy._cart_branching),
+                                        np.random.randint(bfs[0]),
+                                        np.random.randint(bfs[1])], np.int)
             return self.get_child_node(random_child)
 
-        def get_random_neighbor(self, node):
+        def get_random_neighbor(self, node, white_list=None):
             """
                 Returns a randomly selected neighbor of the given child node.
-                This selection respects the node blacklist of the hierarchy and will extend the neighborhood
-                if all direct neighbors are black listed.
-                @param node has to be a child of this node.
+                ---------
+                Arguments
+                ---------
+                node has to be a child of this node.
+                white_list, set - if provided random neighbor is guaranteed to be from this white list # TODO support this
+                -------
+                Returns
             """
             random_dir = np.array([np.random.randint(-1, 2),
                                    np.random.randint(-1, 2),
@@ -1492,7 +1510,7 @@ class SE3Hierarchy(object):
             child_id = node.get_id(relative_to_parent=True)
             max_ids = [self._hierarchy._cart_branching - 1,
                        self._hierarchy._cart_branching - 1, self._hierarchy._cart_branching - 1]
-            # TODO respect blacklist
+            # TODO support white list
             neighbor_id = np.zeros(5, np.int)
             neighbor_id[:3] = np.clip(child_id[:3] + random_dir, 0, max_ids)
             so3_key = so3hierarchy.get_random_neighbor(node.get_so3_key())
@@ -1532,11 +1550,7 @@ class SE3Hierarchy(object):
             """
                 Return a generator that allows to iterate over all children.
             """
-            bfs = so3hierarchy.get_branching_factors(self._depth)
-            local_keys = itertools.product(range(self._hierarchy._cart_branching),
-                                           range(self._hierarchy._cart_branching),
-                                           range(self._hierarchy._cart_branching),
-                                           range(bfs[0]), range(bfs[1]))
+            local_keys = self._hierarchy.get_white_list()
             for lkey in local_keys:
                 child = self.get_child_node(lkey)
                 yield child
@@ -1546,8 +1560,8 @@ class SE3Hierarchy(object):
                 Return the number of children this node has.
             """
             if not self.is_leaf():
-                bfs = so3hierarchy.get_branching_factors(self._depth)
-                return math.pow(self._hierarchy._cart_branching, 3) * bfs[0] * bfs[1]
+                bfs = self._hierarchy.get_branching_factors(self._depth)
+                return np.multiply.reduce(bfs)
             return 0
 
         def get_num_leaves_in_branch(self):
@@ -1558,9 +1572,8 @@ class SE3Hierarchy(object):
             num_leaves = 1
             for d in xrange(self._hierarchy.get_depth(), self._depth, -1):
                 # calculate the number of children a node on level d - 1 has
-                bfs = so3hierarchy.get_branching_factors(d - 1)
-                num_children = math.pow(self._hierarchy._cart_branching, 3) * bfs[0] * bfs[1]
-                num_leaves *= num_children
+                bfs = self._hierarchy.get_branching_factors(d - 1)
+                num_leaves *= np.multiply.reduce(bfs)
             return num_leaves
 
         def get_representative_value(self, rtype=0):
@@ -1584,6 +1597,9 @@ class SE3Hierarchy(object):
                 result[3:] = so3hierarchy.get_hopf_coordinates(self._so3_key)
                 return result
             raise RuntimeError("Return types different from matrix are not implemented yet!")
+
+        def generate_white_list(self):
+            return self._hierarchy.generate_white_list(self._depth)
 
         def get_id(self, relative_to_parent=False):
             """
@@ -1631,7 +1647,6 @@ class SE3Hierarchy(object):
                                            so3_key=so3hierarchy.get_root_key(),
                                            depth=0,
                                            hierarchy=self)
-        self._blacklist = None  # TODO need some data structure to blacklist nodes
 
     @staticmethod
     def extract_relative_id(global_id):
@@ -1659,6 +1674,30 @@ class SE3Hierarchy(object):
         # append elements of child id to individual elements of global id
         return tuple((parent_id[i] + (child_id[i],) for i in xrange(5)))
 
+    def generate_white_list(self, depth):
+        """
+            Generates a new white list for node at the given depth.
+            ---------
+            Arguments
+            ---------
+            depth, int - depth of the node
+            ---------
+            Returns
+            ---------
+            white_list, set - a set of all possible child ids (relative to parent)
+        """
+        bfs = self.get_branching_factors(depth)
+        return itertools.product(*map(xrange, bfs))
+
+    def get_branching_factors(self, depth):
+        """
+            Return branching factors at the given depth.
+        """
+        bfs = np.empty((5,), dtype=int)
+        bfs[:3] = self._cart_branching
+        bfs[3:] = so3hierarchy.get_branching_factors(depth)
+        return bfs
+        
     def get_root(self):
         return self._root
 
@@ -1694,6 +1733,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             self._bgoal = False
             self.obj_pose = hierarchy_node.get_representative_value()
             self._was_evaluated = False
+            self._white_list = hierarchy_node.generate_white_list()
 
         def is_valid(self):
             assert(self._was_evaluated)
@@ -1715,6 +1755,9 @@ class PlacementGoalPlanner(GoalHierarchy):
         def get_hashable_label(self):
             return str(self._hierarchy_node.get_id())
 
+        def get_local_hashable_label(self):
+            return self._hierarchy_node.get_id(relative_to_parent=True)
+
         def get_label(self):
             return self._hierarchy_node.get_id()
 
@@ -1730,6 +1773,9 @@ class PlacementGoalPlanner(GoalHierarchy):
 
         def get_quality(self):
             return self._quality_value
+
+        def get_white_list(self):
+            return self._white_list
 
     class RobotInterface(object):
         """
@@ -1833,7 +1879,7 @@ class PlacementGoalPlanner(GoalHierarchy):
                 'max_slope_angle': 0.2,
                 'min_chull_distance': -0.008,
                 'rhobeg': 0.01,
-                'max_iter': 500,
+                'max_iter': 250,
             }
 
         def post_optimize(self, plcmt_result):

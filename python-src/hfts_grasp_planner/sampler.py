@@ -137,8 +137,8 @@ class GoalHierarchy(object):
         @abc.abstractmethod
         def is_goal(self):
             """
-                Return whether this node represents a goal. 
-                In addition to being valid, a goal must represent a configuration that is 
+                Return whether this node represents a goal.
+                In addition to being valid, a goal must represent a configuration that is
                 fulfilling all goal criteria.
             """
             pass
@@ -168,6 +168,14 @@ class GoalHierarchy(object):
         def get_hashable_label(self):
             """
                 Return a unique and hashable identifier for this node.
+            """
+            pass
+
+        @abc.abstractmethod
+        def get_local_hashable_label(self):
+            """
+                Return a hashable identifier for this node that is unique with respect to its parent.
+                I.e. it should uniquely identify it among its siblings.
             """
             pass
 
@@ -218,6 +226,14 @@ class GoalHierarchy(object):
             """
             pass
 
+        @abc.abstractmethod
+        def get_white_list(self):
+            """
+                Return a white list of locally unique ids of this nodes children
+                that can be sampled from this node.
+            """
+            pass
+
         def is_leaf(self):
             """
                 Return whether this node is a leaf. This is equivalent to not self.is_extendible()
@@ -248,7 +264,7 @@ class GoalHierarchy(object):
         pass
 
     @abc.abstractmethod
-    def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):
+    def sample_warm_start(self, hierarchy_node, depth_limit, post_opt=False):
         """
             Sample a goal from the given node on.
             ---------
@@ -256,8 +272,7 @@ class GoalHierarchy(object):
             ---------
             hierarchy_node, GoalHierarchyNode - node to start sampling from, may be root node.
             depth_limit, int - maximal number of levels to descend (needs to be at least 1)
-            label_cache, ???? - ???? # TODO document
-            post_opt, bool - flag indicating whether (computationally) expensive post optimization 
+            post_opt, bool - flag indicating whether (computationally) expensive post optimization
                 at a leaf node is allowed to be performed.
             ---------
             Returns
@@ -579,7 +594,7 @@ class NodeRating(object):
 
     def set_parameters(self, **kwargs):
         for (key, value) in kwargs.iteritems():
-            if key in self._parameters.iteritems():
+            if key in self._parameters.iterkeys():
                 self._parameters[key] = value
 
     def set_connected_space(self, connected_space):
@@ -736,17 +751,20 @@ class SDFIntersectionRating(NodeRating):
     def t(self, node):
         if node.is_root():
             node.set_t(self.get_root_rating())
-            return self.get_root_rating()
+            node.cost_debug_data['root_rating'] = node.get_t()
+            return node.get_t()
         if not node.has_configuration() and node.is_extendible():
             parent = node.get_parent()
             assert parent is not None
             tN = parent.get_coverage() * parent.get_t()
             node.set_t(tN)
+            node.cost_debug_data['non_reachable_rating'] = node.get_t()
             return tN
         elif not node.has_configuration() and node.is_leaf():
             # TODO figure some reasonable values out here
             minimal_val = self._min_collision_free_chance + self._min_connection_chance
             node.set_t(minimal_val)
+            node.cost_debug_data['not_reachable_leaf_rating'] = node.get_t()
             return minimal_val
         max_rating = 0.0
         config_id = 0
@@ -757,6 +775,8 @@ class SDFIntersectionRating(NodeRating):
             if max_rating < temp:
                 node.set_active_configuration(config_id)
                 max_rating = temp
+                node.cost_debug_data['connected_rating'] = connected_temp
+                node.cost_debug_data['collision_rating'] = free_space_temp
             config_id += 1
         node.set_t(max_rating)
         return node.get_t()
@@ -769,17 +789,73 @@ class SDFIntersectionRating(NodeRating):
 
     def _compute_collision_value(self, config):
         # TODO figure out which value to use
-        _, _, _, ndc = self._robot_occupancy_tree.compute_intersection(self._robot.GetTransform(),
-                                                                       config, self._scene_sdf)
-        return self._distance_kernel(numpy.abs(ndc), self._parameters["collision_cost_scale"])
+        _, _, dc, _ = self._robot_occupancy_tree.compute_intersection(self._robot.GetTransform(),
+                                                                      config, self._scene_sdf)
+        return self._distance_kernel(numpy.abs(dc), self._parameters["collision_cost_scale"])
 
     def _distance_kernel(self, dist, w=1.0):
         return math.exp(-w * dist)
 
 
+class SDFPartitionRating(SDFIntersectionRating):
+    """
+        This rating extends the SDFIntersectionRating by also taking the partition rating
+        into account. The partition rating is the quality value returned by GoalHierarchyNode's get_quality function.
+        The quality function is assumed to be within (-infty, 1]
+    """
+
+    def __init__(self, scene_sdf, robot, link_names, b_include_attached=False, cell_size=0.01):
+        super(SDFPartitionRating, self).__init__(scene_sdf, robot, link_names, b_include_attached, cell_size)
+        self._parameters['quality_weight'] = 10.0
+        self._parameters['quality_scale'] = 4.0
+
+    def max_rating(self):
+        return 1.0
+
+    def update_ratings(self, node):
+        return super(SDFPartitionRating, self).update_ratings(node)
+
+    def get_root_rating(self):
+        parent_root_rating = super(SDFPartitionRating, self).get_root_rating()
+        t_value = parent_root_rating + self._parameters['quality_weight']
+        t_value /= (self._parameters['quality_weight'] + self._parameters['collision_weight'] +
+                    self._parameters['connected_weight'])
+        return t_value
+
+    def t(self, node):
+        if node.is_root():
+            node.set_t(self.get_root_rating())
+            node.cost_debug_data['root_rating'] = node.get_t()
+            return node.get_t()
+        normalizer = self._parameters['quality_weight'] + \
+            self._parameters['collision_weight'] + self._parameters['connected_weight']
+        config_rating = 0.0
+        if node.has_configuration():
+            for cid, config in enumerate(node.get_configurations()):
+                connected_val = self._parameters['connected_weight'] * self._compute_connection_chance(config)
+                col_val = self._parameters['collision_weight'] * self._compute_collision_value(config)
+                temp = connected_val + col_val
+                if config_rating < temp:
+                    node.set_active_configuration(cid)
+                    config_rating = temp
+                    node.cost_debug_data['connected_rating'] = connected_val / normalizer
+                    node.cost_debug_data['collision_rating'] = col_val / normalizer
+        quality_rating = self._parameters['quality_weight'] * self.quality_cost(node)
+        node.cost_debug_data['quality_rating'] = quality_rating / normalizer
+        t_value = (config_rating + quality_rating) / normalizer
+        node.set_t(t_value)
+        return t_value
+
+    def quality_cost(self, node):
+        q = node.get_quality()
+        assert(q <= 1.0)
+        # TODO different function?
+        return numpy.exp(self._parameters['quality_scale'] * (q - 1.0))
+
+
 class HierarchyCacheNode(object):
     """
-        This class represents a node in the hierarchy built by the FreeSpaceProximitySampler
+        This class represents a node in the hierarchy built by the LazyHierarchySampler
     """
 
     def __init__(self, goal_node, config=None, initial_temp=0.0, active_children_capacity=20):
@@ -794,6 +870,7 @@ class HierarchyCacheNode(object):
         self._T = 0.0
         self._T_c = 0.0
         self._T_p = 0.0
+        self.cost_debug_data = {}
         self._num_leaves_in_branch = 1 if goal_node.is_leaf() else 0
         self._active_children_capacity = active_children_capacity
         self._configs = []
@@ -893,8 +970,8 @@ class HierarchyCacheNode(object):
     def get_parent(self):
         return self._parent
 
-    # def get_quality(self):
-    #     return self._goal_nodes[0].get_quality()
+    def get_quality(self):
+        return self._goal_nodes[0].get_quality()
 
     def has_children(self):
         return self.get_num_children() > 0
@@ -1077,7 +1154,7 @@ class LazyHierarchySampler(object):
         if label in self._label_cache:
             hierarchy_node = self._label_cache[label]
             hierarchy_node.add_goal_sample(goal_sample)
-            rospy.logwarn('[FreeSpaceProximitySampler::_getHierarchyNode] Sampled a cached node!')
+            rospy.logerr('[FreeSpaceProximitySampler::_getHierarchyNode] Sampled a cached node!')
         else:
             hierarchy_node = HierarchyCacheNode(goal_node=goal_sample,
                                                 config=goal_sample.get_configuration())
@@ -1196,11 +1273,11 @@ class LazyHierarchySampler(object):
         num_samplings = self._k
         b_temperatures_invalid = True
         while num_samplings > 0:
+            if b_temperatures_invalid:
+                self._rating_function.update_ratings(current_node)
             if self._debug_drawer is not None:
                 self._debug_drawer.draw_hierarchy(self._root_node)
             rospy.logdebug('[FreeSpaceProximitySampler::sample] Picking random cached child')
-            if b_temperatures_invalid:
-                self._rating_function.update_ratings(current_node)
             child = self._pick_random_child(current_node)
             if self._should_descend(current_node, child):
                 current_node = child

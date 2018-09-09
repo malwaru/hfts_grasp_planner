@@ -6,8 +6,15 @@ data_path: ../
 robot_name: Yumi
 manip_name: left_arm_with_gripper
 target_name: crayola
-plcmnt_volume: [-0.4, 0.45, 0.42, 0.05, 0.6, 0.62]
+plcmnt_volume: [-0.4, 0.45, 0.62, 0.05, 0.6, 0.78]
 sdf_volume: [-0.8, -0.7, 0.0, 0.7, 1.1, 1.2]
-time_limit: 600.0
+time_limit: 20.0
 grasp_pose: [-0.16877364, -0.00930885,  0.00032054, 0.70197418,  0.08854614,  0.70307962, -0.07121011]
 grasp_config: [0.01830301,]
+parameters:
+  quality_weight: 2.0
+  collision_weight: 2.0
+  connected_weight: 1.0
+  rrt_pgoal_max: 0.01
+  rrt_goal_w: 5.2
+  rrt_pgoal_min: 0.001

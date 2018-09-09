@@ -104,14 +104,15 @@ if __name__ == "__main__":
                                                     gripper_file=problem_desc['gripper_file'],
                                                     urdf_file=problem_desc['urdf_file'],
                                                     draw_search_tree=args.debug,
-                                                    draw_hierarchy=args.debug)
+                                                    draw_hierarchy=args.debug,
+                                                    **problem_desc['parameters'])
     # create an IK solver so we can compute the start configuration
     ik_solver = ik_module.IKSolver(planner._env, problem_desc["robot_name"], problem_desc["urdf_file"])
     # set a placement target volume
     placement_volume = (np.array(problem_desc["plcmnt_volume"][:3]),
                         np.array(problem_desc["plcmnt_volume"][3:]))  # inside shelf
-    # planner._env.SetViewer('qtcoin')
-    planner._plcmt_planner._placement_heuristic._env.SetViewer('qtcoin')
+    planner._env.SetViewer('qtcoin')
+    # planner._plcmt_planner._placement_heuristic._env.SetViewer('qtcoin')
     # planner._plcmt_planner._leaf_stage.robot_interface._env.SetViewer('qtcoin')
     handle = draw_volume(planner._env, placement_volume)
     print "Check the placement volume!", placement_volume

@@ -40,7 +40,7 @@ class GUI(Gtk.Window):
         self.margin = 20
         self._has_graph = False
         self.terminated = False
-        self.max_temp = 4.5
+        self.max_temp = 1.0
         self.graph = None
         self.layout = None
         self.plot = None

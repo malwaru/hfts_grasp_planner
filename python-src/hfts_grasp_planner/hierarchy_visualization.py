@@ -12,6 +12,7 @@ class FreeSpaceProximitySamplerVisualizer(object):
         self._labels_to_ids = {}
         self._nodes_cache = {}
         self.robot = robot
+        self.grabbed_object = None
         self._graph_publisher = rospy.Publisher('/goal_region_graph', String, queue_size=1)
         rospy.Subscriber('/node_select', String, self._ros_callback)
 
@@ -20,24 +21,42 @@ class FreeSpaceProximitySamplerVisualizer(object):
         if unique_label in self._nodes_cache:
             node = self._nodes_cache[unique_label]
             config = node.get_active_configuration()
-            rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Got a request')
+            rospy.logdebug(
+                '[HierarchyVisualizer::_ros_callback] Got a request for node ' + str(unique_label))
+            rospy.logdebug('[HierarchyVisualizer::_ros_callback] Cost debug data: ' + str(node.cost_debug_data))
             if config is not None:
-                rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Request to ' +
+                rospy.logdebug('[HierarchyVisualizer::_ros_callback] Request to ' +
                                'show config ' + str(config))
                 self.robot.SetActiveDOFValues(config)
                 env = self.robot.GetEnv()
-                b_in_collision = env.CheckCollision(self.robot) or self.robot.CheckSelfCollision()
-                if not b_in_collision:
-                    rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
+                b_in_collision = env.CheckCollision(self.robot)
+                b_self_collision = self.robot.CheckSelfCollision()
+                if not b_in_collision and not b_self_collision:
+                    rospy.logdebug('[HierarchyVisualizer::_ros_callback] Configuration' +
                                    ' is collision-free!')
                     if node.is_goal():
-                        rospy.logdebug('FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] The ' +
+                        rospy.logdebug('HierarchyVisualizer::_ros_callback] The ' +
                                        ' selected config is a goal!')
                 else:
-                    rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Configuration' +
-                                   ' is in collision.')
+                    if b_in_collision:
+                        rospy.logdebug('[HierarchyVisualizer::_ros_callback] Configuration' +
+                                       ' is in collision.')
+                    elif b_self_collision:
+                        rospy.logdebug('[HierarchyVisualizer::_ros_callback] Configuration' +
+                                       ' is in self-collision.')
+            # TODO this is placement specific
+            pose = node.get_goal_sampler_hierarchy_node().get_additional_data()
+            if pose is None:
+                rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_ros_callback] No object pose!')
+            else:
+                if self.grabbed_object is None:
+                    self.grabbed_object = self.robot.GetGrabbed()[0]
+                    self.robot.Release(self.grabbed_object)
+                self.grabbed_object.SetTransform(pose)
+                rospy.logdebug("[HierarchyVisualizer::_ros_callback] Object pose: " + str(pose))
+
         else:
-            rospy.logwarn('[FreeSpaceProximitySamplerVisualizer::_rosMessageReceived] Received unknown node label.')
+            rospy.logwarn('[FreeSpaceProximitySamplerVisualizer::_ros_callback] Received unknown node label.')
 
     def _add_node(self, parent_id, node, b_is_active):
         label = node.get_hashable_label()

@@ -41,7 +41,7 @@ def execute_placement_planner(placement_planner, body):
 
 if __name__ == "__main__":
     # NOTE If the OpenRAVE viewer is created too early, nothing works! Collision checks may be incorrect!
-    rospy.init_node("TestPlacement", anonymous=True)
+    rospy.init_node("TestPlacement", anonymous=True, log_level=rospy.DEBUG)
     env = orpy.Environment()
     env.Load(ENV_PATH)
     robot_name = env.GetRobots()[0].GetName()
@@ -59,17 +59,20 @@ if __name__ == "__main__":
         IPython.embed()
         scene_sdf.create_sdf(volume, resolution, resolution)
         scene_sdf.save(SDF_PATH)
-    target_obj_name = 'crayola'
+    target_obj_name = 'bunny'
     placement_planner = pp_module.PlacementGoalPlanner(DATA_PATH, env, scene_sdf)
     # placement_volume = (np.array([-0.35, 0.55, 0.66]), np.array([0.53, 0.9, 0.77]))  # on top of shelf
-    placement_volume = (np.array([-0.35, 0.55, 0.42]), np.array([0.53, 0.9, 0.64]))  # inside shelf
+    placement_volume = (np.array([-0.35, 0.55, 0.42]), np.array([0.53, 0.9, 0.77]))  # all of the shelf
+    # placement_volume = (np.array([-0.35, 0.55, 0.42]), np.array([0.53, 0.9, 0.64]))  # inside shelf
     # placement_volume = (np.array([-0.35, 0.4, 0.42]), np.array([0.53, 0.55, 0.64]))  # front of shelf
+    # placement_volume = (np.array([-0.35, 0.55, 0.44]), np.array([0.53, 0.9, 0.49]))  # bottom inside shelf
     # placement_volume = (np.array([0.24, 0.58, 0.73]), np.array([0.29, 0.8, 0.8]))  # volume in small gap
     placement_planner.set_placement_volume(placement_volume)
     placement_planner.set_object(target_obj_name)
     body = env.GetKinBody(target_obj_name)
     # env.SetViewer('qtcoin')
-    # handle = draw_volume(env, placement_volume)
+    placement_planner._placement_heuristic._env.SetViewer('qtcoin')
+    handle = draw_volume(env, placement_volume)
     print "Check the placement volume!", placement_volume
     IPython.embed()
     handle = None

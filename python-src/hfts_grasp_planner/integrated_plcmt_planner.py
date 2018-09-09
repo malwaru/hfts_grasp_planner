@@ -3,7 +3,7 @@ import numpy
 import rospy
 import openravepy as orpy
 from orsampler import RobotCSpaceSampler
-from sampler import LazyHierarchySampler, ProximityRating, SDFIntersectionRating
+from sampler import LazyHierarchySampler, ProximityRating, SDFIntersectionRating, SDFPartitionRating
 from rrt import DynamicPGoalProvider, RRT
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.placement_planning as plcmnt_module
@@ -23,6 +23,13 @@ class IntegratedPlacementPlanner(object):
         draw_search_tree, bool - If true, draws motion planning tree in viewer
         max_per_level_iterations, int - maximal number of iterations on each level of the placement hierarchy
         min_per_level_iterations, int - minimal number of iterations on each level the placement hierarchy
+        kappa, int - number of samples in each round of goal sampler
+        connected_weight, float - weight for proximity to connected configurations 
+        collision_weight, float - weight for collision cost 
+        quality_weight, float - weight for target quality
+        rrt_pgoal_max, float - maximum probability to sample a new root for a backwards tree
+        rrt_pgoal_w, float - parameter that determines how fast probablility of sampling goal tree decays
+        rrt_pgoal_min, float - minmum probability to sample a new root for a backwards tree
     """
 
     def __init__(self, env_file, sdf_file, sdf_volume,
@@ -50,9 +57,15 @@ class IntegratedPlacementPlanner(object):
             'sdf_resolution': 0.005,
             'dof_weights': None,
             'draw_search_tree': False,
-            'max_per_level_iterations': 80,
-            'min_per_level_iterations': 50,
+            'max_per_level_iterations': 60,
+            'min_per_level_iterations': 20,
             "kappa": 5,
+            'connected_weight': 1.0,
+            'collision_weight': 2.0,
+            'quality_weight': 2.0,
+            'rrt_pgoal_max': 0.8,
+            'rrt_pgoal_w': 0.2,
+            'rrt_pgoal_min': 0.001,
         }
         self.set_parameters(**kwargs)
         self._env = orpy.Environment()
@@ -80,6 +93,19 @@ class IntegratedPlacementPlanner(object):
             urdf_file_name=urdf_file)
         self._c_sampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=self._parameters['dof_weights'])
         # TODO pass additional parameters
+        # set rating function
+        # TODO set link_names properly
+        joints = self._robot.GetJoints(self._manip.GetArmJoints())
+        link_names = [joint.GetSecondAttached().GetName() for joint in joints]
+        link_names.extend(["gripper_l_base"])
+        # link_names = None
+        # rating_function = SDFIntersectionRating(self._scene_sdf, self._robot, link_names)
+        # cspace_diameter = numpy.linalg.norm(self._c_sampler.get_upper_bounds() - self._c_sampler.get_lower_bounds())
+        # rating_function = ProximityRating(cspace_diameter, **self._parameters)
+        self._rating_function = SDFPartitionRating(self._scene_sdf, self._robot, link_names)
+        self._rating_function.set_parameters(connected_weight=self._parameters['connected_weight'],
+                                             collision_weight=self._parameters['collision_weight'],
+                                             quality_weight=self._parameters['quality_weight'])
         # initialize optional members as None
         self._debug_tree_drawer = None
         self._hierarchy_visualizer = None
@@ -129,20 +155,15 @@ class IntegratedPlacementPlanner(object):
         else:
             def debug_fn(forward_tree, backward_trees):
                 pass
-        joints = self._robot.GetJoints(self._manip.GetArmJoints())
-        # TODO set link_names properly
-        link_names = [joint.GetSecondAttached().GetName() for joint in joints]
-        link_names.extend(["gripper_l_base"])
-        # link_names = None
-        rating_function = SDFIntersectionRating(self._scene_sdf, self._robot, link_names)
-        # cspace_diameter = numpy.linalg.norm(self._c_sampler.get_upper_bounds() - self._c_sampler.get_lower_bounds())
-        # rating_function = ProximityRating(cspace_diameter, **self._parameters)
-        goal_sampler = LazyHierarchySampler(self._plcmt_planner, rating_function,
+        goal_sampler = LazyHierarchySampler(self._plcmt_planner, self._rating_function,
                                             debug_drawer=self._hierarchy_visualizer,
                                             num_iterations=self._parameters['max_per_level_iterations'],
                                             min_num_iterations=self._parameters['min_per_level_iterations'],
                                             k=self._parameters["kappa"])
-        motion_planner = RRT(DynamicPGoalProvider(), self._c_sampler, goal_sampler)
+        pgoal_provider = DynamicPGoalProvider(self._parameters["rrt_pgoal_max"],
+                                              self._parameters["rrt_pgoal_w"],
+                                              self._parameters["rrt_pgoal_min"])
+        motion_planner = RRT(pgoal_provider, self._c_sampler, goal_sampler)
         start_config = self._robot.GetActiveDOFValues()
         path = motion_planner.proximity_birrt(start_config, time_limit=time_limit, debug_function=debug_fn)
         return path, None  # TODO return placement pose, too
