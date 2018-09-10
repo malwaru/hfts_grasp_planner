@@ -62,6 +62,7 @@ def execute_placement_planner(planner, volume, problem_desc, ik_solver):
         # TODO reset to start configuration
     else:
         print "Failed! No solution found."
+    return path
 
 
 def resolve_paths(problem_desc, yaml_file):

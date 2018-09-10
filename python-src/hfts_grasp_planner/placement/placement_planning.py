@@ -257,15 +257,16 @@ class SimplePlacementQuality(object):
         self._local_com = None
         self._parameters = {"min_com_distance": 0.001, "min_normal_similarity": 0.97,
                             "minimal_contact_spread": 0.005, "maximal_contact_spread": 0.01,
-                            "alpha_weight": 1.0, "d_weight": 1.0, "p_weight": 1.0, 'gamma_weight': 2.0
+                            "alpha_weight": 1.0, "d_weight": 1.0, "p_weight": 1.0, 'gamma_weight': 3.0
                             }
         self._max_ray_length = 2.0
+        self._interior_radius = 0.0  # maximal radius of a ball completely inside the object's convex hull
         self._d_value_normalizer = 1.0  # maximum distance the object can fall in a target volume
         if parameters:
             for (key, value) in parameters:
                 self._parameters[key] = value
 
-    def compute_quality(self, pose, return_terms=False):
+    def compute_quality(self, node, return_terms=False):
         """
             Compute the placement quality for the given pose.
             The larger the returned value, the more suitable a pose is for placement.
@@ -273,8 +274,8 @@ class SimplePlacementQuality(object):
             ---------
             Arguments
             ---------
-            pose, numpy array of shape (4, 4) - describes the pose of the currently
-                set kinbody
+            pose, numpy array of shape (4, 4) or SE3HierarchyNode - describes for what pose/partition
+                to compute the quality for
             return_terms, bool - if true, the individual terms that the placement quality
                 is computed of are returned.
             ---------
@@ -289,7 +290,15 @@ class SimplePlacementQuality(object):
             alpha, float - angle between virtual placement plane and z-axis
             gamma, float - angle between virtual placement plane and placement plane
         """
+        if type(node) == np.ndarray:
+            pose = node
+            z_partition = 0.0
+        else:
+            pose = node.get_representative_value()
+            z_partition = pose[2, 3] - node.get_bounds()[2, 0]
+            assert z_partition > 0.0
         self._body.SetTransform(pose)
+        # self._env.SetViewer('qtcoin')
         # best_score = float('inf')
         # score, d_head, chull_distance, alpha, gamma
         best_plane_results = (0.0, float('inf'), float('inf'), float('inf'), float('inf'))
@@ -302,10 +311,11 @@ class SimplePlacementQuality(object):
             if plane_normal[2] > 0.0:  # this plane is facing upwards
                 distances, _, _, _ = self._project_placement_plane(plane, pose)  # project the plane, but we only care about the distances
                 if len(distances) > 0:  # there is some surface beneath
-                    d_head = np.min(distances)
+                    d_head = max(np.min(distances) - z_partition, 0.0)
                 else:  # there is no surface beneath
-                    d_head = self._max_ray_length
-                d_value = d_head / self._max_ray_length
+                    # d_head = self._max_ray_length
+                    d_head = max(self._max_falling_distance - z_partition, 0.0)
+                d_value = d_head / self._max_falling_distance
                 chull_distance = dist_pair[1]
                 p_value = 1.0
                 alpha_value = 1.0
@@ -318,8 +328,8 @@ class SimplePlacementQuality(object):
                 if virtual_contacts.size > 0:
                     # we have some virtual contacts and thus finite distances
                     # rerieve the smallest distance between a placement point and its virtual contact
-                    d_head = np.min(distances)
-                    d_value = d_head / self._max_ray_length  # guaranteed to be within [0, 1]
+                    d_head = max(np.min(distances) - z_partition, 0.0)
+                    d_value = d_head / self._max_falling_distance  # always >= 0.0, may be > 1.0 if dropped from a bad angle onto an edge
                     if virtual_plane_axes is not None:
                         # we have a virtual contact plane and can compute the full heuristic
                         # project the virtual contacts to the x, y plane and compute their convex hull
@@ -360,7 +370,7 @@ class SimplePlacementQuality(object):
                         alpha_value = 1.0
                 else:
                     # we have no contacts, so there isn't anything we can say
-                    d_head = self._max_ray_length
+                    d_head = max(self._max_falling_distance - z_partition, 0.0)
                     d_value = 1.0
                     chull_distance = dist_pair[1]
                     gamma = np.arccos(-np.clip(plane_normal[2], -1.0, 1.0))  # in [0, pi]
@@ -374,7 +384,8 @@ class SimplePlacementQuality(object):
             # or if the plane is already aligned, maximizes the stability.
             # Minimizing alpha_value prefers placements on planar surfaces rather than on slopes.
             # score = d_head + placement_value + self._parameters["slopiness_weight"] * alpha
-            assert(d_value >= 0.0 and d_value <= 1.0)
+            assert(d_value >= 0.0)  # it may be larger 1.0 for really bad cases
+            assert(p_value >= 0.0)
             # assert(p_value >= 0.0 and p_value <= 1.0) # it may be larger than 1.0 if only a part of a placement plane is above the surface
             assert(alpha_value >= 0.0 and alpha_value <= 1.0)
             assert(gamma_value >= 0.0 and gamma_value <= 1.0)
@@ -418,6 +429,7 @@ class SimplePlacementQuality(object):
         object_diameter = 2.0 * np.linalg.norm(self._body.ComputeAABB().extents())
         self._max_ray_length = self._workspace_volume[1][2] - self._workspace_volume[0][2] \
             + 2.0 * object_diameter
+        self._max_falling_distance = self._workspace_volume[1][2] - self._workspace_volume[0][2] - self._interior_radius
 
     def set_placement_volume(self, workspace_volume):
         """
@@ -438,6 +450,9 @@ class SimplePlacementQuality(object):
             Returns
             -------
             true or false depending on whether it is stable or not
+            dist2d, float - distance of the projected center of mass to any boundary
+            min_dist2d, float minimal distance the projected center of mass can have
+            dist3d, float - maximal distance the projected center of mass can have
         """
         # handles = self._visualize_placement_plane(plane)  # TODO remove
         # due to our tolerance value when clustering faces, the points may not be co-planar.
@@ -459,20 +474,21 @@ class SimplePlacementQuality(object):
         convex_hull = scipy.spatial.ConvexHull(points_2d)
         # ##### DRAW CONVEX HULL ###### TODO remove
         # boundary = points_2d[convex_hull.vertices]
-        # # compute 3d boundary from bases and mean point
+        # compute 3d boundary from bases and mean point
         # boundary3d = boundary[:, 0, np.newaxis] * axes[:, 0] + boundary[:, 1, np.newaxis] * axes[:, 1] + mean_point
-        # # transform it to world frame
+        # transform it to world frame
         # tf = self._body.GetTransform()
         # boundary3d = np.dot(boundary3d, tf[:3, :3]) + tf[:3, 3]
         # handles.append(self._visualize_boundary(boundary3d))
         # ##### DRAW CONVEX HULL - END ######
         # ##### DRAW PROJECTED COM ######
         # handles.append(self._env.drawbox(projected_com, np.array([0.005, 0.005, 0.005]),
-                                        #  np.array([0.29, 0, 0.5]), tf))
+        #                                  np.array([0.29, 0, 0.5]), tf))
         # ##### DRAW PROJECTED COM - END ######
         # accept the point if the projected center of mass is inside of the convex hull
         dist2d, _ = compute_hull_distance(convex_hull, com2d)
-        return dist2d < -1.0 * self._parameters["min_com_distance"], dist2d, dist3d
+        best_dist = np.min(convex_hull.equations[:, -1])
+        return dist2d < -1.0 * self._parameters["min_com_distance"], dist2d, best_dist, dist3d
 
     def _compute_placement_planes(self, user_filters):
         # first compute the convex hull of the body
@@ -487,8 +503,10 @@ class SimplePlacementQuality(object):
             vertices[offset:mesh.vertices.shape[0] + offset] = mesh.vertices
             offset += mesh.vertices.shape[0]
         convex_hull = scipy.spatial.ConvexHull(vertices)  # TODO do we need to add any flags?
+        assert (convex_hull.equations[:, -1] < 0.0).all()
+        self._interior_radius = np.min(np.abs(convex_hull.equations[:, -1]))
         # merge faces
-        clusters, face_clusters, _ = merge_faces(convex_hull, self._parameters["min_normal_similarity"])
+        clusters, _, _ = merge_faces(convex_hull, self._parameters["min_normal_similarity"])
         # handles = self._visualize_clusters(convex_hull, clusters, face_clusters)
         # handles = None
         self._placement_planes = []
@@ -505,7 +523,7 @@ class SimplePlacementQuality(object):
                 if not acceptances.any():
                     continue
             # filter based on stability
-            b_stable, dist2d, dist3d = self._is_stable_placement_plane(plane)
+            b_stable, _, dist2d, dist3d = self._is_stable_placement_plane(plane)
             if not b_stable:
                 continue
             # if this plane passed all filters, we accept it
@@ -1317,7 +1335,7 @@ class PlacementHeuristic(object):
         else:
             pose = node  # we got a pose as argument
         self._kinbody.SetTransform(pose)
-        return self._stability_function.compute_quality(pose, return_details)
+        return self._stability_function.compute_quality(node, return_details)
 
     def evaluate_collision(self, node):
         """
@@ -1339,6 +1357,7 @@ class PlacementHeuristic(object):
                 node_bounds = node.get_bounds()
                 box_extents = (node_bounds[:3, 1] - node_bounds[:3, 0]) / 2.0
                 non_zero = np.abs(vdir) > 1e-9
+                assert(non_zero.shape[0] > 0, "vdir is " + str(vdir))
                 ts = np.abs(box_extents[non_zero] / vdir[non_zero])
                 t = np.min(ts)
                 assert(t > 0.0)
