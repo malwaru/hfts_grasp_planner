@@ -41,13 +41,9 @@ def hopf_to_quaternion(hopf):
         quat, numpy array of shape (4,) - quaternion representing orientation of hopf.
     """
     quat = np.empty(4)
-    # quat[0] = np.cos(hopf[0] / 2.0) * np.cos(hopf[2] / 2.0)
-    # quat[1] = np.cos(hopf[0] / 2.0) * np.sin(hopf[2] / 2.0)
-    # quat[2] = np.sin(hopf[0] / 2.0) * np.cos(hopf[1] + hopf[2] / 2.0)
-    # quat[3] = np.sin(hopf[0] / 2.0) * np.sin(hopf[1] + hopf[2] / 2.0)
     quat[0] = np.cos(hopf[0] / 2.0) * np.cos(hopf[2] / 2.0)
-    quat[1] = np.sin(hopf[0] / 2.0) * np.sin(hopf[1] - hopf[2] / 2.0)
-    quat[2] = np.sin(hopf[0] / 2.0) * np.cos(hopf[1] - hopf[2] / 2.0)
+    quat[1] = np.sin(hopf[0] / 2.0) * np.sin(hopf[1] + hopf[2] / 2.0)
+    quat[2] = np.sin(hopf[0] / 2.0) * np.cos(hopf[1] + hopf[2] / 2.0)
     quat[3] = np.cos(hopf[0] / 2.0) * np.sin(hopf[2] / 2.0)
     return quat
 
