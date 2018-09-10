@@ -10,6 +10,7 @@ import random
 import abc
 from rtree import index
 from hfts_grasp_planner.rrt import SampleData
+from hfts_grasp_planner.sdf.kinbody import OccupancyOctree
 from hfts_grasp_planner.sdf.robot import RobotOccupancyOctree
 
 NUMERICAL_EPSILON = 0.00001
@@ -731,6 +732,9 @@ class SDFIntersectionRating(NodeRating):
         self._scene_sdf = scene_sdf
         self._robot_occupancy_tree = RobotOccupancyOctree(cell_size, robot, link_names)
         self._robot = robot
+        self._object_occupancy_tree = None
+        self._object = None
+        self._cell_size = cell_size
         self._min_connection_chance = 1e-8  # TODO figure sth out here
         self._min_collision_free_chance = 1e-8  # TODO
         self._parameters = {
@@ -738,6 +742,19 @@ class SDFIntersectionRating(NodeRating):
             'collision_weight': 2.0,
             'collision_cost_scale': 1.0,
         }
+
+    def set_grasped_object(self, obj_body):
+        """
+            Inform this rating that the given object is grasped by the robot and should
+            be included in the collision cost.
+            ---------
+            Arguments
+            ---------
+            obj_body, OpenRAVE kinbody
+        """
+        if obj_body != self._object:
+            self._object_occupancy_tree = OccupancyOctree(self._cell_size, obj_body.GetLinks()[0])
+            self._object = obj_body
 
     def max_rating(self):
         return self._parameters['connected_weight'] + self._parameters['collision_weight']
@@ -791,6 +808,9 @@ class SDFIntersectionRating(NodeRating):
         # TODO figure out which value to use
         _, _, dc, _ = self._robot_occupancy_tree.compute_intersection(self._robot.GetTransform(),
                                                                       config, self._scene_sdf)
+        if self._object_occupancy_tree is not None:
+            _, _, odc, _, _, _ = self._object_occupancy_tree.compute_intersection(self._scene_sdf)
+            dc += odc
         return self._distance_kernel(numpy.abs(dc), self._parameters["collision_cost_scale"])
 
     def _distance_kernel(self, dist, w=1.0):

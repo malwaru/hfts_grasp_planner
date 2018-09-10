@@ -66,6 +66,9 @@ class IntegratedPlacementPlanner(object):
             'rrt_pgoal_max': 0.8,
             'rrt_pgoal_w': 0.2,
             'rrt_pgoal_min': 0.001,
+            'plcmnt_root_edge_length': 0.2,
+            'plcmnt_cart_branching': 4,
+            'plcmnt_max_depth': 4,
         }
         self.set_parameters(**kwargs)
         self._env = orpy.Environment()
@@ -148,7 +151,11 @@ class IntegratedPlacementPlanner(object):
         target_body = self._env.GetKinBody(target_obj)
         if not self._robot.IsGrabbing(target_body):
             self._robot.Grab(target_body)
+        self._plcmt_planner.set_parameters(root_edge_length=self._parameters['plcmnt_root_edge_length'],
+                                           cart_branching=self._parameters['plcmnt_cart_branching'],
+                                           max_depth=self._parameters['plcmnt_max_depth'])
         self._plcmt_planner.setup(target_obj, grasp_tf, grasp_config)
+        self._rating_function.set_grasped_object(target_body)
         if self._debug_tree_drawer:
             self._debug_tree_drawer.clear()
             debug_fn = self._debug_tree_drawer.draw_trees
@@ -159,7 +166,8 @@ class IntegratedPlacementPlanner(object):
                                             debug_drawer=self._hierarchy_visualizer,
                                             num_iterations=self._parameters['max_per_level_iterations'],
                                             min_num_iterations=self._parameters['min_per_level_iterations'],
-                                            k=self._parameters["kappa"])
+                                            k=self._parameters["kappa"],
+                                            b_return_approximates=self._parameters["use_approximates"])
         pgoal_provider = DynamicPGoalProvider(self._parameters["rrt_pgoal_max"],
                                               self._parameters["rrt_pgoal_w"],
                                               self._parameters["rrt_pgoal_min"])
