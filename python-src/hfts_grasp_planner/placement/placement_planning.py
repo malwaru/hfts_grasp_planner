@@ -1223,8 +1223,9 @@ class SimpleGraspCompatibility(object):
             -------
             val, float - a value in [0, 1] representing compatibility. The larger the better.
         """
-        palm_world_dir = np.dot(pose[:3, :3], self._palm_dir)
-        return (np.dot(palm_world_dir, self._gravity) + 1.0) / 2.0
+        out_of_palm_world_dir = np.dot(pose[:3, :3], self._palm_dir)
+        dot_product = np.clip(np.dot(out_of_palm_world_dir, self._gravity) + 1.0, 0.0, 1.0)
+        return dot_product
 
 
 class PlacementHeuristic(object):
@@ -1284,7 +1285,7 @@ class PlacementHeuristic(object):
         self._parameters = {
             'plcmt_weight': 1.0,
             'col_weight': 1.0,
-            'grasp_weight': 1.0,
+            'grasp_weight': 0.4,
          }
         # self._env.SetViewer('qtcoin')
 
@@ -1359,7 +1360,12 @@ class PlacementHeuristic(object):
                 non_zero = np.abs(vdir) > 1e-9
                 assert(non_zero.shape[0] > 0, "vdir is " + str(vdir))
                 ts = np.abs(box_extents[non_zero] / vdir[non_zero])
-                t = np.min(ts)
+                try:
+                    t = np.min(ts)
+                except ValueError as e:
+                    print "THE WEIRD BUG HAPPENED!!!", str(e)
+                    import IPython
+                    IPython.embed()
                 assert(t > 0.0)
                 score = 1.0 - np.abs(dist) / t
                 rospy.logdebug("Collision heuristic: signed distance: " + str(dist) + ", t: " + str(t) + " vdir: " + str(vdir))
@@ -1402,6 +1408,7 @@ class PlacementHeuristic(object):
         if node.cached_value is not None:
             rospy.logdebug("Node has cached value. Returning cached value.")
             return node.cached_value
+        # self._env.SetViewer('qtcoin')
         # self._handle = self.visualize_node(node)  # TODO delete
         # compute the collision cost for this pose
         col_val = self.evaluate_collision(node)
@@ -1409,6 +1416,7 @@ class PlacementHeuristic(object):
         grasp_val = self.evaluate_grasp_compatibility(node)
         total_value = self._parameters['plcmt_weight'] * stability_val + self._parameters['col_weight'] * col_val + \
             self._parameters['grasp_weight'] * grasp_val
+        # TODO shouldn't normalize by grasp weight if there is no grasp
         total_value /= (self._parameters['plcmt_weight'] + self._parameters['col_weight'] +
                         self._parameters['grasp_weight'])
         rospy.logdebug("Evaluated node %s. Collision: %f, Stability: %f, Grasp: %f, Total value: %f" %
@@ -1474,7 +1482,8 @@ class SE3Hierarchy(object):
             self._depth = depth
             self._hierarchy = hierarchy
             self._cartesian_range = cartesian_box[1] - cartesian_box[0]
-            self._child_dimensions = self._cartesian_range / self._hierarchy._cart_branching
+            bfs = hierarchy.get_branching_factors(depth)
+            self._child_dimensions = self._cartesian_range / bfs[:3]
             self._child_cache = {}
             self._white_list = None
             self.cached_value = None
@@ -1514,8 +1523,8 @@ class SE3Hierarchy(object):
                                    np.random.randint(-1, 2),
                                    np.random.randint(-1, 2)])
             child_id = node.get_id(relative_to_parent=True)
-            max_ids = [self._hierarchy._cart_branching - 1,
-                       self._hierarchy._cart_branching - 1, self._hierarchy._cart_branching - 1]
+            bfs = self._hierarchy.get_branching_factors(self._depth)
+            max_ids = bfs[:3] - 1
             # TODO support white list
             neighbor_id = np.zeros(5, np.int)
             neighbor_id[:3] = np.clip(child_id[:3] + random_dir, 0, max_ids)
@@ -1605,7 +1614,19 @@ class SE3Hierarchy(object):
             raise RuntimeError("Return types different from matrix are not implemented yet!")
 
         def get_white_list(self):
+            """
+                Return white list.
+            """
             return self._white_list
+
+        def get_white_list_length(self):
+            """
+                Return length of white list. This is the number of children that still
+                can be sampled from this node.
+            """
+            if self._white_list is not None:
+                return len(self._white_list)
+            return self.get_num_children()
 
         def get_id(self, relative_to_parent=False):
             """
@@ -1639,15 +1660,23 @@ class SE3Hierarchy(object):
             """
             return self._depth == self._hierarchy.get_depth()
 
-    def __init__(self, bounding_box, cart_branching, depth):
+    def __init__(self, bounding_box, root_edge_length, cart_branching, depth):
         """
             Creates a new hierarchical grid on SE(3), i.e. R^3 x SO(3)
-            @param bounding_box - (min_point, max_point), where min_point and max_point are numpy arrays of length 3
+            ---------
+            Arguments
+            ---------
+            bounding_box, (min_point, max_point), where min_point and max_point are numpy arrays of length 3
                             describing the edges of the bounding box this grid should cover
-            @param cart_branching - branching factor (number of children) for cartesian coordinates, i.e. x, y, z
-            @param depth - maximal depth of the hierarchy (can be an integer in {1, 2, 3, 4})
+            root_edge_length, float - desired edge length of first level cartesian partitions
+            cart_branching - branching factor for cartesian child partitions from depth 2 onwards
+            depth - maximal depth of the hierarchy
         """
+        self._bounding_box = bounding_box
         self._cart_branching = cart_branching
+        self._root_edge_length = root_edge_length
+        assert(self._root_edge_length > 0.0)
+        assert(self._cart_branching > 0)
         self._max_depth = depth
         self._root = self.SE3HierarchyNode(cartesian_box=bounding_box,
                                            so3_key=so3hierarchy.get_root_key(),
@@ -1700,10 +1729,23 @@ class SE3Hierarchy(object):
             Return branching factors at the given depth.
         """
         bfs = np.empty((5,), dtype=int)
-        bfs[:3] = self._cart_branching
+        if depth == 0:
+            # for the root compute special cartesian branching factor
+            edge_lengths = self._bounding_box[1] - self._bounding_box[0]
+            # determine the shortest edge of the workspace
+            shortest_dim = np.argmin(edge_lengths)
+            # we want along this dimension at least 1 node and ideally as many as there fit with edge length self._root_edge_length
+            n_0 = edge_lengths[shortest_dim] / self._root_edge_length
+            bfs[shortest_dim] = 1 if n_0 < 1.0 else int(np.round(n_0))
+            e_0 = edge_lengths[shortest_dim] / bfs[shortest_dim]
+            # Now select the number of cells for the other dimensions such that the cells' edge lengths are most similar
+            other_dims = np.nonzero(np.array(range(3)) != shortest_dim)[0]
+            bfs[other_dims] = map(int, np.round((edge_lengths[other_dims] / e_0)))
+        else:
+            bfs[:3] = self._cart_branching
         bfs[3:] = so3hierarchy.get_branching_factors(depth)
         return bfs
-        
+    
     def get_root(self):
         return self._root
 
@@ -1884,7 +1926,7 @@ class PlacementGoalPlanner(GoalHierarchy):
                 'max_slope_angle': 0.2,
                 'min_chull_distance': -0.008,
                 'rhobeg': 0.01,
-                'max_iter': 250,
+                'max_iter': 100,
             }
 
         def post_optimize(self, plcmt_result):
@@ -2025,6 +2067,7 @@ class PlacementGoalPlanner(GoalHierarchy):
         self._placement_heuristic = PlacementHeuristic(
             env, scene_sdf, base_path, robot_name=robot_name, manip_name=manip_name, gripper_file=gripper_file)
         self._optimizer = optimization.StochasticOptimizer(self._placement_heuristic)
+        self._bf_optimizer = optimization.BruteForceOptimizer(self._placement_heuristic)
         robot_interface = None
         if robot_name:
             robot_interface = PlacementGoalPlanner.RobotInterface(env, robot_name, manip_name, urdf_file_name)
@@ -2035,7 +2078,7 @@ class PlacementGoalPlanner(GoalHierarchy):
                                                                  self._placement_heuristic.evaluate_collision,
                                                                  robot_interface)
         self._placement_volume = None
-        self._parameters = {'cart_branching': 4, 'max_depth': 4, 'num_iterations': 100}  # TODO compute cartesian branching based on placement volume
+        self._parameters = {'root_edge_length': 0.2, 'cart_branching': 4, 'max_depth': 4, 'num_iterations': 100}
         self._initialized = False
 
     def set_placement_volume(self, workspace_volume):
@@ -2067,7 +2110,11 @@ class PlacementGoalPlanner(GoalHierarchy):
             rospy.logwarn("Specified depth limit exceeds maximal search depth. Capping search depth.")
         for depth in xrange(start_depth, start_depth + depth_limit):
             rospy.logdebug("Searching for placement pose on depth %i" % depth)
-            best_val, best_node = self._optimizer.run(current_node, num_iterations)
+            if num_iterations < current_node.get_white_list_length():
+                best_val, best_node = self._optimizer.run(current_node, num_iterations)
+            else:
+                rospy.loginfo("Few nodes left, switching to brute force.")
+                best_val, best_node = self._bf_optimizer.run(current_node)
             current_node = best_node
         # we are done with searching for a good node in the hierarchy
         result = PlacementGoalPlanner.PlacementResult(best_node, best_val)
@@ -2131,7 +2178,7 @@ class PlacementGoalPlanner(GoalHierarchy):
         if self._placement_heuristic.get_target_object() is None:
             raise ValueError("Could not intialize as there is no placement target object available")
         self._hierarchy = SE3Hierarchy(self._placement_volume,
-                                       # TODO it makes more sense to provide a resolution instead
+                                       self._parameters['root_edge_length'],
                                        self._parameters['cart_branching'],
                                        self._parameters['max_depth'])
         self._root = PlacementGoalPlanner.PlacementResult(self._hierarchy.get_root(), -1.0*float('inf'))

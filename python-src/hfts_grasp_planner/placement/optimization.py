@@ -30,12 +30,41 @@ class StochasticOptimizer(object):
         best_node = root.get_random_node()
         best_value = self._objective_fn.evaluate(best_node)
         # self.debug(root)
-        for i in xrange(num_iterations):
+        for _ in xrange(num_iterations):
             tmp_node = root.get_random_node()
             o_val = self._objective_fn.evaluate(tmp_node)
             if self._objective_fn.is_better(o_val, best_value):
                 best_value = o_val
                 best_node = tmp_node
+        return best_value, best_node
+
+
+class BruteForceOptimizer(object):
+    def __init__(self, objective_fn):
+        """
+            Initializes new brute force optimizer with the given objective function.
+        """
+        self._objective_fn = objective_fn
+
+    def run(self, root):
+        """
+            Run a brute force optimization over all children of the given node.
+            The node is expected to have the functions get_children() and get_random_node()
+            A node is assumed to be evaluatable by the objective function.
+            --------
+            Returns
+            --------
+            best_value, float
+            best_node, Node type
+        """
+        children = root.get_children()
+        best_node = root.get_random_node()
+        best_value = self._objective_fn.evaluate(best_node)
+        for child in children:
+            val = self._objective_fn.evaluate(child)
+            if self._objective_fn.is_better(val, best_value):
+                best_node = child
+                best_value = val
         return best_value, best_node
 
 
@@ -59,7 +88,7 @@ class StochasticGradientDescent(object):
         """
         best_node = root.get_random_node()
         best_value = self._objective_fn.evaluate(best_node)
-        for i in xrange(num_iterations):
+        for _ in xrange(num_iterations):
             tmp_node = root.get_random_neighbor(best_node)
             o_val = self._objective_fn.evaluate(tmp_node)
             if self._objective_fn.is_better(o_val, best_value):
