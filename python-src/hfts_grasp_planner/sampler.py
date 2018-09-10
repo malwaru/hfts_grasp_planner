@@ -863,7 +863,7 @@ class HierarchyCacheNode(object):
         self._goal_nodes.append(goal_node)
         self._active_goal_node_idx = 0
         self._children = []
-        self._child_labels = []
+        # self._child_labels = []
         self._active_children = []
         self._inactive_children = []
         self._t = initial_temp
@@ -944,7 +944,10 @@ class HierarchyCacheNode(object):
     def add_child(self, child):
         self._children.append(child)
         self._active_children.append(child)
-        self._child_labels.append(child.get_label())
+        # self._child_labels.append(child.get_hashable_label())
+        # Remove child from white list
+        white_list = self._goal_nodes[0].get_white_list()
+        white_list.remove(child.get_local_hashable_label())
         child._parent = self
         if child.is_leaf():
             self._num_leaves_in_branch += 1
@@ -985,17 +988,14 @@ class HierarchyCacheNode(object):
     def get_label(self):
         return self._goal_nodes[0].get_label()
 
-    def get_sampled_child_labels(self):
-        """
-            Returns the labels of the all sampled children of this node.
-        """
-        return self._child_labels
-
     def get_active_children(self):
         return self._active_children
 
     def get_hashable_label(self):
         return self._goal_nodes[0].get_hashable_label()
+
+    def get_local_hashable_label(self):
+        return self._goal_nodes[0].get_local_hashable_label()
 
     def get_configurations(self):
         """ Returns all configurations stored for this hierarchy node."""
@@ -1246,9 +1246,7 @@ class LazyHierarchySampler(object):
         assert num_iterations <= self._num_iterations[depth]
         self._goal_hierarchy.set_max_iter(num_iterations)
         do_post_opt = depth == self._goal_hierarchy.get_max_depth() - 1
-        child_labels = parent_node.get_sampled_child_labels()
         new_goal_node = self._goal_hierarchy.sample_warm_start(hierarchy_node=goal_node, depth_limit=1,
-                                                               label_cache=child_labels,
                                                                post_opt=do_post_opt)
         if new_goal_node.is_goal() and new_goal_node.is_valid():
             rospy.logdebug('[FreeSpaceProximitySampler::_sampleChild] We sampled a valid goal here!!!')

@@ -260,6 +260,7 @@ class SimplePlacementQuality(object):
                             "alpha_weight": 1.0, "d_weight": 1.0, "p_weight": 1.0, 'gamma_weight': 2.0
                             }
         self._max_ray_length = 2.0
+        self._d_value_normalizer = 1.0  # maximum distance the object can fall in a target volume
         if parameters:
             for (key, value) in parameters:
                 self._parameters[key] = value
@@ -1456,53 +1457,39 @@ class SE3Hierarchy(object):
             self._cartesian_range = cartesian_box[1] - cartesian_box[0]
             self._child_dimensions = self._cartesian_range / self._hierarchy._cart_branching
             self._child_cache = {}
+            self._white_list = None
             self.cached_value = None
 
-        def get_random_node(self, white_list=None):
+        def get_random_node(self):
             """
                 Return a random child node, as required by optimizers defined in
                 the optimization module. This function simply calls get_random_child().
-                ---------
-                Arguments
-                ---------
-                white_list, set - if provided the random node is only sampled from the given white list
             """
-            return self.get_random_child(white_list)
+            return self.get_random_child()
 
-        def get_random_child(self, white_list=None):
+        def get_random_child(self):
             """
-                Returns a randomly selected child node of this node.
-                ---------
-                Arguments
-                ---------
-                white_list, set - if provided the random node is only sampled from the given white list
-
-                Returns None, if this node is at the bottom of the hierarchy.
+                Returns a randomly selected child node from the white list of this node.
             """
+            if self._white_list is None:
+                self._white_list = self._hierarchy.generate_white_list(self._depth)
             if self._depth == self._hierarchy._max_depth:
                 return None
-            if white_list is not None:
-                random_child = random.sample(white_list, 1)[0]
-            else:
-                bfs = so3hierarchy.get_branching_factors(self._depth)
-                # TODO update this to also work with different cartesian branching
-                random_child = np.array([np.random.randint(self._hierarchy._cart_branching),
-                                        np.random.randint(self._hierarchy._cart_branching),
-                                        np.random.randint(self._hierarchy._cart_branching),
-                                        np.random.randint(bfs[0]),
-                                        np.random.randint(bfs[1])], np.int)
-            return self.get_child_node(random_child)
+            if len(self._white_list) > 0:
+                random_child = random.sample(self._white_list, 1)[0]
+                return self.get_child_node(random_child)
+            return None
 
-        def get_random_neighbor(self, node, white_list=None):
+        def get_random_neighbor(self, node):
             """
                 Returns a randomly selected neighbor of the given child node.
                 ---------
                 Arguments
                 ---------
                 node has to be a child of this node.
-                white_list, set - if provided random neighbor is guaranteed to be from this white list # TODO support this
                 -------
                 Returns
+                TODO support white list
             """
             random_dir = np.array([np.random.randint(-1, 2),
                                    np.random.randint(-1, 2),
@@ -1598,8 +1585,8 @@ class SE3Hierarchy(object):
                 return result
             raise RuntimeError("Return types different from matrix are not implemented yet!")
 
-        def generate_white_list(self):
-            return self._hierarchy.generate_white_list(self._depth)
+        def get_white_list(self):
+            return self._white_list
 
         def get_id(self, relative_to_parent=False):
             """
@@ -1687,7 +1674,7 @@ class SE3Hierarchy(object):
             white_list, set - a set of all possible child ids (relative to parent)
         """
         bfs = self.get_branching_factors(depth)
-        return itertools.product(*map(xrange, bfs))
+        return set(itertools.product(*map(xrange, bfs)))
 
     def get_branching_factors(self, depth):
         """
@@ -1733,7 +1720,6 @@ class PlacementGoalPlanner(GoalHierarchy):
             self._bgoal = False
             self.obj_pose = hierarchy_node.get_representative_value()
             self._was_evaluated = False
-            self._white_list = hierarchy_node.generate_white_list()
 
         def is_valid(self):
             assert(self._was_evaluated)
@@ -1775,7 +1761,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             return self._quality_value
 
         def get_white_list(self):
-            return self._white_list
+            return self._hierarchy_node.get_white_list()
 
     class RobotInterface(object):
         """
@@ -2048,7 +2034,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             self._initialize()
         return self.sample_warm_start(self.get_root(), depth_limit, post_opt=post_opt)
 
-    def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):
+    def sample_warm_start(self, hierarchy_node, depth_limit, post_opt=False):
         """ Samples a placement configuration from the given node on. """
         if not self._initialized:
             self._initialize()
