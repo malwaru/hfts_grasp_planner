@@ -11,6 +11,9 @@ sdf_volume: [-0.8, -0.7, 0.0, 0.7, 1.1, 1.2]
 time_limit: 40.0
 grasp_pose: [-0.16877364, -0.00930885,  0.00032054, 0.70197418,  0.08854614,  0.70307962, -0.07121011]
 grasp_config: [0.01830301,]
+# grasp_file: grasps/jane_eyre_dvd.yaml
+# grasp_id: 0
+# initial_obj_pose: [-0.65, 0.01, 0.63, 1.0, 0.0, 0.0, 0.0]
 parameters:
   quality_weight: 2.0
   collision_weight: 2.0

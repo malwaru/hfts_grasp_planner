@@ -1,0 +1,15 @@
+board_size: {x: 8, y: 9}
+depth_scale_factor: 0.0001
+export_time: '2014-11-25 15:24:13.615293'
+failure: false
+has_depth_integrated_mesh: true
+has_poisson_mesh: true
+has_tsdf_complete_mesh: true
+has_tsdf_mesh: true
+has_visual_hull_mesh: true
+id: 5
+name: mommys_helper_outlet_plugs
+recommended_mesh: depth_integrated
+set: set_11_05_05_06PM
+square_size: 0.018923
+version: 1

@@ -1,0 +1,8 @@
+<KinBody name="mommys_helper_outlet_plugs">
+  <Body type="static" name="mommys_helper_outlet_plugs">
+    <Geom type="trimesh">
+      <Render>../meshes/visual_hull.stl</Render>
+      <Data>../meshes/visual_hull.stl</Data>
+    </Geom>
+  </Body>
+</KinBody>
