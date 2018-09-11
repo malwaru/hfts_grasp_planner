@@ -1345,11 +1345,11 @@ class PlacementHeuristic(object):
         if type(node) == SE3Hierarchy.SE3HierarchyNode:
             pose = node.get_representative_value()
             self._kinbody.SetTransform(pose)
-            dist, vdir = self._kinbody_octree.compute_max_penetration(self._scene_sdf, b_compute_dir=True)
+            dist, vdir, _ = self._kinbody_octree.compute_max_penetration(self._scene_sdf, b_compute_dir=True)
             if self._gripper_octree is not None:
                 robot_pose = np.dot(pose, self._inv_grasp_tf)
-                rdist, rdir = self._gripper_octree.compute_max_penetration(robot_pose, self._grasp_config,
-                                                                           self._scene_sdf, b_compute_dir=True)
+                rdist, rdir, _, _ = self._gripper_octree.compute_max_penetration(robot_pose, self._grasp_config,
+                                                                                 self._scene_sdf, b_compute_dir=True)
                 if rdist < dist:
                     dist = rdist
                     vdir = rdir

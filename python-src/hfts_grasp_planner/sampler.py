@@ -10,8 +10,6 @@ import random
 import abc
 from rtree import index
 from hfts_grasp_planner.rrt import SampleData
-from hfts_grasp_planner.sdf.kinbody import OccupancyOctree
-from hfts_grasp_planner.sdf.robot import RobotOccupancyOctree
 
 NUMERICAL_EPSILON = 0.00001
 
@@ -716,25 +714,21 @@ class ProximityRating(NodeRating):
 
 class SDFIntersectionRating(NodeRating):
 
-    def __init__(self, scene_sdf, robot, link_names, b_include_attached=False,
-                 cell_size=0.01):
+    def __init__(self, scene_sdf, robot_occutree):
         """
             Create a new SDFIntersectionRating.
             ---------
             Arguments
             ---------
             scene_sdf, SceneSDF - signed distance field used for intersection computation
-            robot, OpenRAVE robot - the robot to plan for (its active manipulator and active DOFs are used)
+            robot_occutree, RobotOccupancyTree - Occupancy tree for the robot
             link_name, list of strings - names of the robot arm links for which to compute intersection
             b_include_attached, bool - if True, also computes intersection with attached bodies # TODO not supported yet
         """
         super(SDFIntersectionRating, self).__init__()
         self._scene_sdf = scene_sdf
-        self._robot_occupancy_tree = RobotOccupancyOctree(cell_size, robot, link_names)
-        self._robot = robot
-        self._object_occupancy_tree = None
-        self._object = None
-        self._cell_size = cell_size
+        self._robot_occupancy_tree = robot_occutree
+        self._robot = self._robot_occupancy_tree.get_robot()
         self._min_connection_chance = 1e-8  # TODO figure sth out here
         self._min_collision_free_chance = 1e-8  # TODO
         self._parameters = {
@@ -742,19 +736,6 @@ class SDFIntersectionRating(NodeRating):
             'collision_weight': 2.0,
             'collision_cost_scale': 1.0,
         }
-
-    def set_grasped_object(self, obj_body):
-        """
-            Inform this rating that the given object is grasped by the robot and should
-            be included in the collision cost.
-            ---------
-            Arguments
-            ---------
-            obj_body, OpenRAVE kinbody
-        """
-        if obj_body != self._object:
-            self._object_occupancy_tree = OccupancyOctree(self._cell_size, obj_body.GetLinks()[0])
-            self._object = obj_body
 
     def max_rating(self):
         return self._parameters['connected_weight'] + self._parameters['collision_weight']
@@ -808,9 +789,6 @@ class SDFIntersectionRating(NodeRating):
         # TODO figure out which value to use
         _, _, dc, _ = self._robot_occupancy_tree.compute_intersection(self._robot.GetTransform(),
                                                                       config, self._scene_sdf)
-        if self._object_occupancy_tree is not None:
-            _, _, odc, _, _, _ = self._object_occupancy_tree.compute_intersection(self._scene_sdf)
-            dc += odc
         return self._distance_kernel(numpy.abs(dc), self._parameters["collision_cost_scale"])
 
     def _distance_kernel(self, dist, w=1.0):
@@ -824,8 +802,8 @@ class SDFPartitionRating(SDFIntersectionRating):
         The quality function is assumed to be within (-infty, 1]
     """
 
-    def __init__(self, scene_sdf, robot, link_names, b_include_attached=False, cell_size=0.01):
-        super(SDFPartitionRating, self).__init__(scene_sdf, robot, link_names, b_include_attached, cell_size)
+    def __init__(self, scene_sdf, robot_occutree):
+        super(SDFPartitionRating, self).__init__(scene_sdf, robot_occutree)
         self._parameters['quality_weight'] = 10.0
         self._parameters['quality_scale'] = 4.0
 

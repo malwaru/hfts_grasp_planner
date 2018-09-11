@@ -2,12 +2,13 @@ import os
 import numpy
 import rospy
 import openravepy as orpy
-from orsampler import RobotCSpaceSampler
+from orsampler import RobotCSpaceSampler, SDFCollisionAvoidanceConstraint
 from sampler import LazyHierarchySampler, ProximityRating, SDFIntersectionRating, SDFPartitionRating
-from rrt import DynamicPGoalProvider, RRT
+from rrt import DynamicPGoalProvider, RRT, ConstraintsManager
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.placement_planning as plcmnt_module
 import hfts_grasp_planner.sdf.core as sdf_module
+from hfts_grasp_planner.sdf.robot import GrabbingRobotOccupancyTree
 from hierarchy_visualization import FreeSpaceProximitySamplerVisualizer
 
 
@@ -69,6 +70,7 @@ class IntegratedPlacementPlanner(object):
             'plcmnt_root_edge_length': 0.2,
             'plcmnt_cart_branching': 4,
             'plcmnt_max_depth': 4,
+            'occupancy_tree_cellsize': 0.005,
         }
         self.set_parameters(**kwargs)
         self._env = orpy.Environment()
@@ -105,10 +107,15 @@ class IntegratedPlacementPlanner(object):
         # rating_function = SDFIntersectionRating(self._scene_sdf, self._robot, link_names)
         # cspace_diameter = numpy.linalg.norm(self._c_sampler.get_upper_bounds() - self._c_sampler.get_lower_bounds())
         # rating_function = ProximityRating(cspace_diameter, **self._parameters)
-        self._rating_function = SDFPartitionRating(self._scene_sdf, self._robot, link_names)
+        self._robot_occupancy_tree = GrabbingRobotOccupancyTree(
+            self._parameters['occupancy_tree_cellsize'], self._robot, link_names)
+        self._rating_function = SDFPartitionRating(self._scene_sdf, self._robot_occupancy_tree)
         self._rating_function.set_parameters(connected_weight=self._parameters['connected_weight'],
                                              collision_weight=self._parameters['collision_weight'],
                                              quality_weight=self._parameters['quality_weight'])
+        self._constraints_manager = ConstraintsManager()
+        self._constraints_manager.global_constraints.append(
+            SDFCollisionAvoidanceConstraint(self._scene_sdf, self._robot_occupancy_tree))
         # initialize optional members as None
         self._debug_tree_drawer = None
         self._hierarchy_visualizer = None
@@ -155,7 +162,7 @@ class IntegratedPlacementPlanner(object):
                                            cart_branching=self._parameters['plcmnt_cart_branching'],
                                            max_depth=self._parameters['plcmnt_max_depth'])
         self._plcmt_planner.setup(target_obj, grasp_tf, grasp_config)
-        self._rating_function.set_grasped_object(target_body)
+        self._robot_occupancy_tree.update_object()
         if self._debug_tree_drawer:
             self._debug_tree_drawer.clear()
             debug_fn = self._debug_tree_drawer.draw_trees
@@ -171,7 +178,8 @@ class IntegratedPlacementPlanner(object):
         pgoal_provider = DynamicPGoalProvider(self._parameters["rrt_pgoal_max"],
                                               self._parameters["rrt_pgoal_w"],
                                               self._parameters["rrt_pgoal_min"])
-        motion_planner = RRT(pgoal_provider, self._c_sampler, goal_sampler)
+        motion_planner = RRT(pgoal_provider, self._c_sampler, goal_sampler,
+                             constraints_manager=self._constraints_manager)
         start_config = self._robot.GetActiveDOFValues()
         path = motion_planner.proximity_birrt(start_config, time_limit=time_limit, debug_function=debug_fn)
         return path, None  # TODO return placement pose, too

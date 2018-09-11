@@ -195,8 +195,9 @@ class OccupancyOctree(object):
         # iterate through hierarchy layer by layer (bfs) - this way we can perform more efficient batch distance queries
         while current_layer:
             # first get the positions of all cells on the current layer
-            query_positions = np.ones((len(current_layer), 4))
+            query_positions = np.ones((len(current_layer), 4))  # TODO we could allocate this array with max size once
             query_positions[:, :3] = np.array([cell.cart_center for cell in current_layer])
+            # TODO we also don't need this additional 1 for this operation (decompose transformation in rotation and translation)
             query_positions = np.dot(query_positions, tf.transpose())
             # query distances for all cells on this layer
             distances = scene_sdf.get_distances(query_positions)
@@ -249,6 +250,7 @@ class OccupancyOctree(object):
             penetration distance, float - minimum in scene_sdf in the volume covered by this link.
             v_to_border, numpy array of shape (3,) - translation vector to move the cell with maximum penetration
                 out of collision (None if b_compute_dir is False)
+            pos, numpy array of shape (3,) - position of the cell with maximum penetration (in world frame)
             DISABLED: dist_to_surface, float - if b_compute_dir is True, the distance from the point of maximum 
                      penetration towards the body's surface along -v_to_border
         """
@@ -256,6 +258,7 @@ class OccupancyOctree(object):
         max_penetration = 0.0
         # dist_to_surface = 0.0  # distance to object surface along the direction of penetration
         direction = np.array([0.0, 0.0, 0.0]) if b_compute_dir else None
+        max_pen_position = np.array([0.0, 0.0, 0.0])
         if not self._root.occupied:
             return max_penetration, direction
         tf = self._link.GetTransform()
@@ -280,6 +283,7 @@ class OccupancyOctree(object):
                     else:
                         if max_penetration > dist:
                             max_penetration = dist
+                            max_pen_position = pos[:3]
                             if b_compute_dir:  # retrieve direction
                                 direction = np.array(scene_sdf.get_direction(pos[:3]))
                                 # compute the distance from this cell to the object's surface along the direction
@@ -300,7 +304,7 @@ class OccupancyOctree(object):
             # switch to next layer
             current_layer, next_layer = next_layer, current_layer
             next_layer.clear()
-        return max_penetration, direction  # , dist_to_surface
+        return max_penetration, direction, max_pen_position  # , dist_to_surface
 
     def draw_cell(self, cell):
         """

@@ -3,7 +3,9 @@
     this module provides an SDF-based obstacle cost function.
 """
 import yaml
+import rospy
 import numpy as np
+from itertools import izip
 from hfts_grasp_planner.sdf.core import SceneSDF
 from hfts_grasp_planner.sdf.kinbody import OccupancyOctree
 
@@ -31,10 +33,12 @@ class RobotOccupancyOctree(object):
         self._occupancy_trees = []
         self._total_volume = 0.0
         self._total_num_occupied_cells = 0
+        self._link_names = []
         for link in self._robot.GetLinks():
             if link_names is not None and link.GetName() not in link_names:
                 continue
             self._occupancy_trees.append(OccupancyOctree(cell_size, link))
+            self._link_names.append(link.GetName())
             self._total_volume += self._occupancy_trees[-1].get_volume()
             self._total_num_occupied_cells += self._occupancy_trees[-1].get_num_occupied_cells()
 
@@ -87,16 +91,26 @@ class RobotOccupancyOctree(object):
             penetration distance, float - minimum in scene_sdf in the volume covered by this link.
             v_to_border, numpy array of shape (3,) - translation vector to move the cell with maximum penetration
                 out of collision (None if b_compute_dir is False)
+            pos, numpy array of shape (3,) - world position of the cell with maximum penetration
+            link_name, string - name of the link with maximal penetration 
         """
         self._robot.SetTransform(robot_pose)
         self._robot.SetActiveDOFValues(robot_config)
-        pdist, vdir = 0.0, None
-        for tree in self._occupancy_trees:
-            tdist, tdir = tree.compute_max_penetration(scene_sdf, b_compute_dir=b_compute_dir)
+        pdist, vdir, pos, link_name = 0.0, None, None, None
+        for tree, name in izip(self._occupancy_trees, self._link_names):
+            tdist, tdir, tpos = tree.compute_max_penetration(scene_sdf, b_compute_dir=b_compute_dir)
             if tdist < pdist:
                 pdist = tdist
                 vdir = tdir
-        return pdist, vdir
+                pos = tpos
+                link_name = name
+        return pdist, vdir, pos, link_name
+
+    def get_robot(self):
+        """
+            Return the robot this occupancy tree is created for.
+        """
+        return self._robot
 
     def visualize(self, level, config=None):
         """
@@ -113,6 +127,80 @@ class RobotOccupancyOctree(object):
         for tree in self._occupancy_trees:
             handles.extend(tree.visualize(level))
         return handles
+
+
+class GrabbingRobotOccupancyTree(RobotOccupancyOctree):
+    """
+        Like a RobotOccupancyOctree but it also considers the object that is 
+        currently grasped by the robot.
+    """
+
+    def __init__(self, cell_size, robot, link_names=None):
+        """
+            Create a new GrabbingRobotOccupancyTree. 
+            See RobotOccupancyTree for information on arguments.
+            NOTE: Before using this object, you need to call update_object().
+        """
+        super(GrabbingRobotOccupancyTree, self).__init__(cell_size, robot, link_names)
+        self._object = None
+        self._object_octree = None
+        self._octree_cache = {}
+
+    def update_object(self):
+        """
+            Update the object octree. 
+            If the grabbed object is still the same as last time
+            this function was called, this is a no-op. Otherwise, it will
+            update the internal object octree. It is assumed that the robot
+            only grasps ONE object at a time. If no object is grasped, this class
+            continues to function in the exact same way as an RobotOccupancyOctree.
+        """
+        # whatever happened, cache the old octree
+        if self._object is not None:
+            self._octree_cache[self._object.GetName()] = self._object_octree
+        # check what the currently grabbed object is
+        grabbed_objects = self._robot.GetGrabbed()
+        if len(grabbed_objects) > 0:
+            if len(grabbed_objects) > 1:
+                rospy.logwarn("The robot is grasping more than one object. Working with first one.")
+            self._object = grabbed_objects[0]
+            if self._object.GetName() in self._octree_cache:
+                self._object_octree = self._octree_cache[self._object.GetName()]
+            else:
+                link = self._object.GetLinks()[0]
+                self._object_octree = OccupancyOctree(self._cell_size, link)
+        else:
+            # no grasped object
+            self._object = None
+            self._object_octree = None
+
+    def compute_intersection(self, robot_pose, robot_config, scene_sdf):
+        """
+            See RobotOccupancyTree for documentation. 
+            Also considers the grasped object.
+        """
+        v, rv, dc, adc = super(GrabbingRobotOccupancyTree, self).compute_intersection(
+            robot_pose, robot_config, scene_sdf)
+        if self._object_octree is not None:
+            ov, orv, odc, oadc, _, _ = self._object_octree.compute_intersection(scene_sdf)
+            return v + ov, rv + orv, dc + odc, adc + oadc  # TODO figure out what to doe with the relative values
+        return v, rv, dc, adc
+
+    def compute_max_penetration(self, robot_pose, robot_config, scene_sdf, b_compute_dir=False):
+        """
+            See RobotOccupancyTree for documentation. 
+            Also considers the grasped object.
+        """
+        pdist, vdir, ppos, link_name = super(GrabbingRobotOccupancyTree, self).compute_max_penetration(
+            robot_pose, robot_config, scene_sdf, b_compute_dir)
+        if self._object_octree is not None:
+            opdist, ovdir, opos = self._object_octree.compute_max_penetration(scene_sdf, b_compute_dir=b_compute_dir)
+            if opdist < pdist and b_compute_dir:
+                vdir = ovdir
+                pdist = opdist
+                ppos = opos
+                link_name = self._object.GetName()
+        return pdist, vdir, ppos, link_name
 
 
 class RobotSDF(object):

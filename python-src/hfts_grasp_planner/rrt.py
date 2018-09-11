@@ -259,13 +259,16 @@ class Constraint(object):
 class ConstraintsManager(object):
     def __init__(self, callback_function=None):
         self._constraints_storage = {}
+        self.global_constraints = []  # always active, never reset
         self._active_constraints = []
         self._new_tree_callback = callback_function
 
     def project(self, old_config, config):
-        if len(self._active_constraints) == 0:
+        if len(self._active_constraints) == 0 and len(self.global_constraints) == 0:
             return config
         # For now we just iterate over all constraints and project successively
+        # for constraint in self.global_constraints:
+        #     config = constraint.project(old_config, config)
         for constraint in self._active_constraints:
             config = constraint.project(old_config, config)
         return config
@@ -275,7 +278,7 @@ class ConstraintsManager(object):
             self._active_constraints.extend(self._constraints_storage[tree.get_id()])
 
     def reset_constraints(self):
-        self._active_constraints = []
+        self._active_constraints = list(self.global_constraints)
 
     def clear(self):
         self._active_constraints = []

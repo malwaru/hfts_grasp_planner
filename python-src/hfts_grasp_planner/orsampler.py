@@ -123,6 +123,93 @@ class GraspApproachConstraintsManager(ConstraintsManager):
         self._constraints_storage[tree.get_id()] = new_constraints
 
 
+class SDFCollisionAvoidanceConstraint(Constraint):
+    """
+        SDFCollisionAvoidanceConstraint attempts to assist avoiding collisions by 
+        projecting motions in configuration space away from these.
+    """
+
+    def __init__(self, scene_sdf, robot_octree):
+        """
+            Create a new SDFCollisionAvoidanceConstraint.
+            ----------
+            Arguments
+            ----------
+            scene_sdf, SceneSDF 
+            robot_octree, GrabbingRobotOccupancyTree or RobotOccupancyTree
+            or_env, OpenRAVE environment
+            robot, OpenRAVE robot that
+        """
+        self._scene_sdf = scene_sdf
+        self._robot_octree = robot_octree
+        self._robot = robot_octree.get_robot()
+        self._or_env = self._robot.GetEnv()
+
+    def is_active(self, old_config, config):
+        """
+            Return whether this constraint is active or not. It is active
+            if config is in collision.
+        """
+        with self._or_env:
+            with self._robot:
+                self._robot.SetActiveDOFValues(config)
+                return self._or_env.CheckCollision(self._robot)
+
+    def heuristic_gradient(self, config):
+        """
+            Compute a direction in configuration space to hopefully move out of collision.
+        """
+        with self._or_env:
+            with self._robot:
+                # Set the current configuration
+                # self.robot.SetDOFValues(config)
+                # compute arm configuration gradient
+                pdist, pdir, ppos, link_name = self._robot_octree.compute_max_penetration(self._robot.GetTransform(),
+                                                                                          config, self._scene_sdf,
+                                                                                          b_compute_dir=True)
+                if pdist > 0.0 or pdir is None:
+                    return None
+                link = self._robot.GetLink(link_name)
+                if link is None:
+                    # the 'link' may be the grabbed object
+                    obj_body = self._or_env.GetKinBody(link_name)
+                    if obj_body is None:
+                        rospy.logerr(
+                            "[SDFCollisionAvoidanceConstraint] Could not retrieve link %s. It's neither a robot link nor an object.")
+                        return None
+                    # in case we a have grabbed body, the link name is the end-effector
+                    link = self._robot.GetActiveManipulator().GetEndEffector()
+
+                # for this position compute the direction in configuration space to move away from the collision
+                jacobian = self._robot.CalculateActiveJacobian(link.GetIndex(), ppos)
+                pseudo_inverse = numpy.linalg.pinv(jacobian)
+                arm_gradient = numpy.dot(pseudo_inverse, pdir / numpy.linalg.norm(pdir))
+                return arm_gradient / numpy.linalg.norm(arm_gradient)
+
+    def project(self, old_config, config):
+        """
+            Project the extension step from old_config towards config towards a collision-free configuration.
+            Note that the resulting configuration may still be in collision.
+        """
+        with self._or_env:
+            if self.is_active(old_config, config):
+                config_dir = config - old_config
+                # rospy.logdebug('[GraspApproachConstraint::project] config: ' + str(config) + ' oldConfig: ' +
+                #              str(oldConfig))
+                h_dir = self.heuristic_gradient(config)  # points away from collision
+                if h_dir is None:
+                    rospy.logwarn('[SDFCollisionAvoidanceConstraint::project] The heuristic gradient is None')
+                    return config
+                proj_dir = config_dir - numpy.dot(config_dir, h_dir) * h_dir
+                # rospy.logdebug('[SDFCollisionAvoidanceConstraint::project] Projecting configuration towards free' +
+                #    'space, projected dir: ' + str(proj_dir))
+                if numpy.linalg.norm(proj_dir) <= MINIMAL_STEP_LENGTH:  # 0.0:
+                    return config
+                return old_config + proj_dir
+            # rospy.logdebug('[GraspApproachConstraint::project] Not active')
+            return config
+
+
 class RobotCSpaceSampler(CSpaceSampler):
     def __init__(self, or_env, robot, scaling_factors=None):
         self.or_env = or_env
