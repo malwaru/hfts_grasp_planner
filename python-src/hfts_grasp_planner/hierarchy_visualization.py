@@ -1,5 +1,6 @@
 import igraph
 import rospy
+import numpy as np
 from std_msgs.msg import String
 
 
@@ -12,7 +13,8 @@ class FreeSpaceProximitySamplerVisualizer(object):
         self._labels_to_ids = {}
         self._nodes_cache = {}
         self.robot = robot
-        self.grabbed_object = None
+        self._env = self.robot.GetEnv()
+        self._mesh_handle = None
         self._graph_publisher = rospy.Publisher('/goal_region_graph', String, queue_size=1)
         rospy.Subscriber('/node_select', String, self._ros_callback)
 
@@ -28,8 +30,7 @@ class FreeSpaceProximitySamplerVisualizer(object):
                 rospy.logdebug('[HierarchyVisualizer::_ros_callback] Request to ' +
                                'show config ' + str(config))
                 self.robot.SetActiveDOFValues(config)
-                env = self.robot.GetEnv()
-                b_in_collision = env.CheckCollision(self.robot)
+                b_in_collision = self._env.CheckCollision(self.robot)
                 b_self_collision = self.robot.CheckSelfCollision()
                 if not b_in_collision and not b_self_collision:
                     rospy.logdebug('[HierarchyVisualizer::_ros_callback] Configuration' +
@@ -44,17 +45,22 @@ class FreeSpaceProximitySamplerVisualizer(object):
                     elif b_self_collision:
                         rospy.logdebug('[HierarchyVisualizer::_ros_callback] Configuration' +
                                        ' is in self-collision.')
-            # TODO this is placement specific
-            pose = node.get_goal_sampler_hierarchy_node().get_additional_data()
-            if pose is None:
-                rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_ros_callback] No object pose!')
+            # if we have an object pose, visualize it
+            obj_pose = node.get_goal_sampler_hierarchy_node().get_additional_data()
+            if obj_pose is not None:
+                # rospy.logdebug("[HierarchyVisualizer::_ros_callback] Object pose: " + str(obj_pose))
+                grabbed_objects = self.robot.GetGrabbed()
+                if len(grabbed_objects) > 0:
+                    grabbed_object = grabbed_objects[0]
+                    link = grabbed_object.GetLinks()[0]
+                    geom = link.GetGeometries()[0]
+                    mesh = geom.GetCollisionMesh()
+                    tf_points = np.dot(mesh.vertices, obj_pose[:3, :3].transpose()) + obj_pose[:3, 3]
+                    self._mesh_handle = self._env.drawtrimesh(tf_points, mesh.indices, np.array([0.0, 0.9, 0.02, 0.7]))
+                else:
+                    rospy.logwarn("[HierarchyVisualizer::_ros_callback] No grabbed object!")
             else:
-                if self.grabbed_object is None:
-                    self.grabbed_object = self.robot.GetGrabbed()[0]
-                    self.robot.Release(self.grabbed_object)
-                self.grabbed_object.SetTransform(pose)
-                rospy.logdebug("[HierarchyVisualizer::_ros_callback] Object pose: " + str(pose))
-
+                rospy.logdebug('[FreeSpaceProximitySamplerVisualizer::_ros_callback] No object pose!')
         else:
             rospy.logwarn('[FreeSpaceProximitySamplerVisualizer::_ros_callback] Received unknown node label.')
 
