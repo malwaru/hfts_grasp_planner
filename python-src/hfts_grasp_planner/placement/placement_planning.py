@@ -1274,7 +1274,7 @@ class PlacementHeuristic(object):
                 manip = robot.GetActiveManipulator()
             else:
                 manip = robot.GetManipulator(manip_name)
-            self._grasp_compatibility = SimpleGraspCompatibility(manip, gripper_file, vol_approx)  # TODO make settable as parameters
+            # self._grasp_compatibility = SimpleGraspCompatibility(manip, gripper_file, vol_approx)  # TODO make settable as parameters
             # We could also move the gripper collision into the GraspCompatilibity function, but this way we have a clear separation
             # between hard constraint (collision-free) and soft constraint (preferred orientation)
             tenv = orpy.Environment()  # TODO do we really need a separate environment here?
@@ -1418,7 +1418,7 @@ class PlacementHeuristic(object):
             self._parameters['grasp_weight'] * grasp_val
         # TODO shouldn't normalize by grasp weight if there is no grasp
         total_value /= (self._parameters['plcmt_weight'] + self._parameters['col_weight'] +
-                        self._parameters['grasp_weight'])
+                        self._parameters['grasp_weight'] * (self._grasp_compatibility is not None))
         rospy.logdebug("Evaluated node %s. Collision: %f, Stability: %f, Grasp: %f, Total value: %f" %
                        (str(node.get_id()), col_val, stability_val, grasp_val, total_value))
         node.cached_value = total_value
