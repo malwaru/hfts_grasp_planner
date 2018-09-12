@@ -37,6 +37,25 @@ def show_solution(result, planner):
         controller.Reset()
 
 
+def load_grasp(problem_desc):
+    if 'grasp_pose' in problem_desc and 'grasp_config' in problem_desc:
+        return
+    assert 'grasp_file' in problem_desc
+    with open(problem_desc['grasp_file']) as grasp_file:
+        grasp_yaml = yaml.load(grasp_file)
+        if 'grasp_id' in problem_desc:
+            grasp_id = problem_desc['grasp_id']
+        else:
+            grasp_id = 0
+        problem_desc['grasp_pose'] = grasp_yaml[grasp_id]['grasp_pose']
+        # grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
+        # grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
+        # grasp_pose = utils.inverse_transform(grasp_pose)
+        # problem_desc['grasp_pose'][:3] = grasp_pose[:3, 3]
+        # problem_desc['grasp_pose'][3:] = orpy.quatFromRotationMatrix(grasp_pose)
+        problem_desc['grasp_config'] = grasp_yaml[grasp_id]['grasp_config']
+
+
 def execute_placement_planner(planner, volume, problem_desc, ik_solver):
     robot = planner._env.GetRobot(problem_desc["robot_name"])
     manip = robot.GetManipulator(problem_desc["manip_name"])
@@ -71,8 +90,9 @@ def resolve_paths(problem_desc, yaml_file):
         cwd = os.getcwd()
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
-    for key in ['or_env', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file']:
-        problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
+    for key in ['or_env', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file']:
+        if key in problem_desc:
+            problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
 
 if __name__ == "__main__":
@@ -87,6 +107,7 @@ if __name__ == "__main__":
     with open(args.problem_desc, 'r') as f:
         problem_desc = yaml.load(f)
         resolve_paths(problem_desc, args.problem_desc)
+        load_grasp(problem_desc)
     # Grasp settings for bunny
     # obj_pose = np.array([[1.00000000e+00,   2.38317910e-07,  -4.89843428e-09, 7.30712295e-01],
     #                      [2.38317911e-07,  -9.99155414e-01,   4.10908549e-02, 2.94656865e-02],
@@ -96,6 +117,7 @@ if __name__ == "__main__":
     #                        [2.38317911e-07,  -9.99155414e-01,   4.10908549e-02, 2.94656865e-02],
     #                        [1.00000000e+00,   2.38317910e-07,  -4.89843450e-09, 1.66712295e-01],
     #                        [0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
+
     sdf_volume = (np.array(problem_desc['sdf_volume'][:3]), np.array(problem_desc['sdf_volume'][3:]))
     planner = ipp_module.IntegratedPlacementPlanner(problem_desc['or_env'],
                                                     problem_desc['sdf_file'], sdf_volume,
@@ -103,7 +125,8 @@ if __name__ == "__main__":
                                                     problem_desc['robot_name'],
                                                     problem_desc['manip_name'],
                                                     gripper_file=problem_desc['gripper_file'],
-                                                    urdf_file=problem_desc['urdf_file'],
+                                                    robot_urdf_file=problem_desc['urdf_file'],
+                                                    obj_urdf_path=problem_desc['urdf_path'],
                                                     draw_search_tree=args.debug,
                                                     draw_hierarchy=args.debug,
                                                     **problem_desc['parameters'])
@@ -113,11 +136,18 @@ if __name__ == "__main__":
     placement_volume = (np.array(problem_desc["plcmnt_volume"][:3]),
                         np.array(problem_desc["plcmnt_volume"][3:]))  # inside shelf
     planner._env.SetViewer('qtcoin')
+    # reset object pose, if provided
+    if 'initial_obj_pose' in problem_desc:
+        tb = planner._env.GetKinBody(problem_desc['target_name'])
+        tf = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
+        tf[:3, 3] = problem_desc['initial_obj_pose'][:3]
+        tb.SetTransform(tf)
+
     # planner._plcmt_planner._placement_heuristic._env.SetViewer('qtcoin')
     # planner._plcmt_planner._leaf_stage.robot_interface._env.SetViewer('qtcoin')
     handle = draw_volume(planner._env, placement_volume)
     print "Check the placement volume!", placement_volume
-    IPython.embed()
+    # IPython.embed()
     handle = None
-    execute_placement_planner(planner, placement_volume, problem_desc, ik_solver)
+    # execute_placement_planner(planner, placement_volume, problem_desc, ik_solver)
     IPython.embed()

@@ -34,7 +34,7 @@ class IntegratedPlacementPlanner(object):
     """
 
     def __init__(self, env_file, sdf_file, sdf_volume,
-                 data_path, robot_name, manip_name, gripper_file, urdf_file=None, **kwargs):
+                 data_path, robot_name, manip_name, gripper_file, robot_urdf_file, obj_urdf_path, **kwargs):
         """
             Creates a new integrated placement planner.
             ---------
@@ -50,7 +50,9 @@ class IntegratedPlacementPlanner(object):
             robot_name, string - name of the robot to plan for.
             manip_name, manipulator_name - name of the manipulator to use.
             gripper_file, string - filename containing OpenRAVE description of gripper
-            urdf_file, string (optional) - path to a urdf description of the robot. Needed if IKFast doesn't work
+            robot_urdf_file, string - path to a urdf description of the robot. Needed for physics simulation and 
+                trac_ik.
+            obj_urdf_path, string - path to a folder of kinbody urdfs. Needed for physics simulation
 
             Additionally, you may specify any parameter described in the class description.
         """
@@ -95,7 +97,7 @@ class IntegratedPlacementPlanner(object):
         # TODO do we need to let the plctm planner know about the manipulator?
         self._plcmt_planner = plcmnt_module.PlacementGoalPlanner(
             data_path, self._env, self._scene_sdf, robot_name, manip_name, gripper_file=gripper_file,
-            urdf_file_name=urdf_file)
+            urdf_file_name=robot_urdf_file, urdf_path=obj_urdf_path)
         self._c_sampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=self._parameters['dof_weights'])
         # TODO pass additional parameters
         # set rating function

@@ -2044,7 +2044,7 @@ class PlacementGoalPlanner(GoalHierarchy):
     ############################ PlacementGoalPlanner methods ############################
     def __init__(self, base_path,
                  env, scene_sdf, robot_name=None, manip_name=None, urdf_file_name=None,
-                 gripper_file=None, visualize=False):
+                 urdf_path=None, gripper_file=None, visualize=False):
         """
             Creates a PlacementGoalPlanner
             ---------
@@ -2056,6 +2056,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             robot_name, string (optional) - name of the robot to use for placing
             manip_name, string (optional) - in addition to robot name, name of the manipulator to use
             urdf_file_name, string (optional) - Filename of a URDF description of the robot
+            urdf_path, string (optional) - path to urdf descriptions of objects (needed for physics)
             gripper_file, string (optional) - Filename of an OpenRAVE model of the robot's gripper
             @param visualize If true, the internal OpenRAVE environment is set to be visualized
         """
@@ -2073,6 +2074,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             robot_interface = PlacementGoalPlanner.RobotInterface(env, robot_name, manip_name, urdf_file_name)
         # self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
         # TODO replace the leaf_stage with BayesOpt on Physics?
+        # TODO integrate new physics model
         self._leaf_stage = PlacementGoalPlanner.DefaultLeafStage(self._env,
                                                                  self._placement_heuristic.evaluate_stability,
                                                                  self._placement_heuristic.evaluate_collision,

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/yumi/yumi.xml">
+        <RotationAxis>0 0 1 90</RotationAxis>
+        -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+        <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
+        <Translation>0 0 1.11</Translation>
+    </Robot>
+
+    <KinBody name="plane">
+        <Translation>0.0   0.0   0.0</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>1 1.5 0.005</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="base">
+        <!-- <Translation>-0.13   0.0   -0.25</Translation>  -->
+        <Translation>0.0 -0.18 0.5</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>0.2 0.2 0.5</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="shelf">
+        <Translation>0.0   0.92   0.0</Translation>
+        <RotationAxis>1 0 0 180</RotationAxis>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../placement_problems/objects/shelf.obj</Data>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="crayola">
+        <Translation>-0.25 0.32 1.58</Translation>
+        <RotationAxis>1 0 0 90</RotationAxis>
+        <Body type="dynamic">
+            <Geom type="trimesh">
+                <Data>../placement_problems/objects/crayola.obj</Data>
+            </Geom>
+        </Body>
+    </KinBody>
+</Environment> 
