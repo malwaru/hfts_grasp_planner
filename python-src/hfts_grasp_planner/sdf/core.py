@@ -235,8 +235,8 @@ class VoxelGrid(object):
         """
             Map the given global positions to local frame and return both the local points
             and the indices (None if out of bounds).
-            @param positions is assumed to be a numpy matrix of shape (n, 4) where n is the number of query
-                    points and the last row are 1s.
+            @param positions is assumed to be a numpy matrix of shape (n, 3) where n is the number of query
+                    points.
             @param index_type - Denotes what type the returned index should be. Should either be
                 np.int or np.float_. By default integer indices are returned, if np.float_ is passed
                 the returned index is a real number, which allows trilinear interpolation between grid points.
@@ -249,7 +249,7 @@ class VoxelGrid(object):
                     bounds and indices contains an index for this position
 
         """
-        local_positions = np.dot(positions, self._inv_transform.transpose())
+        local_positions = np.dot(positions, self._inv_transform[:3, :3].transpose()) + self._inv_transform[:3, 3]
         in_bounds_lower = (local_positions[:, :3] >= self._aabb[:3]).all(axis=1)
         in_bounds_upper = (local_positions[:, :3] < self._aabb[3:]).all(axis=1)
         mask = np.logical_and(in_bounds_lower, in_bounds_upper)
@@ -637,9 +637,7 @@ class SDF(object):
             Returns the shortest distance of the given points to the closest obstacle surface respectively.
 
             Arguments:
-            positions - a numpy matrix of shape (n, 4), where n is the number of query points.
-                        The positions are expected to be given in homogeneous world coordinates,
-                        i.e. the last column is expected to be 1s.
+            positions - a numpy matrix of shape (n, 3), where n is the number of query points.
             b_interpolate - if true, values are interpolated, otherwise nearest neighbor lookup is used
         """
         distances = np.zeros(positions.shape[0])
@@ -662,7 +660,7 @@ class SDF(object):
             ---------
             Arguments
             ---------
-            point, numpy array of shape (3,) - position
+            points, numpy array of shape (3,) - query position
             -------
             Returns
             -------
@@ -1154,9 +1152,7 @@ class SceneSDF(object):
     def get_distances(self, positions):
         """
             Returns the signed distance from the given positions to the closest obstacle surface
-            @param positions - a numpy matrix of shape (n, 4) where n is the number of query positions.
-                                Each position is assumed to be given in homogenous world coordinates, i.e.
-                                the last column is assumend to be all 1s.
+            @param positions - a numpy matrix of shape (n, 3) where n is the number of query positions.
         """
         min_distances = np.full(positions.shape[0], float('inf'))
         for (body, body_sdf) in self._body_sdfs.itervalues():
@@ -1305,9 +1301,11 @@ class ORSDFVisualization(object):
                                       WARNING: Rendering many balls(cells) will crash OpenRAVE
         """
         # first sample values
+        if type(volume) is tuple:
+            volume = np.concatenate(volume)
         num_samples = (volume[3:] - volume[:3]) / resolution
         start_time = time.time()
-        positions = np.array([np.array([x, y, z, 1.0]) for x in np.linspace(volume[0], volume[3], num_samples[0])
+        positions = np.array([np.array([x, y, z]) for x in np.linspace(volume[0], volume[3], num_samples[0])
                               for y in np.linspace(volume[1], volume[4], num_samples[1])
                               for z in np.linspace(volume[2], volume[5], num_samples[2])])
         print ('Computation of positions took %f s' % (time.time() - start_time))

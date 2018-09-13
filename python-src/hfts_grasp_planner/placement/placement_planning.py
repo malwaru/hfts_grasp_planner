@@ -1,18 +1,16 @@
 #!/usr/bin/env python
 import os
-import math
 import rospy
 import random
 import itertools
 import collections
-import functools
 import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
+import hfts_grasp_planner.placement.leafstage as leafstage
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
 import hfts_grasp_planner.sdf.robot as robot_sdf
 import hfts_grasp_planner.utils as utils
-import hfts_grasp_planner.ik_solver as ik_module
 from hfts_grasp_planner.sampler import GoalHierarchy
 import numpy as np
 import scipy.spatial
@@ -570,10 +568,7 @@ class SimplePlacementQuality(object):
         tf_plane[1:] += pose[:3, 3]
         assert(tf_plane.shape[0] >= 4)
         # next check which of placement plane points are not in collision already
-        query_points = np.empty((tf_plane.shape[0] - 1, 4))
-        query_points[:, 3] = 1
-        query_points[:, :3] = tf_plane[1:]
-        omni_dir_distances = self._scene_sdf.get_distances(query_points)
+        omni_dir_distances = self._scene_sdf.get_distances(tf_plane[1:])
         colliding = np.where(omni_dir_distances <= 0.0)[0]
         non_colliding = np.where(omni_dir_distances > 0.0)[0]
         collisions = np.array((tf_plane.shape[0] - 1) * [True])
@@ -1354,18 +1349,19 @@ class PlacementHeuristic(object):
                     dist = rdist
                     vdir = rdir
             if dist < 0.0:
-                vdir = vdir / np.linalg.norm(vdir)
                 node_bounds = node.get_bounds()
                 box_extents = (node_bounds[:3, 1] - node_bounds[:3, 0]) / 2.0
+                dir_norm = np.linalg.norm(vdir)
+                if dir_norm > 0.0:
+                    vdir = vdir / np.linalg.norm(vdir)
+                else:
+                    # in some rare cases on edges we might not get a direction, so just be conservative
+                    shortest_dim = np.argmin(box_extents)
+                    vdir = np.zeros((3,))
+                    vdir[shortest_dim] = 1
                 non_zero = np.abs(vdir) > 1e-9
-                assert(non_zero.shape[0] > 0, "vdir is " + str(vdir))
                 ts = np.abs(box_extents[non_zero] / vdir[non_zero])
-                try:
-                    t = np.min(ts)
-                except ValueError as e:
-                    print "THE WEIRD BUG HAPPENED!!!", str(e)
-                    import IPython
-                    IPython.embed()
+                t = np.min(ts)
                 assert(t > 0.0)
                 score = 1.0 - np.abs(dist) / t
                 rospy.logdebug("Collision heuristic: signed distance: " + str(dist) + ", t: " + str(t) + " vdir: " + str(vdir))
@@ -1745,7 +1741,7 @@ class SE3Hierarchy(object):
             bfs[:3] = self._cart_branching
         bfs[3:] = so3hierarchy.get_branching_factors(depth)
         return bfs
-    
+
     def get_root(self):
         return self._root
 
@@ -1824,223 +1820,6 @@ class PlacementGoalPlanner(GoalHierarchy):
         def get_white_list(self):
             return self._hierarchy_node.get_white_list()
 
-    class RobotInterface(object):
-        """
-            Interface for the full robot used to compute arm configurations for a placement pose.
-        """
-
-        def __init__(self, env, robot_name, manip_name=None, urdf_file_name=None):
-            """
-                Create a new RobotInterface.
-                ---------
-                Arguments
-                ---------
-                env, OpenRAVE Environment - environment containing the full planning scene including the
-                    robot. The environment is copied.
-                robot_name, string - name of the robot to compute ik solutions for
-                manip_name, string (optional) - name of manipulator to compute ik solutions for. If not provided,
-                    the active manipulator is used.
-                urdf_file_name, string (optional) - filename of the urdf to use
-            """
-            # clone the environment so we are sure it is always setup correctly
-            # TODO either clone env again, or change API so it isn't misleadingly stating that we clone it
-            # self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
-            self._env = env
-            self._robot = self._env.GetRobot(robot_name)
-            if not self._robot:
-                raise ValueError("Could not find robot with name %s" % robot_name)
-            if manip_name:
-                # self._robot.SetActiveManipulator(manip_name)
-                active_manip = self._robot.GetActiveManipulator()
-                assert(active_manip.GetName() == manip_name)
-            self._manip = self._robot.GetActiveManipulator()
-            self._ik_solver = ik_module.IKSolver(self._env, robot_name, urdf_file_name)
-            self._hand_config = None
-            self._grasp_tf = None  # from obj frame to eef-frame
-            self._inv_grasp_tf = None  # from eef frame to object frame
-            self._arm_dofs = self._manip.GetArmIndices()
-            self._hand_dofs = self._manip.GetGripperIndices()
-
-        def set_grasp_info(self, grasp_tf, hand_config, obj_name):
-            """
-                Set information about the grasp the target object is grasped with.
-                ---------
-                Arguments
-                ---------
-                grasp_tf, numpy array of shape (4,4) - pose of object relative to end-effector (in eef frame)
-                hand_config, numpy array of shape (d_h,) - grasp configuration of the hand
-                obj_name, string - name of grasped object
-            """
-            self._grasp_tf = grasp_tf
-            self._inv_grasp_tf = utils.inverse_transform(grasp_tf)
-            self._hand_config = hand_config
-            # with self._env:  # TODO this is only needed if have a cloned environment
-            #     # first ungrab all grabbed objects
-            #     self._robot.ReleaseAllGrabbed()
-            #     body = self._env.GetKinBody(obj_name)
-            #     if not body:
-            #         raise ValueError("Could not find object with name %s in or environment" % obj_name)
-            #     # place the body relative to the end-effector
-            #     eef_tf = self._manip.GetEndEffectorTransform()
-            #     obj_tf = np.dot(eef_tf, grasp_tf)
-            #     body.SetTransform(obj_tf)
-            #     # set hand configuration and grab the body
-            #     self._robot.SetDOFValues(hand_config, self._hand_dofs)
-            #     self._robot.Grab(body)
-
-        def check_arm_ik(self, obj_pose, seed=None):
-            """
-                Check whether there is an inverse kinematics solution for the arm to place the set
-                object at the given pose.
-                ---------
-                Arguments
-                ---------
-                obj_pose, numpy array of shape (4, 4) - pose of the object in world frame
-                seed, numpy array of shape (d,) (optional) - seed arm configuration to use for computation
-                -------
-                Returns
-                -------
-                config, None or numpy array of shape (d,) - computed arm configuration or None, if no solution \
-                    exists.
-                b_col_free, bool - True if the configuration is collision free, else False
-            """
-            # with self._env:
-            # compute eef-pose from obj_pose
-            eef_pose = np.dot(obj_pose, self._inv_grasp_tf)
-            # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
-            return self._ik_solver.compute_collision_free_ik(eef_pose, seed)
-
-    class DefaultLeafStage(object):
-        """
-            Default leaf stage for the placement planner.
-        """
-        def __init__(self, env, objective_fn, collision_cost, robot_interface=None):
-            self.objective_fn = objective_fn
-            self.collision_cost = collision_cost
-            self.robot_interface = robot_interface
-            self.env = env
-            self.target_object = None
-            self._parameters = {
-                'max_falling_distance': 0.03,
-                'max_misalignment_angle': 0.2,
-                'max_slope_angle': 0.2,
-                'min_chull_distance': -0.008,
-                'rhobeg': 0.01,
-                'max_iter': 100,
-            }
-
-        def post_optimize(self, plcmt_result):
-            """
-                Locally optimize the objective function in the domain of the plcmt_result's node
-                using scikit's constrained optimization by linear approximation function.
-                ---------
-                Arguments
-                ---------
-                plcmt_result, PlacementGoalPlanner.PlacementResult - result to update with a locally optimized
-                    solution.
-            """
-            def to_matrix(x):
-                quat = so3hierarchy.hopf_to_quaternion(x[3:])
-                pose = transformations.quaternion_matrix(quat)
-                pose[:3, 3] = x[:3]
-                return pose
-
-            def pose_wrapper_fn(fn, x, multiplier=1.0):
-                # extract pose from x and pass it to fn
-                val = multiplier * fn(to_matrix(x))
-                assert(val != float('inf'))
-                # if val == float('inf'):
-                    # val = 10e9  # TODO this is a hack
-                return val
-
-            # get the initial value
-            x0 = plcmt_result._hierarchy_node.get_representative_value(rtype=1)
-            # rhobeg = 0.001
-            # rhobeg = np.min(partition_range / 2.0)
-            search_space_bounds = plcmt_result._hierarchy_node._hierarchy.get_bounds()
-            constraints = [
-                {
-                    'type': 'ineq',
-                    'fun': functools.partial(pose_wrapper_fn, self.collision_cost),
-                },
-                {
-                    'type': 'ineq',
-                    'fun': lambda x: x - search_space_bounds[:, 0] 
-                },
-                {
-                    'type': 'ineq',
-                    'fun': lambda x: search_space_bounds[:, 1] - x  
-                }
-            ]
-            options = {
-                'maxiter': self._parameters["max_iter"],
-                'rhobeg': self._parameters["rhobeg"],
-                'disp': True,
-            }
-            opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, self.objective_fn, multiplier=-1.0),
-                                                 x0, method='COBYLA', constraints=constraints, options=options)
-            sol = opt_result.x
-            plcmt_result.obj_pose = to_matrix(sol)
-            # self.evaluate_result(plcmt_result)
-
-        def evaluate_result(self, plcmt_result):
-            """
-                Evaluate the given result and set its validity and goal flags.
-                If a robot interface is set, this will also set an arm configuration for the result, if possible.
-            """
-            if self.robot_interface:
-                plcmt_result.configuration, plcmt_result._valid = self.robot_interface.check_arm_ik(
-                    plcmt_result.obj_pose)
-            else:
-                # TODO could/should cache this value
-                # TODO This validity check invalidates valid solutions due to inaccuracies in the collision cost
-                # plcmt_result._valid = self.collision_cost(plcmt_result.obj_pose) > 0.0
-                # TODO Are there any significant drawbacks for doing it like this?
-                # with self.target_object:
-                self.target_object.SetTransform(plcmt_result.obj_pose)
-                plcmt_result._valid = not self.env.CheckCollision(self.target_object)
-            # compute whether it is a goal
-            if plcmt_result._valid and plcmt_result.is_leaf():
-                # TODO could/should cache this value
-                # TODO this is specific to the simple placement heuristic
-                # TODO this should do more checks, physics simulation or falling model
-                _, falling_distance, chull_distance, alpha, gamma = self.objective_fn(plcmt_result.obj_pose, True)
-                plcmt_result._bgoal = falling_distance < self._parameters['max_falling_distance'] and \
-                    chull_distance < self._parameters['min_chull_distance'] and \
-                    alpha < self._parameters['max_slope_angle'] and \
-                    gamma < self._parameters['max_misalignment_angle']
-                rospy.logdebug('Candidate goal: falling_distance %f, chull_distance %f, alpha %f, gamma %f' %
-                              (falling_distance, chull_distance, alpha, gamma))
-            else:
-                plcmt_result._bgoal = False
-            plcmt_result._was_evaluated = True
-
-        def set_object(self, obj_name):
-            """
-                Set the target object.
-                ---------
-                Arguments
-                ---------
-                obj_name, string - name of the target object
-            """
-            self.target_object = self.env.GetKinBody(obj_name)
-
-        def set_grasp_info(self, grasp_tf, grasp_config):
-            """
-                Set information about the grasp the target object is grasped with.
-                NOTE: You need to set an object before, otherwise this will fail.
-                ---------
-                Arguments
-                ---------
-                grasp_tf, numpy array of shape (4,4) - pose of object relative to end-effector (in eef frame)
-                hand_config, numpy array of shape (d_h,) - grasp configuration of the hand
-                obj_name, string - name of grasped object
-            """
-            if self.robot_interface:
-                if not self.target_object:
-                    raise ValueError("Setting grasp info before setting target object. Please set target object first")
-                self.robot_interface.set_grasp_info(grasp_tf, grasp_config, self.target_object.GetName())
-
     ############################ PlacementGoalPlanner methods ############################
     def __init__(self, base_path,
                  env, scene_sdf, robot_name=None, manip_name=None, urdf_file_name=None,
@@ -2071,14 +1850,14 @@ class PlacementGoalPlanner(GoalHierarchy):
         self._bf_optimizer = optimization.BruteForceOptimizer(self._placement_heuristic)
         robot_interface = None
         if robot_name:
-            robot_interface = PlacementGoalPlanner.RobotInterface(env, robot_name, manip_name, urdf_file_name)
+            robot_interface = leafstage.RobotInterface(env, robot_name, manip_name, urdf_file_name)
         # self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
         # TODO replace the leaf_stage with BayesOpt on Physics?
         # TODO integrate new physics model
-        self._leaf_stage = PlacementGoalPlanner.DefaultLeafStage(self._env,
-                                                                 self._placement_heuristic.evaluate_stability,
-                                                                 self._placement_heuristic.evaluate_collision,
-                                                                 robot_interface)
+        self._leaf_stage = leafstage.DefaultLeafStage(self._env,
+                                                      self._placement_heuristic.evaluate_stability,
+                                                      self._placement_heuristic.evaluate_collision,
+                                                      robot_interface)
         self._placement_volume = None
         self._parameters = {'root_edge_length': 0.2, 'cart_branching': 4, 'max_depth': 4, 'num_iterations': 100}
         self._initialized = False

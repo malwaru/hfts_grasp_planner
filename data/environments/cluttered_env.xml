@@ -41,8 +41,9 @@
         <!-- <RotationAxis>0 0 1 20</RotationAxis> -->
         <Body type="dynamic">
             <Geom type="trimesh">
-                <Data>../crayola/objectModel.ply</Data>
-                <Render>../crayola/objectModel.ply</Render>
+                <Data>../crayola/objectModel_rot.ply</Data>
+                <!-- <Data>../crayola/objectModel.ply</Data> -->
+                <!-- <Render>../crayola/objectModel.ply</Render> -->
             </Geom>
         </Body>
     </KinBody>

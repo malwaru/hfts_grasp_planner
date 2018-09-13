@@ -11,10 +11,13 @@ import openravepy as orpy
 import hfts_grasp_planner.integrated_plcmt_planner as ipp_module
 import hfts_grasp_planner.ik_solver as ik_module
 import hfts_grasp_planner.utils as utils
+import hfts_grasp_planner.sdf.core as sdf_module
 
 
-def draw_volume(env, volume):
-    return env.drawbox(0.5 * (volume[0] + volume[1]), 0.5 * (volume[1] - volume[0]), np.array([0.3, 0.3, 0.3, 0.3]))
+def draw_volume(env, volume, color=None):
+    if color is None:
+        color = np.array([0.3, 0.3, 0.3, 0.3])
+    return env.drawbox(0.5 * (volume[0] + volume[1]), 0.5 * (volume[1] - volume[0]), color)
 
 
 # Grasp map for Robotiq hand
@@ -99,6 +102,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('problem_desc', help="Path to a yaml file specifying what world, robot to use etc.", type=str)
     parser.add_argument('--debug', help="If provided, run in debug mode", action="store_true")
+    parser.add_argument('--show_plcmnt_volume', help="If provided, visualize placement volume", action="store_true")
+    parser.add_argument('--show_sdf_volume', help="If provided, visualize sdf volume", action="store_true")
+    parser.add_argument('--show_sdf', help="If provided, visualize sdf", action="store_true")
     args = parser.parse_args()
     log_level = rospy.WARN
     if args.debug:
@@ -118,9 +124,9 @@ if __name__ == "__main__":
     #                        [1.00000000e+00,   2.38317910e-07,  -4.89843450e-09, 1.66712295e-01],
     #                        [0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
 
-    sdf_volume = (np.array(problem_desc['sdf_volume'][:3]), np.array(problem_desc['sdf_volume'][3:]))
+    sdf_volume_robot = (np.array(problem_desc['sdf_volume'][:3]), np.array(problem_desc['sdf_volume'][3:]))
     planner = ipp_module.IntegratedPlacementPlanner(problem_desc['or_env'],
-                                                    problem_desc['sdf_file'], sdf_volume,
+                                                    problem_desc['sdf_file'], sdf_volume_robot,
                                                     problem_desc['data_path'],
                                                     problem_desc['robot_name'],
                                                     problem_desc['manip_name'],
@@ -134,7 +140,12 @@ if __name__ == "__main__":
     ik_solver = ik_module.IKSolver(planner._env, problem_desc["robot_name"], problem_desc["urdf_file"])
     # set a placement target volume
     placement_volume = (np.array(problem_desc["plcmnt_volume"][:3]),
-                        np.array(problem_desc["plcmnt_volume"][3:]))  # inside shelf
+                        np.array(problem_desc["plcmnt_volume"][3:]))
+    # transform robot frame sdf volume to world frame for visualization
+    robot_tf = planner._robot.GetTransform()
+    tvals = np.array([np.dot(robot_tf[:3, :3], sdf_volume_robot[0]) + robot_tf[:3, 3],
+                      np.dot(robot_tf[:3, :3], sdf_volume_robot[1]) + robot_tf[:3, 3]])
+    sdf_volume = (np.min(tvals, axis=0), np.max(tvals, axis=0))
     planner._env.SetViewer('qtcoin')
     # reset object pose, if provided
     if 'initial_obj_pose' in problem_desc:
@@ -145,9 +156,15 @@ if __name__ == "__main__":
 
     # planner._plcmt_planner._placement_heuristic._env.SetViewer('qtcoin')
     # planner._plcmt_planner._leaf_stage.robot_interface._env.SetViewer('qtcoin')
-    handle = draw_volume(planner._env, placement_volume)
-    print "Check the placement volume!", placement_volume
+    if args.show_plcmnt_volume:
+        handle_plcmnt = draw_volume(planner._env, placement_volume, color=[0.3, 0.3, 0.3, 0.3])
+    if args.show_sdf_volume and not args.show_sdf:
+        handle_sdf = draw_volume(planner._env, sdf_volume, color=[0.3, 0.0, 0.0, 0.3])
+    if args.show_sdf:
+        sdf_vis = sdf_module.ORSDFVisualization(planner._env)
+        sdf_vis.visualize(planner._scene_sdf, sdf_volume, resolution=0.05, max_sat_value=0.7, style='sprites')
+
     # IPython.embed()
-    handle = None
+    # handle = None
     # execute_placement_planner(planner, placement_volume, problem_desc, ik_solver)
     IPython.embed()

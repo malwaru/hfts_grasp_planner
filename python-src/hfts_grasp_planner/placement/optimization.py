@@ -12,6 +12,11 @@ class StochasticOptimizer(object):
         self._objective_fn = objective_fn
 
     def debug(self, root):
+        import pdb
+        key = ((0, 3, 3, 0), (0, 3, 0, 1), (0, 1, 1, 0), (4, 2, 1, 1), (4, 1, 0, 0))
+        node = root
+        for i in range(4):
+            node = node.get_child_node(np.array([key[0][i], key[1][i], key[2][i], key[3][i], key[4][i]]))
         IPython.embed()
         # for i in range(12):
         #     for j in range(6):
@@ -27,6 +32,7 @@ class StochasticOptimizer(object):
                         is expected to be evaluable by the objective function provided on initialization
             @param num_iterations - number of iterations to run
         """
+        # self.debug(root)
         best_node = root.get_random_node()
         best_value = self._objective_fn.evaluate(best_node)
         # self.debug(root)

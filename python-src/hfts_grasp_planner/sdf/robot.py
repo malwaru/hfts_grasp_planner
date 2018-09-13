@@ -256,7 +256,7 @@ class RobotSDF(object):
             num_balls += len(ball_descs)
         # now we can create our data structures
         self._ball_positions = np.ones((num_balls, 4))
-        self._query_positions = np.ones((num_balls, 4))
+        self._query_positions = np.ones((num_balls, 3))
         self._ball_radii = np.zeros(num_balls)
         self._ball_indices = []
         index_offset = 0
@@ -300,7 +300,7 @@ class RobotSDF(object):
         for link_idx in self._link_indices:
             nb, off = self._ball_indices[link_idx]  # number of balls, offset
             self._query_positions[off:off +
-                                  nb] = np.dot(self._ball_positions[off:off + nb], link_tfs[link_idx].transpose())
+                                  nb] = np.dot(self._ball_positions[off:off + nb, :3], link_tfs[link_idx].transpose())
         return self._sdf.get_distances(self._query_positions) - self._ball_radii
 
     def visualize_balls(self):

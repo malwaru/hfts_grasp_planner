@@ -1,5 +1,5 @@
 import os
-import numpy
+import numpy as np
 import rospy
 import openravepy as orpy
 from orsampler import RobotCSpaceSampler, SDFCollisionAvoidanceConstraint
@@ -19,14 +19,14 @@ class IntegratedPlacementPlanner(object):
         Parameters
         ----------
         sdf_resolution, float - Resolution for the signed distance field in m (smaller better, but slower)
-        dof_weights, None or list of d floats - weights for the configuration space distance function for the 
+        dof_weights, None or list of d floats - weights for the configuration space distance function for the
             d degrees of freedom of the arm that is planned for
         draw_search_tree, bool - If true, draws motion planning tree in viewer
         max_per_level_iterations, int - maximal number of iterations on each level of the placement hierarchy
         min_per_level_iterations, int - minimal number of iterations on each level the placement hierarchy
         kappa, int - number of samples in each round of goal sampler
-        connected_weight, float - weight for proximity to connected configurations 
-        collision_weight, float - weight for collision cost 
+        connected_weight, float - weight for proximity to connected configurations
+        collision_weight, float - weight for collision cost
         quality_weight, float - weight for target quality
         rrt_pgoal_max, float - maximum probability to sample a new root for a backwards tree
         rrt_pgoal_w, float - parameter that determines how fast probablility of sampling goal tree decays
@@ -45,12 +45,13 @@ class IntegratedPlacementPlanner(object):
                 If there is no sdf stored at this location, it is computed and saved there.
             sdf_volume, tuple of two numpy arrays of shape (3,) - min and max point defining the
                 maximum placement volume used to compute the sdf in. It is only used if sdf_file does not exist.
+                It is assumed to be defined in robot frame.
             data_path, string - path to data folder in which additional data such as placement
                 preferences for different objects are stored.
             robot_name, string - name of the robot to plan for.
             manip_name, manipulator_name - name of the manipulator to use.
             gripper_file, string - filename containing OpenRAVE description of gripper
-            robot_urdf_file, string - path to a urdf description of the robot. Needed for physics simulation and 
+            robot_urdf_file, string - path to a urdf description of the robot. Needed for physics simulation and
                 trac_ik.
             obj_urdf_path, string - path to a folder of kinbody urdfs. Needed for physics simulation
 
@@ -91,6 +92,11 @@ class IntegratedPlacementPlanner(object):
         if os.path.exists(sdf_file):
             self._scene_sdf.load(sdf_file)
         else:
+            # transform sdf volume to world frame
+            robot_tf = self._robot.GetTransform()
+            tvals = np.array([np.dot(robot_tf[:3, :3], sdf_volume[0]) + robot_tf[:3, 3],
+                              np.dot(robot_tf[:3, :3], sdf_volume[1]) + robot_tf[:3, 3]])
+            sdf_volume = np.array([np.min(tvals, axis=0), np.max(tvals, axis=0)]).flatten()
             self._scene_sdf.create_sdf(
                 sdf_volume, self._parameters['sdf_resolution'], self._parameters['sdf_resolution'], b_compute_dirs=True)
             self._scene_sdf.save(sdf_file)
@@ -145,7 +151,7 @@ class IntegratedPlacementPlanner(object):
             target_obj, string - name of the object to place
             plcmnt_volume, tuple of two numpy arrays each of shape (3,) - placement volume in form (min_point, max_point)
             grasp_tf, numpy array of shape (4, 4) - pose of the grasped object relative to the end-effector
-            grasp_config, numpy array of shape (d_h,) - grasping configuration of the hand 
+            grasp_config, numpy array of shape (d_h,) - grasping configuration of the hand
             time_limit, float - maximal number of seconds to plan
             -------
             Returns

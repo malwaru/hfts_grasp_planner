@@ -48,6 +48,18 @@ class OccupancyOctree(object):
         def is_leaf(self):
             return len(self.children) == 0
 
+        def get_corners(self, tf):
+            """
+                Return the coordinates of the 8 corners of this cell.
+                ---------
+                Arguments
+                ---------
+                tf, numpy array of shape (4, 4) - transformation matrix to world frame
+            """
+            local_corners = self.cart_center + self.cart_dimensions / 2.0 * np.array([[-1, -1, -1], [-1, -1, 1], [-1, 1, -1], [-1, 1, 1],
+                                                                                      [1, -1, -1], [1, -1, 1], [1, 1, -1], [1, 1, 1]])
+            return np.dot(local_corners, tf[:3, :3].transpose()) + tf[:3, 3]
+
     def __init__(self, cell_size, link):
         """
             Construct a new OccupancyOctree.
@@ -195,10 +207,9 @@ class OccupancyOctree(object):
         # iterate through hierarchy layer by layer (bfs) - this way we can perform more efficient batch distance queries
         while current_layer:
             # first get the positions of all cells on the current layer
-            query_positions = np.ones((len(current_layer), 4))  # TODO we could allocate this array with max size once
-            query_positions[:, :3] = np.array([cell.cart_center for cell in current_layer])
+            query_positions = np.array([cell.cart_center for cell in current_layer])
             # TODO we also don't need this additional 1 for this operation (decompose transformation in rotation and translation)
-            query_positions = np.dot(query_positions, tf.transpose())
+            query_positions = np.dot(query_positions, tf.transpose()[:3, :3]) + tf[:3, 3]
             # query distances for all cells on this layer
             distances = scene_sdf.get_distances(query_positions)
             for dist, cell in itertools.izip(distances, current_layer):
@@ -267,9 +278,8 @@ class OccupancyOctree(object):
         # iterate through hierarchy layer by layer (bfs) - this way we can perform more efficient batch distance queries
         while current_layer:
             # first get the positions of all cells on the current layer
-            query_positions = np.ones((len(current_layer), 4))
-            query_positions[:, :3] = np.array([cell.cart_center for cell in current_layer])
-            query_positions = np.dot(query_positions, tf.transpose())
+            query_positions = np.array([cell.cart_center for cell in current_layer])
+            query_positions = np.dot(query_positions, tf.transpose()[:3, :3]) + tf[:3, 3]
             # query distances for all cells on this layer
             distances = scene_sdf.get_distances(query_positions)
             for dist, cell, pos in itertools.izip(distances, current_layer, query_positions):
@@ -281,8 +291,8 @@ class OccupancyOctree(object):
                         if max_penetration > dist - cell.radius:  # a child of this cell might have a larger penetration
                             next_layer.extend([child for child in cell.children if child.occupied])
                     else:
-                        if max_penetration > dist:
-                            max_penetration = dist
+                        if max_penetration > dist - cell.radius:
+                            max_penetration = dist - cell.radius
                             max_pen_position = pos[:3]
                             if b_compute_dir:  # retrieve direction
                                 direction = np.array(scene_sdf.get_direction(pos[:3]))
@@ -301,7 +311,7 @@ class OccupancyOctree(object):
                                 #     dist_to_surface = np.linalg.norm(contacts[0, :3] - pos[:3])
                                 # else:
                                 #     dist_to_surface = cell.radius
-            # switch to next layer
+                                # switch to next layer
             current_layer, next_layer = next_layer, current_layer
             next_layer.clear()
         return max_penetration, direction, max_pen_position  # , dist_to_surface
