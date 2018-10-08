@@ -1,3 +1,4 @@
+import abc
 import rospy
 import itertools
 import functools
@@ -10,7 +11,78 @@ import hfts_grasp_planner.external.transformations as transformations
 
 
 class PlacementPredicate(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def set_target_object(self, obj_name):
+        """
+            Set the target object
+            ---------
+            Arguments
+            ---------
+            obj_name, string - name of the object
+        """
+        pass
+
+    @abc.abstractmethod
+    def is_placement(self, plcmnt_result):
+        """
+            Return whether the given placement_result is a valid placement. 
+            ---------
+            Arguments
+            ---------
+            plcmnt_result, placement result to evaluate
+        """
+        pass
+
+
+class SimplePlacementPredicate(object):
+    """
+        A simple placement predicate that is based on projecting the vertices
+        of a placement face onto the environment. If the projected points form
+        a plane that is sufficiently even and spans a stable placement polygon,
+        the predicate is fulfilled.
+        TODO implement
+    """
+
+    def __init__(self, obj_fn):
+        """
+            Create a new SimplePlacementPredicate.
+        """
+        self.objective_fn = obj_fn
+        self.parameters = {
+            'max_falling_distance': 0.05,
+            'max_misalignment_angle': 0.2,
+            'max_slope_angle': 0.2,
+            'min_chull_distance': -0.008,
+        }
+
+    def is_placement(self, plcmnt_result):
+        # TODO could/should cache this value
+        # TODO this is specific to the simple placement heuristic
+        # TODO this should do more checks, physics simulation or falling model
+        is_goal = False
+        if plcmnt_result._valid and plcmnt_result.is_leaf():
+            _, falling_distance, chull_distance, alpha, gamma = self.objective_fn(plcmnt_result.obj_pose, True)
+            is_goal = falling_distance < self.parameters['max_falling_distance'] and \
+                chull_distance < self.parameters['min_chull_distance'] and \
+                alpha < self.parameters['max_slope_angle'] and \
+                gamma < self.parameters['max_misalignment_angle']
+            rospy.logdebug('Candidate goal: falling_distance %f, chull_distance %f, alpha %f, gamma %f' %
+                           (falling_distance, chull_distance, alpha, gamma))
+        return is_goal
+
+
+class PhysicsBasedPlacementPredicate(object):
+    """
+        A placement predicate that applies a rigid body physics simulator
+        to decide whether a given pose is suitable for a placement or not.
+    """
+
     def __init__(self):
+        """ 
+        TODO implement me!
+        """
         pass
 
 
@@ -110,13 +182,10 @@ class DefaultLeafStage(object):
         self.objective_fn = objective_fn
         self.collision_cost = collision_cost
         self.robot_interface = robot_interface
+        self.plcmnt_predicate = SimplePlacementPredicate(objective_fn)
         self.env = env
         self.target_object = None
         self._parameters = {
-            'max_falling_distance': 0.05,
-            'max_misalignment_angle': 0.2,
-            'max_slope_angle': 0.2,
-            'min_chull_distance': -0.008,
             'rhobeg': 0.01,
             'max_iter': 100,
         }
@@ -187,19 +256,7 @@ class DefaultLeafStage(object):
                 self.target_object.SetTransform(plcmt_result.obj_pose)
                 plcmt_result._valid = not self.env.CheckCollision(self.target_object)
         # compute whether it is a goal
-        if plcmt_result._valid and plcmt_result.is_leaf():
-            # TODO could/should cache this value
-            # TODO this is specific to the simple placement heuristic
-            # TODO this should do more checks, physics simulation or falling model
-            _, falling_distance, chull_distance, alpha, gamma = self.objective_fn(plcmt_result.obj_pose, True)
-            plcmt_result._bgoal = falling_distance < self._parameters['max_falling_distance'] and \
-                chull_distance < self._parameters['min_chull_distance'] and \
-                alpha < self._parameters['max_slope_angle'] and \
-                gamma < self._parameters['max_misalignment_angle']
-            rospy.logdebug('Candidate goal: falling_distance %f, chull_distance %f, alpha %f, gamma %f' %
-                           (falling_distance, chull_distance, alpha, gamma))
-        else:
-            plcmt_result._bgoal = False
+        plcmt_result._bgoal = self.plcmnt_predicate.is_placement(plcmt_result)
         plcmt_result._was_evaluated = True
 
     def set_object(self, obj_name):
