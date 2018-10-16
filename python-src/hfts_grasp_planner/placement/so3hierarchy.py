@@ -19,7 +19,6 @@ from itertools import izip, product
             metric p(x, y) = arccos(|x dot y|), where x and y are quaternions representing
             rotations
         - no preference given to what axis is more important. all rotations are treated equally
-            (this makes it look unintuitive when plotting as frames)
 """
 
 
@@ -192,6 +191,87 @@ def get_hopf_coordinate_range(key):
         result[2, 0] = float(s1_idx) / num_s1_values * np.pi
         result[2, 1] = (s1_idx + 1.0) / num_s1_values * np.pi
     return result
+
+
+def get_key_generator(depth):
+    """
+        Return a generator that produces all valid keys for a given depth.
+        ---------
+        Arguments
+        ---------
+        depth, int - depth to create keys for
+        -------
+        Returns
+        -------
+        a generator that yields keys (S2_key, S1_key) for the given depth
+    """
+    if depth == 0:
+        s2_b, s1_b = get_branching_factors(depth)
+        s2_key_gen, s1_key_gen = map(lambda x: (x,), range(s2_b)), map(lambda x: (x,), range(s1_b))
+        return product(s2_key_gen, s1_key_gen)
+    s2_b_root, s1_b_root = get_branching_factors(0)
+    s2_b, s1_b = get_branching_factors(1)  # assumes that branching factor is always the same for depth > 0
+    s2_key_gen = product(range(s2_b_root), *(depth * [range(s2_b)]))
+    s1_key_gen = product(range(s1_b_root), *(depth * [range(s1_b)]))
+    return product(s2_key_gen, s1_key_gen)
+
+
+def quat_distance(q1, q2):
+    """
+        Distance function between two quaternions representing rotations.
+        ---------
+        Arguments
+        ---------
+        q1, numpy array of shape (4,) - (w, x, y, z)
+        q2, numpy array of shape (4,) - (w, x, y, z)
+        -------
+        Returns
+        -------
+        acos(abs(dot(q1, q2)))
+    """
+    return np.arccos(np.clip(np.abs(np.dot(q1, q2)), -1.0, 1.0))
+
+
+def get_dispersion_bound(depth=None, key=None):
+    """
+        Return an upper bound of the dispersion of the grid at the given depth (of key).
+        ---------
+        Arguments
+        ---------
+        depth, int - either provide the depth directly
+        key, so3 key - or provide a key of any node
+    """
+    if key is not None:
+        _, _, level = key_to_indices(key)
+    else:
+        assert(depth is not None)
+        level = depth
+    nside = healpy.order2nside(level)
+    disp_s2 = healpy.pixelfunc.max_pixrad(nside)
+    # this is the upper bound for dispersion in Yershova's paper
+    return 2.0 * np.arcsin(0.5 * np.sqrt(disp_s2**2 + (np.pi / (6 * 2**level)**2)))
+
+
+def get_grid_distance(depth):
+    """
+        Return the distance between any two neighboring grid points on the given depth level.
+        ---------
+        Arguments
+        ---------
+        depth, int - depth at which to return distance for
+        -------
+        Returns
+        -------
+        distance, float - the distance between any two neighboring grid points the given depth
+    """
+    s1_key = depth * [0]
+    s2_key = depth * [0]
+    key = (s2_key, s1_key)
+    quat_a = get_quaternion(key)
+    nkey = get_random_neighbor(key)
+    quat_b = get_quaternion(nkey)
+    return quat_distance(quat_a, quat_b)
+
 
 # def _compute_ks(s2_key, nside):
 #     """

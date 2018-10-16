@@ -7,6 +7,7 @@ import scipy.spatial
 import hfts_grasp_planner.ik_solver as ik_module
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
+import hfts_grasp_planner.placement.reachability as reachability
 import hfts_grasp_planner.external.transformations as transformations
 
 
@@ -91,7 +92,7 @@ class RobotInterface(object):
         Interface for the full robot used to compute arm configurations for a placement pose.
     """
 
-    def __init__(self, env, robot_name, manip_name=None, urdf_file_name=None):
+    def __init__(self, env, robot_name, rmap_file, manip_name=None, urdf_file_name=None):
         """
             Create a new RobotInterface.
             ---------
@@ -100,6 +101,7 @@ class RobotInterface(object):
             env, OpenRAVE Environment - environment containing the full planning scene including the
                 robot. The environment is copied.
             robot_name, string - name of the robot to compute ik solutions for
+            rmap_file, string - filename for reachability map
             manip_name, string (optional) - name of manipulator to compute ik solutions for. If not provided,
                 the active manipulator is used.
             urdf_file_name, string (optional) - filename of the urdf to use
@@ -122,6 +124,8 @@ class RobotInterface(object):
         self._inv_grasp_tf = None  # from eef frame to object frame
         self._arm_dofs = self._manip.GetArmIndices()
         self._hand_dofs = self._manip.GetGripperIndices()
+        self._rmap = reachability.ReachabilityMap(self._manip, self._ik_solver)
+        self._rmap.load(rmap_file)
 
     def set_grasp_info(self, grasp_tf, hand_config, obj_name):
         """
@@ -171,6 +175,12 @@ class RobotInterface(object):
         eef_pose = np.dot(obj_pose, self._inv_grasp_tf)
         # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
         return self._ik_solver.compute_collision_free_ik(eef_pose, seed)
+
+    def get_reachability_map(self):
+        """
+            Return a reachability map for this robot.
+        """
+        return self._rmap
 
 
 class DefaultLeafStage(object):

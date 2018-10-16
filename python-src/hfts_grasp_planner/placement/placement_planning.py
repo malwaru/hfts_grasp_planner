@@ -1182,7 +1182,7 @@ class SimpleGraspCompatibility(object):
         of the robot and for which the gripper is in collision.
     """
 
-    def __init__(self, manip, gripper_file, cell_size):
+    def __init__(self, manip):
         """
             Create a new instance of SimpleGraspCompatibility.
             ---------
@@ -1206,21 +1206,119 @@ class SimpleGraspCompatibility(object):
         inv_grasp_tf = utils.inverse_transform(grasp_tf)
         self._palm_dir = np.dot(inv_grasp_tf[:3, :3], self._manip.GetDirection())
 
-    def compute_compatibility(self, pose):
+    def compute_compatibility(self, node):
         """
             Computes the grasp compatibility for the given pose.
             ---------
             Arguments
             ---------
-            pose, numpy array of shape (4, 4) - pose of the object
+            node, SE3Hierarchy.SE3HierarchyNode or numpy array of shape (4, 4) - partition or pose to evaluate
             -------
             Returns
             -------
             val, float - a value in [0, 1] representing compatibility. The larger the better.
         """
+        if type(node) == SE3Hierarchy.SE3HierarchyNode:
+            pose = node.get_representative_value()
+        else:
+            pose = node  # we got a pose as argument
         out_of_palm_world_dir = np.dot(pose[:3, :3], self._palm_dir)
         dot_product = np.clip(np.dot(out_of_palm_world_dir, self._gravity) + 1.0, 0.0, 1.0)
         return dot_product
+
+
+class ReachableGraspCompatibility(object):
+    """
+        This heuristic rates a node based the compatibility of the poses of this node with
+        a given grasp. It combines the SimpleGraspCompatibility heuristic with a reachability map
+        to estimate how likely it is that a given pose may be reached with the set grasp.
+    """
+    # TODO
+    def __init__(self, manip, reachability_map):
+        """
+            Create new ReachableGraspCompatbility.
+            ---------
+            Arguments
+            ---------
+            manip, OpenRAVE manipulator
+            reachability_map, reachability.ReachabilityMap - map to query reachability of manip
+        """
+        self._grasp_compatibility = SimpleGraspCompatibility(manip)
+        self._reachability_map = reachability_map
+        self._grasp_in_of = None
+
+    def set_grasp_info(self, grasp_tf, grasp_config):
+        """
+            Sets information about the grasp of the object.
+            ---------
+            Arguments
+            ---------
+            grasp_tf, numpy array of shape (4,4) - pose of object relative to end-effector (in eef frame)
+            hand_config, numpy array of shape (d_h,) - grasp configuration of the hand
+        """
+        self._grasp_in_of = utils.inverse_transform(grasp_tf)
+        self._grasp_compatibility.set_grasp_info(grasp_tf, grasp_config)
+
+    def is_feasible_partition(self, node):
+        """
+            Return True if there might be a reachable pose in the SE(3) partition descibed by node, 
+            else False. In other words, if this function returns False, there is no possible reachable solution
+            in the hierarchy rooted at node.
+            ---------
+            Arguments
+            ---------
+            node, SE3HierarchyNode
+        """
+        grasp_quat_pose = self.get_grasp_quat_pose(node.get_representative_value())
+        cart_radius, so3_radius = node.get_max_radii()
+        cart_dist, so3_dist = self._reachability_map.query(np.array([grasp_quat_pose]))
+        cart_grid_d, so3_grid_d = self._reachability_map.get_dispersion()
+        # assuming that the reachability map is sampled sufficiently densely,
+        # we can filter partitions based on their distance to the closest reachable sample
+        if cart_dist - cart_grid_d - cart_radius > 0.0:
+            return False
+        if so3_dist - so3_radius - so3_grid_d > 0.0:
+            return False
+        return True
+
+    def get_grasp_quat_pose(self, obj_pose):
+        """
+            Return grasp pose in world frame in position-quaternion form.
+            ---------
+            Arguments
+            ---------
+            obj_pose, numpy array of shape (4, 4) - object pose in world frame
+            -------
+            Returns
+            -------
+            grasp_quat_pose, numpy array of shape (7,) - (x, y, z, w, ix, jy, kz)
+        """
+        grasp_pose = np.dot(obj_pose, self._grasp_in_of)
+        grasp_quat_pose = np.empty(7)
+        grasp_quat_pose[:3] = grasp_pose[:3, 3]
+        grasp_quat_pose[3:] = orpy.quatFromRotationMatrix(grasp_pose[:3, :3])
+        return grasp_quat_pose
+
+    def compute_compatibility(self, node):
+        """
+            Computes the grasp compatibility for the given pose.
+            ---------
+            Arguments
+            ---------
+            node, SE3Hierarchy.SE3HierarchyNode - partition to evaluate
+            -------
+            Returns
+            -------
+            val, float - a value in [0, 1] representing compatibility. The larger the better.
+        """
+        # quat_pose = self.get_grasp_quat_pose(node.get_representative_value())
+        # cart_radius, so3_radius = node.get_max_radii()
+        # cart_dist, so3_dist = self._reachability_map.query([quat_pose])
+        # TODO figure out how to compute a score from this
+        # TODO maybe like on the white board
+        # TODO do we really need to take reachability as score into account? This is only relevant for poses on the interface
+        # TODO SimpleGraspCompatibility is not the best, should we really return it here?
+        return 0.0
 
 
 class PlacementHeuristic(object):
@@ -1228,12 +1326,13 @@ class PlacementHeuristic(object):
         Implements a heuristic for placement. It consists of three components: a collision cost, a stability cost and
         a grasp compatibility cost. The collision cost punishes nodes that are in collision. The stability cost
         evaluates whether a given node is suitable for releasing an object so that it fall towards a good placement pose.
-        The grasp compatibility cost evalutes whether the robot hand would interfere with placing/dropping the object.
+        The grasp compatibility cost evalutes whether the robot hand would interfere with placing/dropping the object,
+        and whether the poses associated with node are reachable for an arm.
         The grasp compatibility cost is optional and only active if a manipulator is passed on construction.
     """
 
     def __init__(self, env, scene_sdf, object_base_path, robot_name=None, manip_name=None,
-                 gripper_file=None, vol_approx=0.005):
+                 gripper_file=None, rmap=None, vol_approx=0.005):
         """
             Creates a new PlacementHeuristic
             ---------
@@ -1245,6 +1344,7 @@ class PlacementHeuristic(object):
             robot_name, string (optional) - name of OpenRAVE robot used to place the object.
             manip_name, string (optional) - name of OpenRAVE manipulator used to place the object.
             gripper_file, string (optional, required if robot_name provided) - filename of OpenRAVE model of the gripper
+            rmap, reachability.ReachabilityMap - reachability map for the robot
             vol_approx, float - size of octree cells for intersection costs
         """
         self._env = env.CloneSelf(orpy.CloningOptions.Bodies)
@@ -1270,6 +1370,8 @@ class PlacementHeuristic(object):
             else:
                 manip = robot.GetManipulator(manip_name)
             # self._grasp_compatibility = SimpleGraspCompatibility(manip, gripper_file, vol_approx)  # TODO make settable as parameters
+            if rmap != None:
+                self._grasp_compatibility = ReachableGraspCompatibility(manip, reachability_map=rmap)
             # We could also move the gripper collision into the GraspCompatilibity function, but this way we have a clear separation
             # between hard constraint (collision-free) and soft constraint (preferred orientation)
             tenv = orpy.Environment()  # TODO do we really need a separate environment here?
@@ -1404,6 +1506,10 @@ class PlacementHeuristic(object):
         if node.cached_value is not None:
             rospy.logdebug("Node has cached value. Returning cached value.")
             return node.cached_value
+        if self._grasp_compatibility is not None:
+            if not self._grasp_compatibility.is_feasible_partition(node):
+                # TODO need to update number of leaf nodes etc
+                return -100000.0 # TODO decide what to return in this case
         # self._env.SetViewer('qtcoin')
         # self._handle = self.visualize_node(node)  # TODO delete
         # compute the collision cost for this pose
@@ -1593,6 +1699,7 @@ class SE3Hierarchy(object):
                 Note that for the root, None is returned.
                 @param rtype - Type to represent point (0 = 4x4 matrix,
                                                         1 = [x, y, z, theta, phi, psi] (Hopf coordinates),)
+                                                        2 = [x, y, z, w, ix, jy, kz] (pos, quaternion)
             """
             if self._depth == 0:  # the root does not have a representative
                 return None
@@ -1607,6 +1714,9 @@ class SE3Hierarchy(object):
                 result[:3] = position
                 result[3:] = so3hierarchy.get_hopf_coordinates(self._so3_key)
                 return result
+            elif rtype == 2:  # return np.array position and quaternion
+                quat = so3hierarchy.get_quaternion(self._so3_key)
+                return np.array([position[0], position[1], position[2], quat[0], quat[1], quat[2], quat[3]])
             raise RuntimeError("Return types different from matrix are not implemented yet!")
 
         def get_white_list(self):
@@ -1655,6 +1765,18 @@ class SE3Hierarchy(object):
                 Return whether this node is a leaf or not.
             """
             return self._depth == self._hierarchy.get_depth()
+
+        def get_max_radii(self):
+            """
+                Return the maximum cartesian and rotational distance any pose within
+                this partition can be from the center.
+                -------
+                Returns
+                -------
+                cartesian distance, float
+                SO(3) distance, float
+            """
+            return np.linalg.norm(self._cartesian_box[1] - self._cartesian_box[0]) / 2.0, so3hierarchy.get_dispersion_bound(key=self._so3_key)
 
     def __init__(self, bounding_box, root_edge_length, cart_branching, depth):
         """
@@ -1822,7 +1944,7 @@ class PlacementGoalPlanner(GoalHierarchy):
 
     ############################ PlacementGoalPlanner methods ############################
     def __init__(self, base_path,
-                 env, scene_sdf, robot_name=None, manip_name=None, urdf_file_name=None,
+                 env, scene_sdf, robot_name=None, manip_name=None, urdf_file_name=None, reachability_file=None,
                  urdf_path=None, gripper_file=None, visualize=False):
         """
             Creates a PlacementGoalPlanner
@@ -1835,6 +1957,7 @@ class PlacementGoalPlanner(GoalHierarchy):
             robot_name, string (optional) - name of the robot to use for placing
             manip_name, string (optional) - in addition to robot name, name of the manipulator to use
             urdf_file_name, string (optional) - Filename of a URDF description of the robot
+            reachability_file, string (optional, required if robot_name is not None) - Filename of reachability map for the robot
             urdf_path, string (optional) - path to urdf descriptions of objects (needed for physics)
             gripper_file, string (optional) - Filename of an OpenRAVE model of the robot's gripper
             @param visualize If true, the internal OpenRAVE environment is set to be visualized
@@ -1844,13 +1967,19 @@ class PlacementGoalPlanner(GoalHierarchy):
         self._env = env
         if robot_name and manip_name is None:
             manip_name = robot_name.GetActiveManipulator().GetName()
+        robot_interface = None
+        rmap = None
+        if robot_name:
+            robot_interface = leafstage.RobotInterface(env, robot_name=robot_name,
+                                                       rmap_file=reachability_file,
+                                                       manip_name=manip_name, 
+                                                       urdf_file_name=urdf_file_name)
+            rmap = robot_interface.get_reachability_map()
         self._placement_heuristic = PlacementHeuristic(
-            env, scene_sdf, base_path, robot_name=robot_name, manip_name=manip_name, gripper_file=gripper_file)
+            env, scene_sdf, base_path, robot_name=robot_name, manip_name=manip_name, gripper_file=gripper_file,
+            rmap=rmap)
         self._optimizer = optimization.StochasticOptimizer(self._placement_heuristic)
         self._bf_optimizer = optimization.BruteForceOptimizer(self._placement_heuristic)
-        robot_interface = None
-        if robot_name:
-            robot_interface = leafstage.RobotInterface(env, robot_name, manip_name, urdf_file_name)
         # self._optimizer = optimization.StochasticGradientDescent(self._objective_function)
         # TODO replace the leaf_stage with BayesOpt on Physics?
         # TODO integrate new physics model

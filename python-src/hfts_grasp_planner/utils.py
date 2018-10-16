@@ -338,6 +338,28 @@ def inverse_transform(transform):
     return inv_transform
 
 
+def transform_pos_quats_by(tf, poses):
+    """
+        Transform the given poses given as positions and quaternion by the given
+        tranformation matrix.
+        ---------
+        Arguments
+        ---------
+        tf, numpy array (4, 4) - transformation matrix to transform by
+        poses, numpy array (n, 7) - poses encoded as position, quaternion (x,y,z,w,ix,ky,jz)
+        -------
+        Returns
+        -------
+        poses, numpy array (n, 7) - like input poses but trasformed by tf
+    """
+    p_r = tf[:3, 3]
+    q_r = orpy.quatFromRotationMatrix(tf[:3, :3])
+    resulting_poses = np.empty(poses.shape)
+    resulting_poses[:, :3] = orpy.quatRotateArrayT(q_r, poses[:, :3]) + p_r
+    resulting_poses[:, 3:] = orpy.quatMultArrayT(q_r, poses[:, 3:])
+    return resulting_poses
+
+
 def is_dynamic_body(body):
     """
         Return whether the given body is dynamic or static by checking its links.

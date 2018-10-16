@@ -93,7 +93,7 @@ def resolve_paths(problem_desc, yaml_file):
         cwd = os.getcwd()
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
-    for key in ['or_env', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file']:
+    for key in ['or_env', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file', 'reachability_path']:
         if key in problem_desc:
             problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
@@ -125,6 +125,8 @@ if __name__ == "__main__":
     #                        [0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
 
     sdf_volume_robot = (np.array(problem_desc['sdf_volume'][:3]), np.array(problem_desc['sdf_volume'][3:]))
+    rmap_file = problem_desc["reachability_path"] + "/" + \
+        problem_desc["robot_name"] + "_" + problem_desc["manip_name"] + ".npy"
     planner = ipp_module.IntegratedPlacementPlanner(problem_desc['or_env'],
                                                     problem_desc['sdf_file'], sdf_volume_robot,
                                                     problem_desc['data_path'],
@@ -135,6 +137,7 @@ if __name__ == "__main__":
                                                     obj_urdf_path=problem_desc['urdf_path'],
                                                     draw_search_tree=args.debug,
                                                     draw_hierarchy=args.debug,
+                                                    reachability_path=rmap_file,
                                                     **problem_desc['parameters'])
     # create an IK solver so we can compute the start configuration
     ik_solver = ik_module.IKSolver(planner._env, problem_desc["robot_name"], problem_desc["urdf_file"])

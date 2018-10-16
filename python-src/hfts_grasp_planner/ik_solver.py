@@ -91,7 +91,7 @@ class IKSolver(object):
             base_pose = self._manip.GetBase().GetTransform()
             inv_base_pose = utils.inverse_transform(base_pose)
             pose_in_base = np.dot(inv_base_pose, pose)
-            quat = orpy.quatFromRotation(pose_in_base)
+            quat = orpy.quatFromRotationMatrix(pose_in_base)
             sol = self._trac_ik_solver.get_ik(qinit=seed,
                                               x=pose_in_base[0, 3],
                                               y=pose_in_base[1, 3],
@@ -101,7 +101,7 @@ class IKSolver(object):
             if sol is not None:
                 sol = np.array(sol)
                 in_limits = np.logical_and.reduce(np.logical_and(
-                    np_sol >= self._lower_limits, np_sol <= self._upper_limits))
+                    sol >= self._lower_limits, sol <= self._upper_limits))
                 if in_limits:
                     return sol
                 else:
