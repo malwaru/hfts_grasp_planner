@@ -6,7 +6,7 @@ setup_args = generate_distutils_setup(
     packages=['hfts_grasp_planner'],
     package_dir={'': 'python-src'},
     requires=['rospy', 'numpy', 'yaml', 'rtree', 'tf', 'stl',
-              'sklearn', 'scipy', 'igraph', 'matplotlib', 'openravepy', 'rospkg']
+              'sklearn', 'scipy', 'igraph', 'openravepy', 'rospkg']
 )
 
 setup(**setup_args)

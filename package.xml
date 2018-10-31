@@ -45,7 +45,6 @@
   <run_depend>python-scipy</run_depend>
   <run_depend>python-igraph</run_depend>
   <run_depend>python-numpy-stl-pip</run_depend>
-  <run_depend>python-matplotlib</run_depend>
   <run_depend>Rtree</run_depend>
   <run_depend>openravepy</run_depend>
 

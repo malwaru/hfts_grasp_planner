@@ -93,3 +93,8 @@ ENV/
 *.pyc
 data/*.npy
 .vscode/*
+
+data/placement_problems/objects/jane_eyre_dvd/jane_eyre_dvd/
+
+data/placement_problems/objects/expo_eraser/expo_dry_erase_board_eraser/
+data/placement_problems/unsorted_objects
