@@ -68,7 +68,8 @@ class VoxelGrid(object):
         def set_additional_data(self, data):
             self._grid.set_additional_data(self._idx, data)
 
-    def __init__(self, workspace_aabb, cell_size=0.02, base_transform=None, dtype=np.float_, b_additional_data=False):
+    def __init__(self, workspace_aabb,  cell_size=0.02, base_transform=None, dtype=np.float_, b_additional_data=False,
+                 num_cells=None):
         """
             Creates a new voxel grid covering the specified workspace volume.
             @param workspace_aabb - bounding box of the workspace as numpy array of form
@@ -78,6 +79,9 @@ class VoxelGrid(object):
             @param cell_size - cell size of the voxel grid (in meters)
             @param base_transform - if not None, any query point is transformed by base_transform
             b_additional_data - if True, each voxel can be associated with additional data of object type
+            num_cells - if provided, the number of cells is not computed from the workspace aabb, but instead
+                set to the given one. The actual workspace this grid covers spans then from the min position in 
+                workspace aabb to the point min_position + num_cells * cell_size.
         """
         self._cell_size = cell_size
         if isinstance(workspace_aabb, tuple):
@@ -90,7 +94,11 @@ class VoxelGrid(object):
             dimensions = workspace_aabb[3:] - workspace_aabb[:3]
             pos = workspace_aabb[:3]
             self._aabb = workspace_aabb
-        self._num_cells = np.ceil(dimensions / cell_size).astype(int)
+        if num_cells is not None:
+            self._num_cells = num_cells
+            self._aabb[3:] = self._aabb[:3] + self._num_cells * cell_size
+        else:
+            self._num_cells = np.ceil(dimensions / cell_size).astype(int)
         # self._num_cells = np.array([int(math.ceil(x)) for x in dimensions / cell_size])
         self._base_pos = pos  # position of the bottom left corner with respect the local frame
         self._transform = np.eye(4)
@@ -178,13 +186,20 @@ class VoxelGrid(object):
         index_generator = self.get_index_generator()
         return (VoxelGrid.VoxelCell(self, idx) for idx in index_generator)
 
-    def get_cell_idx(self, pos):
+    def get_cell_idx(self, pos, b_pos_global=True):
         """
             Returns the index triple of the voxel in which the specified position lies
             Returns None if the given position is out of bounds.
+            ---------
+            Arguments
+            ---------
+            b_pos_global, bool - pass True if pos is in global frame. If it is in local frame, pass False
         """
-        self._homogeneous_point[:3] = pos
-        local_pos = np.dot(self._inv_transform, self._homogeneous_point)[:3]
+        if b_pos_global:
+            self._homogeneous_point[:3] = pos
+            local_pos = np.dot(self._inv_transform, self._homogeneous_point)[:3]
+        else:
+            local_pos = pos
         if (local_pos < self._aabb[:3]).any() or (local_pos >= self._aabb[3:]).any():
             return None
         local_pos -= self._base_pos
@@ -233,20 +248,21 @@ class VoxelGrid(object):
                           self._cell_size / 2.0)  # max value is outside of the grid
         max_pos = np.clip(max_pos, self._aabb[:3], self._aabb[3:] - self._cell_size / 2.0)
         # now retrieve the indices for these positions
-        indices_a = np.array(self.get_cell_idx(min_pos), dtype=int)
-        indices_b = np.array(self.get_cell_idx(max_pos), dtype=int)
+        indices_a = np.array(self.get_cell_idx(min_pos, b_pos_global=False), dtype=int)
+        indices_b = np.array(self.get_cell_idx(max_pos, b_pos_global=False), dtype=int)
         # compute how many cells there are in the new grid
         new_num_cells = indices_b - indices_a + 1  # including indices_b
         new_extents = new_num_cells * self._cell_size
         min_pos = self.get_cell_position(indices_a, b_center=False)  # get base position
         # create new grid
         new_grid = VoxelGrid((min_pos + new_extents / 2.0, new_extents),
-                             cell_size=self._cell_size, base_transform=np.array(self._transform))
+                             cell_size=self._cell_size, base_transform=np.array(self._transform),
+                             num_cells=new_num_cells)
         # set data of new grid
         assert((new_grid.get_num_cells() == new_num_cells).all())
-        new_grid.set_raw_data(self._cells[indices_a[0]:indices_b[0] + 1,
-                                          indices_a[1]:indices_b[1] + 1,
-                                          indices_a[2]:indices_b[2] + 1])
+        new_grid.set_raw_data(self._cells[indices_a[0] + 1:indices_b[0] + 2,
+                                          indices_a[1] + 1:indices_b[1] + 2,
+                                          indices_a[2] + 1:indices_b[2] + 2])
         return new_grid
 
     def map_to_grid(self, pos, index_type=np.int):
@@ -297,11 +313,12 @@ class VoxelGrid(object):
             indices = None
         return local_positions, indices, mask
 
-    def get_cell_position(self, idx, b_center=True):
+    def get_cell_position(self, idx, b_center=True, b_global_frame=True):
         """
             Returns the position in R^3 of the center or min corner of the voxel with index idx
             @param idx - a tuple/list of length 3 (ix, iy, iz) specifying the voxel
             @param b_center - if true, it return the position of the center, else of min corner
+            @param b_global_frame - if true, return the position in global frame, else local frame
             @return numpy.array representing the center or min corner position of the voxel
         """
         rel_pos = np.array(idx) * self._cell_size
@@ -310,9 +327,35 @@ class VoxelGrid(object):
                                  self._cell_size / 2.0,
                                  self._cell_size / 2.0])
         local_pos = self._base_pos + rel_pos
+        if not b_global_frame:
+            return local_pos
         return np.dot(self._transform, np.array([local_pos[0], local_pos[1], local_pos[2], 1]))[:3]
 
-    def get_cell_positions(self, b_center=True, b_global_frame=True):
+    def get_cell_positions(self, indices, b_center=True, b_global_frame=True):
+        """
+            Like get_cell_position but for a matrix of indices.
+            ---------
+            Arguments
+            ---------
+            indices, numpy array of shape (n, 3) and type int - query indices
+            b_center, bool - if True (default) return positions of cell centers, else corners
+            b_global_frame, bool - if True (default) return positions in global frame
+            -------
+            Returns
+            -------
+            positions, numpy array of shape (n, 3) and type float - requested cell positions
+        """
+        rel_pos = indices * self._cell_size
+        if b_center:
+            rel_pos = rel_pos + np.array([self._cell_size / 2.0,
+                                          self._cell_size / 2.0,
+                                          self._cell_size / 2.0])
+        local_pos = self._base_pos + rel_pos
+        if not b_global_frame:
+            return local_pos
+        return np.dot(local_pos, self._transform[:3, :3].transpose())
+
+    def get_grid_positions(self, b_center=True, b_global_frame=True):
         """
             Return arrays x, y, z of all cell positions.
             ---------

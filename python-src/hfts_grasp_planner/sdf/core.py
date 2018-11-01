@@ -263,7 +263,8 @@ class SDFBuilder(object):
         # create sdf grid
         sdf_grid = VoxelGrid(grid.get_workspace(), cell_size=grid.get_cell_size(), dtype=np.float_,
                              b_additional_data=b_compute_dirs)
-        sdf_grid.set_raw_data(outside_distances - inside_distances)
+        # shift distances by half cell size to be conservative (i.e. 0 should be on the interface between free and non-free cells)
+        sdf_grid.set_raw_data(outside_distances - inside_distances - grid.get_cell_size() / 2.0)
         # compute directions, if requested
         if b_compute_dirs:
             # we compute these also for the borders

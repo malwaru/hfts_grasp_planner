@@ -11,6 +11,7 @@ import hfts_grasp_planner.placement.placement_planning as pp_module
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.external.transformations as tfs
 
+
 def quat_distance(prev_quat, quat):
     if prev_quat is None or quat is None:
         return 0.0
@@ -45,7 +46,13 @@ def show_cluster(env, cluster, handles, colormap):
     # for i in range(8):
     all_keys = itertools.product(s2_keys, s1_keys)
     for rel_key in all_keys:
-        key = ((cluster[0],) + rel_key[0], (cluster[1],) + rel_key[1])
+        child_key_0 = rel_key[0]
+        child_key_1 = rel_key[1]
+        if type(child_key_0) != tuple:
+            child_key_0 = (child_key_0,)
+        if type(child_key_1) != tuple:
+            child_key_1 = (child_key_1,)
+        key = ((cluster[0],) + child_key_0, (cluster[1],) + child_key_1)
         quat = so3hierarchy.get_quaternion(key)
         pose = tfs.quaternion_matrix(quat)
         color = colormap[cluster]
@@ -70,21 +77,30 @@ def run_through_so3hierarchy(env):
     # s1_keys = itertools.product(range(6), range(2))
     # all_keys = itertools.product(s2_keys, s1_keys)
     clusters = itertools.product(range(12), range(6))
+    # clusters = [(0, 0), (0, 1), (1, 1), (1, 0),
+    #             (5, 0), (5, 1), (4, 1), (4, 0),
+    #             (3, 0), (3, 1)]
     # prev_quat = None
     # distances = []
     for cluster in clusters:
-        # quat = so3hierarchy.get_quaternion(cluster)
+        cluster_key = ((cluster[0],), (cluster[1],))
+        # quat = so3hierarchy.get_quaternion(cluster_key)
         show_cluster(env, cluster, handles, my_color_map)
-    #     pose = tfs.quaternion_matrix(quat)
-    #     color = my_color_map[cluster]
-    #     lhandles = visualize_pose(env, pose, color=color)
-    #     if cluster not in handles:
-    #         handles[cluster] = []
-    #     handles[cluster].extend(lhandles)
+        # distances.append(quat_distance(prev_quat, quat))
+        # print cluster_key, distances[-1]
+        # IPython.embed()
+        raw_input("Press key for next cluster")
+        # pose = orpy.matrixFromQuat(quat)
+        # pose = tfs.quaternion_matrix(quat)
+        # color = my_color_map[cluster]
+        # lhandles = visualize_pose(env, pose, color=color)
+        # if cluster not in handles:
+        # handles[cluster] = []
+        # handles[cluster].extend(lhandles)
         # prev_quat = quat
     # print "Mean distance is %f and std is %f" % (np.mean(distances[1:]), np.std(distances[1:]))
-    # print "Max distance is %f and min distance is %f" %(np.max(distances[1:]), np.min(distances[1:]))
-    IPython.embed()
+    # print "Max distance is %f and min distance is %f" % (np.max(distances[1:]), np.min(distances[1:]))
+    # IPython.embed()
     return handles
 
 
@@ -99,7 +115,7 @@ def run_through_hierarchy(hierarchy, env, depth):
     return handles
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     env = orpy.Environment()
     # env.Load(os.path.dirname(__file__) + '/../data/crayola/objectModel.ply')
     env.SetViewer('qtcoin')

@@ -4,12 +4,13 @@ import IPython
 import hfts_grasp_planner.sdf.core as sdf_module
 import hfts_grasp_planner.sdf.robot as robot_sdf_module
 import hfts_grasp_planner.sdf.costs as costs_module
+import hfts_grasp_planner.utils as utils
 import openravepy as orpy
 import numpy as np
 
-ENV_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/environments/table_r850.xml'
-SDF_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/sdfs/table_r850.sdf'
-ROBOT_BALL_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/models/r850_robotiq/ball_description.yaml'
+ENV_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/environments/cluttered_env_yumi.xml'
+SDF_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/data/sdfs/cluttered_test_env.sdf'
+# ROBOT_BALL_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_planner/models/r850_robotiq/ball_description.yaml'
 # ENV_PATH = '/home/joshua/projects/gpmp2_catkin/src/orgpmp2/examples/data/envs/lab.env.xml'
 # ROBOT_PATH = '/home/joshua/projects/gpmp2_catkin/src/orgpmp2/examples/data/robots/barrettwam_gpmp2spheres.robot.xml'
 
@@ -39,27 +40,17 @@ ROBOT_BALL_PATH = '/home/joshua/projects/placement_planning/src/hfts_grasp_plann
 
 
 if __name__ == "__main__":
-    volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
-    # test_ball_sdf(volume, 0.4, 0.01)
+    sdf_volume = np.array([-0.8, -0.7, 0.0, 0.7, 1.1, 1.2])
     env = orpy.Environment()
     env.Load(ENV_PATH)
-    # env.Load(ROBOT_PATH)
     env.SetViewer('qtcoin')
-    # bodies_to_remove = ['fusebox', 'finder_dimmer', 'beckhoff']
-    # for body_name in bodies_to_remove:
-    #     body = env.GetKinBody(body_name)
-    #     env.Remove(body)
-    movable_names = ['crayola']
-    robot_name = 'r850_robotiq'
-    robot = env.GetRobot(robot_name)
-    scene_sdf = sdf_module.SceneSDF(env, movable_names, excluded_bodies=[
-                                    robot_name, 'bunny'])
-    volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
+    dynamic_bodies = [body.GetName() for body in env.GetBodies() if utils.is_dynamic_body(body)]
+    scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=dynamic_bodies)
     # scene_sdf.load(SDF_PATH)
-    scene_sdf.create_sdf(volume, 0.02, 0.01, b_compute_dirs=True)
+    scene_sdf.create_sdf(sdf_volume, 0.005, 0.005, b_compute_dirs=True)
     scene_sdf.save(SDF_PATH)
     sdf_vis = sdf_module.ORSDFVisualization(env)
-    sdf_vis.visualize(scene_sdf, volume, resolution=0.05, max_sat_value=0.7, style='sprites')
+    sdf_vis.visualize(scene_sdf, sdf_volume, resolution=0.05, max_sat_value=0.7, style='sprites')
     # robot_sdf = robot_sdf_module.RobotSDF(robot, scene_sdf)
     # robot_sdf.load_approximation(ROBOT_BALL_PATH)
     # distance_fn = costs_module.DistanceToFreeSpace(robot, robot_sdf)
