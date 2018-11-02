@@ -2,6 +2,7 @@ import pycuda.autoinit
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from pycuda.compiler import SourceModule
+import collections
 import numpy as np
 import openravepy as orpy
 import skimage.measure as skm
@@ -13,21 +14,67 @@ class PlanarPlacementRegion(object):
         Struct-like class that stores information about a planar placement region.
     """
 
-    def __init__(self, labels, tf, cell_size):
+    def __init__(self, x_indices, y_indices, tf, cell_size):
         self.base_tf = tf  # transform from local frame to world frame
-        self.dimensions = cell_size * np.array(labels.shape)  # width and depth in local frame
-        self.labels = labels
+        # the indices we have might not start at 0, 0, so let's shift them
+        xshift, yshift = np.min((x_indices, y_indices), axis=1)
+        self.x_indices = x_indices - xshift
+        self.y_indices = y_indices - yshift
+        # accordingly we need to shift the base frame
+        shift_tf = np.eye(4)
+        shift_tf[:2, 3] = np.array((xshift, yshift)) * cell_size
+        self.base_tf = np.dot(self.base_tf, shift_tf)
+        # width and depth in local frame
+        self.dimensions = cell_size * (np.array((self.x_indices[-1], self.y_indices[-1])) + 1)
+        assert(self.x_indices.shape[0] >= 1)
+        assert(self.x_indices.shape[0] == self.y_indices.shape[0])
         self.cell_size = cell_size
 
     # TODO construct search hiearchy (quadtree) around this -> only need to look at positions in self.labels
+    def get_subregions(self):
+        """
+            Return a list of subregions of this region.
+            The returned list may contain 0 to 4 elements. If there are only 0 elements, this region
+            consist only of a single voxel/pixel and can thus not be further subdivided.
+            -------
+            Returns
+            -------
+            subregions, list of PlanarPlacementRegion objects
+        """
+        subregions = []
+        if self.x_indices.shape[0] == 1 and self.y_indices.shape[0] == 1:
+            return subregions
+        max_indices = (self.x_indices[-1], self.y_indices[-1])
+        split_indices = ((max_indices[0] + 1) / 2, (max_indices[1] + 1) / 2)
+        left_filter = self.x_indices < split_indices[0]
+        bottom_filter = self.y_indices < split_indices[1]
+        left_bottom_filter = np.logical_and(left_filter, bottom_filter)
+        left_top_filter = np.logical_and(left_filter, np.logical_not(bottom_filter))
+        right_bottom_filter = np.logical_and(np.logical_not(left_filter), bottom_filter)
+        right_top_filter = np.logical_and(np.logical_not(left_filter), np.logical_not(bottom_filter))
+        filters = [left_bottom_filter, left_top_filter, right_bottom_filter, right_top_filter]
+        offsets = np.array([(0, 0), (0, split_indices[1]), (split_indices[0], 0), split_indices])
+        for filt, off in zip(filters, offsets):
+            if filt.any():
+                xx, yy = self.x_indices[filt] - off[0], self.y_indices[filt] - off[1]
+                tf = np.eye(4)
+                tf[:2, 3] = off * self.cell_size
+                tf = np.dot(self.base_tf, tf)
+                subregions.append(PlanarPlacementRegion(xx, yy, tf, self.cell_size))
 
-    # def __str__(self):
-    #     return "PlanarPlacementRegion: base_tf: " + str(self.base_tf) + ", dimensions: " +\
-    #         str(self.dimensions) + ", height: " + str(self.height)
+        # TODO remove me:
+        children_cells = 0
+        for region in subregions:
+            children_cells += region.x_indices.shape[0]
+        assert(children_cells == self.x_indices.shape[0])
+        return subregions
+        # def __str__(self):
+        #     return "PlanarPlacementRegion: base_tf: " + str(self.base_tf) + ", dimensions: " +\
+        #         str(self.dimensions) + ", height: " + str(self.height)
 
-    # def __repr__(self):
-    #     return "PlanarPlacementRegion:\n base_tf:\n" + str(self.base_tf) + "\n dimensions: " +\
-    #         str(self.dimensions) + "\n height: " + str(self.height)
+        # def __repr__(self):
+        #     return "PlanarPlacementRegion:\n base_tf:\n" + str(self.base_tf) + "\n dimensions: " +\
+        #         str(self.dimensions) + "\n height: " + str(self.height)
 
 
 class PlanarRegionExtractor(object):
@@ -148,21 +195,20 @@ class PlanarRegionExtractor(object):
         # get the base position of this cluster, we will use it later
         # base_pos = grid.get_cell_position((min_x, min_y, layer), b_center=False, b_global_frame=False)
         base_idx = np.array((min_x, min_y), dtype=int)
+        # TODO should the subregions be constructed such that they have equal size?
         # construct subregions
         regions = []
         for xi in xrange(num_regions[0]):
             for yi in xrange(num_regions[1]):
                 # compute base index of subregion
                 base_region_idx = np.array((xi, yi)) * max_region_extent + base_idx
-                # x_range = xx[np.where(np.logical_and(xx >= base_idx[0], xx < base_idx[0] + max_region_extent))]
-                # y_range = yy[np.where(np.logical_and(yy >= base_idx[1], yy < base_idx[1] + max_region_extent))]
-                # extract sub image that is relevant for this region
-                sublabels = np.array(labels[base_region_idx[0]: base_region_idx[0] + x_dims[xi],
-                                            base_region_idx[1]: base_region_idx[1] + y_dims[yi],
-                                            layer])
-                # make it binary and remove irrelevant cluster labels
-                sublabels = sublabels == cluster
-                if np.sum(sublabels) > 0:  # if this region contains any points
+                # extract indices of surface pointers that are relevant for this region
+                x_filter = np.logical_and(xx >= base_region_idx[0], xx < base_region_idx[0] + x_dims[xi])
+                y_filter = np.logical_and(yy >= base_region_idx[1], yy < base_region_idx[1] + y_dims[yi])
+                xy_filter = np.logical_and(x_filter, y_filter)
+                sxx = xx[xy_filter]
+                syy = yy[xy_filter]
+                if sxx.shape[0] > 0 and syy.shape[0] > 0:
                     # copute transform of this region relative to grid frame
                     rel_tf = np.eye(4)
                     rel_tf[:3, 3] = grid.get_cell_position(
@@ -170,12 +216,13 @@ class PlanarRegionExtractor(object):
                     # compute tf for min cell of this region in world frame
                     region_tf = np.dot(grid.get_transform(), rel_tf)
                     # create plcmnt region
-                    new_region = PlanarPlacementRegion(sublabels, region_tf, grid.get_cell_size())
+                    new_region = PlanarPlacementRegion(
+                        sxx - base_region_idx[0], syy - base_region_idx[1], region_tf, grid.get_cell_size())
                     regions.append(new_region)
         return regions
 
 
-def visualize_plcmnt_regions(env, regions, alpha=0.3, height=0.01, b_cells=False):
+def visualize_plcmnt_regions(env, regions, alpha=0.3, height=0.01, level=0, b_cells=False):
     """
         Visualize the provided PlanarPlacementRegions in OpenRAVE.
         ---------
@@ -184,7 +231,9 @@ def visualize_plcmnt_regions(env, regions, alpha=0.3, height=0.01, b_cells=False
         env, OpenRAVE environment
         regions, list of PlanarPlacementRegions
         alpha, float - alpha value to render placement regions with
-        b_cells, bool - if true visualize actual plcmnt regions cells, else just bounding boxes
+        level, int - if b_cells is False, this parameter determines at which level of the hierarchy
+            of each placement region, the bounding box should be drawn
+        b_cells, bool - if true visualize actual plcmnt regions cells, else just bounding boxes on the given level
         -------
         Returns
         -------
@@ -196,7 +245,7 @@ def visualize_plcmnt_regions(env, regions, alpha=0.3, height=0.01, b_cells=False
         color[:3] = np.random.random(3)
         color[3] = alpha
         if b_cells:
-            xx, yy = np.where(region.labels)
+            xx, yy = region.x_indices, region.y_indices
             for c_id in range(len(xx)):
                 tf = np.array(region.base_tf)
                 rel_tf = np.eye(4)
@@ -206,7 +255,26 @@ def visualize_plcmnt_regions(env, regions, alpha=0.3, height=0.01, b_cells=False
                                            np.array([region.cell_size / 2.0, region.cell_size / 2.0, height / 2.0]),
                                            color, tf))
         else:
-            handles.append(env.drawbox(np.array((region.dimensions[0] / 2.0, region.dimensions[1] / 2.0, height/2.0)),
-                                       np.array([region.dimensions[0] / 2.0, region.dimensions[1] / 2.0, height / 2.0]),
-                                       color, region.base_tf))
+            subregions_to_draw = []
+            if level > 0:
+                subregions = collections.deque([region])
+                for l in range(level):
+                    lp1_subregions = collections.deque()
+                    while subregions:
+                        nregion = subregions.popleft()
+                        children = nregion.get_subregions()
+                        if len(children) > 0:
+                            if l < level - 1:
+                                lp1_subregions.extend(children)
+                            else:
+                                subregions_to_draw.extend(children)
+                        else:
+                            subregions_to_draw.append(nregion)
+                    subregions = lp1_subregions
+            else:
+                subregions_to_draw = [region]
+            for sregion in subregions_to_draw:
+                pos = np.array((sregion.dimensions[0] / 2.0, sregion.dimensions[1] / 2.0, height / 2.0))
+                extents = np.array([sregion.dimensions[0] / 2.0, sregion.dimensions[1] / 2.0, height / 2.0])
+                handles.append(env.drawbox(pos, extents, color, sregion.base_tf))
     return handles

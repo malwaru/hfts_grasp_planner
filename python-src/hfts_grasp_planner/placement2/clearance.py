@@ -98,7 +98,8 @@ if __name__ == "__main__":
     #     color[3] = 0.3
     #     tf[:3, 3] = grid.get_cell_position((xx[cell_id], yy[cell_id], zz[cell_id]))
     #     handles.append(env.drawbox(np.array((0, 0, 0)), np.array(3 * [grid.get_cell_size() / 2.0]), color, tf))
-    handles.extend(plcmnt_regions.visualize_plcmnt_regions(env, regions, height=grid.get_cell_size()))
+    handles.extend(plcmnt_regions.visualize_plcmnt_regions(env, regions, height=grid.get_cell_size(), level=10))
+    # handles.extend(plcmnt_regions.visualize_plcmnt_regions(env, regions, height=grid.get_cell_size(), b_cells=True))
     IPython.embed()
     # print regions
     # for r in xrange(1, num_regions + 1):
