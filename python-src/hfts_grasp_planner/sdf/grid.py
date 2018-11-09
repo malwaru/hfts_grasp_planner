@@ -156,7 +156,7 @@ class VoxelGrid(object):
         grid = VoxelGrid(np.array([0, 0, 0, 0, 0, 0]))
         interior_cells = np.load(data_file_name)
         grid._num_cells = np.array(np.array(interior_cells.shape))
-        grid._cells = np.empty(grid._num_cells + 2)
+        grid._cells = np.empty(grid._num_cells + 2, dtype=interior_cells.dtype)
         grid._cells[1:-1, 1:-1, 1:-1] = interior_cells
         grid._fill_border_cells()
         meta_data = np.load(meta_file_name)
@@ -505,6 +505,7 @@ class VoxelGrid(object):
             raise ValueError("The shape of the provided data differs from this grid's shape." +
                              " Input shape is %s, required shape %s" % (str(data.shape), str(self._num_cells)))
         self._cells[1:-1, 1:-1, 1:-1] = data
+        self._cells = self._cells.astype(data.dtype)
         self._fill_border_cells()
 
     def get_cell_size(self):

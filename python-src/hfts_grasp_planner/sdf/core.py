@@ -209,6 +209,13 @@ class SDF(object):
         """
         return self._grid.get_max_value()
 
+    def get_grid(self):
+        """
+            Return the underlying VoxelGrid. 
+            Use with caution!
+        """
+        return self._grid
+
 
 class SDFBuilder(object):
     """
