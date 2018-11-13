@@ -1,5 +1,6 @@
 import itertools
 import numpy as np
+import scipy.ndimage.morphology
 import hfts_grasp_planner.sdf.occupancy as occupancy
 import hfts_grasp_planner.sdf.grid as grid_module
 import hfts_grasp_planner.sdf.core as sdf_core
@@ -33,12 +34,13 @@ def compute_clearance_map(occ_grid, sdf_grid=None):
         sdf_grid = sdf_core.SDFBuilder.compute_sdf(occ_grid)
     # next, compute sdf for each slice
     clearance_map = grid_module.VoxelGrid(np.array(occ_grid.get_workspace()),
-                                          num_cells=np.array(occ_grid.get_num_cells()))
+                                          num_cells=np.array(occ_grid.get_num_cells()),
+                                          cell_size=occ_grid.get_cell_size())
     occ_transposed = occ_grid.get_raw_data().transpose()  # need to transpose for distance_transform
     clrm_data = clearance_map.get_raw_data()
     clrm_data_t = clrm_data.transpose()
     sdf_data_t = sdf_grid.get_raw_data().transpose()
-    max_distance = np.min(np.array(occ_transposed[0].shape) * occ_grid.get_cell_size())
+    max_distance = np.min(np.array(occ_transposed[0].shape) * occ_grid.get_cell_size()) / 2.0  # TODO what to set here?
     # run over each layer
     for idx in xrange(occ_transposed.shape[0]):
         if np.any(occ_transposed[idx]):
@@ -56,7 +58,6 @@ if __name__ == "__main__":
     import os
     import IPython
     import mayavi.mlab
-    import scipy.signal
     base_path = os.path.dirname(__file__) + '/../../../'
     sdf_file = base_path + 'data/sdfs/placement_exp_0_low_res'
     sdf = sdf_core.SDF.load(sdf_file)

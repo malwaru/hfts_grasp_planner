@@ -11,6 +11,45 @@ import openravepy as orpy
 import hfts_grasp_planner.sdf.core as sdf_core
 
 
+def construct_grid(link, cell_size):
+    """
+        Construct an occupancy grid of the given link with given cell_size.
+        ---------
+        Arguments
+        ---------
+        link, OpenRAVE Link - link to contruct grid for
+        cell_size, float - size of a cell
+        -------
+        Returns
+        -------
+        grid, VoxelGrid - occupancy grid in the link's local frame
+    """
+    body = link.GetParent()
+    env = body.GetEnv()
+    with env:
+        original_tf = link.GetTransform()
+        link.SetTransform(np.eye(4))  # set link to origin frame
+        body_flags = []
+        for body in env.GetBodies():
+            body_flags.append((body.IsEnabled(), body.IsVisible()))
+            body.Enable(False)
+            body.SetVisible(False)
+        link.Enable(True)
+        # construct a binary occupancy grid of the body
+        local_aabb = link.ComputeAABB()
+        grid = sdf_core.VoxelGrid((local_aabb.pos(), local_aabb.extents() * 2.0), cell_size, dtype=bool)
+        collision_map_builder = sdf_core.OccupancyGridBuilder(env, cell_size)
+        collision_map_builder.compute_grid(grid)
+        collision_map_builder.clear()
+        # set the body back to its original pose
+        link.SetTransform(original_tf)
+        # restore flags
+        for body, body_flag in itertools.izip(env.GetBodies(), body_flags):
+            body.Enable(body_flag[0])
+            body.SetVisible(body_flag[1])
+        return grid
+
+
 class OccupancyOctree(object):
     """
         This class represents an occupancy map for a rigid body
@@ -77,37 +116,10 @@ class OccupancyOctree(object):
         self._root = None
         self._total_volume = 0.0
         self._depth = 0
-        self._construct_grid(cell_size)
+        self._grid = construct_grid(link, cell_size)
         self._sdf = sdf_core.SDF(sdf_core.SDFBuilder.compute_sdf(self._grid))
         self._max_possible_penetration = np.abs(self._sdf.min())
         self._construct_octree(cell_size)
-
-    def _construct_grid(self, cell_size):
-        """
-            Construct the occupancy grid that this octree represents.
-        """
-        env = self._body.GetEnv()
-        with env:
-            original_tf = self._link.GetTransform()
-            self._link.SetTransform(np.eye(4))  # set link to origin frame
-            body_flags = []
-            for body in env.GetBodies():
-                body_flags.append((body.IsEnabled(), body.IsVisible()))
-                body.Enable(False)
-                body.SetVisible(False)
-            self._link.Enable(True)
-            # construct a binary occupancy grid of the body
-            local_aabb = self._link.ComputeAABB()
-            self._grid = sdf_core.VoxelGrid((local_aabb.pos(), local_aabb.extents() * 2.0), cell_size, dtype=bool)
-            collision_map_builder = sdf_core.OccupancyGridBuilder(env, cell_size)
-            collision_map_builder.compute_grid(self._grid)
-            collision_map_builder.clear()
-            # set the body back to its original pose
-            self._link.SetTransform(original_tf)
-            # restore flags
-            for body, body_flag in itertools.izip(env.GetBodies(), body_flags):
-                body.Enable(body_flag[0])
-                body.SetVisible(body_flag[1])
 
     def _construct_octree(self, cell_size):
         """
@@ -374,15 +386,103 @@ class OccupancyOctree(object):
         return handles
 
 
+class RigidBodyOccupancyGrid:
+    """
+        This class represents a rigid body, i.e. a link, as an occupancy grid.
+        This is, in principle, similar to the OccupancyOctree defined above, but here there is
+        no octree. The class provides a numpy-based function to sum all cells in a VoxelGrid
+        that overlap with the link given its current transform.
+    """
+
+    def __init__(self, cell_size, link):
+        """
+            Create a new RigidBodyOccupancy Grid.
+            ---------
+            Arguments
+            ---------
+            cell_size, float - cell size of the grid
+            link, OpenRAVE Link - link to represent
+        """
+        self._link = link
+        self._body = link.GetParent()
+        self._grid = construct_grid(link, cell_size)
+        cells = self._grid.get_raw_data()
+        xx, yy, zz = np.nonzero(cells)
+        indices_mat = np.column_stack((xx, yy, zz))
+        self._locc_positions = self._grid.get_cell_positions(indices_mat, b_center=True, b_global_frame=False)
+
+    def sum(self, field, tf=None, default_value=0.0):
+        """
+            Sum up all cell values that are occupied by the link represented by this object.
+            ---------
+            Arguments
+            ---------
+            field, VoxelGrid - a voxel grid filled with values to sum up
+            tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
+                is expecting. If None, link.GetTransform is used.
+            default_value, float - Value to add if an occupied cell of this link is out of bounds of the field.
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        _, indices, _ = field.map_to_grid_batch(query_pos, index_type=np.float_)
+        if indices is not None:
+            values_to_sum = field.get_cell_values(indices)
+            return np.sum(values_to_sum) + (query_pos.shape[0] - indices.shape[0]) * default_value
+        return query_pos.shape[0] * default_value
+
+    def get_link(self):
+        """
+            Return the link this grid represents.
+        """
+        return self._link
+
+
 if __name__ == '__main__':
-    env = orpy.Environment()
-    import os
-    env.Load(os.path.dirname(__file__) + '/../../../data/bunny/objectModel.ply')
-    env.SetViewer('qtcoin')
-    body = env.GetBodies()[0]
-    # body.SetVisible(False)
-    octree = OccupancyOctree(0.005, body.GetLinks()[0])
-    # octree._grid.save('/tmp/test_grid')
-    handles = octree.visualize(10)
-    import IPython
-    IPython.embed()
+    def mtest_vis_occtree():
+        env = orpy.Environment()
+        import os
+        env.Load(os.path.dirname(__file__) + '/../../../data/bunny/objectModel.ply')
+        env.SetViewer('qtcoin')
+        body = env.GetBodies()[0]
+        # body.SetVisible(False)
+        octree = OccupancyOctree(0.005, body.GetLinks()[0])
+        # octree._grid.save('/tmp/test_grid')
+        handles = octree.visualize(10)
+        import IPython
+        IPython.embed()
+
+    def mtest_sum_occgrid():
+        env = orpy.Environment()
+        import os
+        base_path = os.path.dirname(__file__) + '/../../../'
+        env.Load(base_path + 'data/environments/placement_exp_0.xml')
+        env.SetViewer('qtcoin')
+        body = env.GetKinBody('crayola')
+        occupancy_grid = RigidBodyOccupancyGrid(0.01, body.GetLinks()[0])
+        sdf = sdf_core.SDF.load(base_path + 'data/sdfs/placement_exp_0_low_res')
+        sdf_grid = sdf.get_grid()
+        print occupancy_grid.sum(sdf_grid)
+        import IPython
+        IPython.embed()
+
+    def mtimeit_sum_occgrid():
+        setup_code = """import openravepy as orpy;\
+        from __main__ import RigidBodyOccupancyGrid;\
+        import hfts_grasp_planner.sdf.core as sdf_core;\
+        env = orpy.Environment();\
+        base_path = \'/home/joshua/projects/placement_planning/src/hfts_grasp_planner/\';\
+        env.Load(base_path + \'data/environments/placement_exp_0.xml\');\
+        body = env.GetKinBody(\'crayola\');\
+        occupancy_grid = RigidBodyOccupancyGrid(0.01, body.GetLinks()[0]);\
+        sdf = sdf_core.SDF.load(base_path + \'data/sdfs/placement_exp_0_low_res\');\
+        sdf_grid = sdf.get_grid();\
+        """
+        run_code = """occupancy_grid.sum(sdf_grid);"""
+        import timeit
+        num_runs = 10000
+        total = timeit.timeit(run_code, setup=setup_code, number=num_runs)
+        print "Total:",  total, "per run: ", total / num_runs
+
+    # mtest_sum_occgrid()
+    mtimeit_sum_occgrid()

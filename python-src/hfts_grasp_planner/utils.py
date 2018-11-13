@@ -338,6 +338,37 @@ def inverse_transform(transform):
     return inv_transform
 
 
+def compute_closest_point_on_line(start_point, end_point, query_point):
+    """
+        Compute the closest point to query_point that lies on the line spanned from 
+        start_point to end_point.
+        ---------
+        Arguments
+        ---------
+        start_point, numpy array of shape (n,)
+        end_point, numpy array of shape (n,)
+        query_point, numpy array of shape (n,)
+        -------
+        Returns
+        -------
+        distance, float - distance of query_point to the line
+        point, numpy array of shape (n,) - closest point on the line
+        t, float - t in [0, 1] indicating where on the line the closest point lies (0 - start_point, 1 end_point)
+    """
+    line_dir = end_point - start_point
+    rel_point = query_point - start_point
+    line_length = np.linalg.norm(line_dir)
+    if line_length == 0.0:
+        return np.linalg.norm(rel_point), start_point, 0.0
+    t = np.dot(line_dir / line_length, rel_point) / line_length
+    if t <= 0.0:
+        return np.linalg.norm(rel_point), start_point, 0.0
+    if t <= 1.0:
+        return np.linalg.norm(query_point - (start_point + t * line_dir)), start_point, t
+    if t > 1.0:
+        return np.linalg.norm(end_point), end_point, 1.0
+
+
 def transform_pos_quats_by(tf, poses):
     """
         Transform the given poses given as positions and quaternion by the given

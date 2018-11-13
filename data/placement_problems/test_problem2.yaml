@@ -1,0 +1,17 @@
+or_env: ../environments/placement_exp_0.xml
+urdf_file: ../../models/yumi/yumi.urdf
+gripper_file: ../../models/yumi/yumi_gripper_l.robot.xml
+sdf_file: ../sdfs/placement_exp_0.sdf
+occ_file: ../occupancy_grids/placement_exp_0
+reachability_path: ../reachability/
+data_path: ../
+urdf_path: object/
+robot_name: Yumi
+manip_name: left_arm_with_gripper
+target_name: crayola
+plcmnt_volume: [-0.4, 0.45, 1.25, 0.10, 0.8, 1.5]
+sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
+time_limit: 60.0
+grasp_file: grasps/crayola.yaml
+grasp_id: 0
+# initial_obj_pose: [-0.65, 0.01, 0.63, 1.0, 0.0, 0.0, 0.0]

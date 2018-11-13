@@ -8,6 +8,7 @@ import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.placement.leafstage as leafstage
+import hfts_grasp_planner.placement.chull_utils as chull_utils
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf
 import hfts_grasp_planner.sdf.robot as robot_sdf
 import hfts_grasp_planner.utils as utils
@@ -17,212 +18,12 @@ import scipy.spatial
 import openravepy as orpy
 
 
-def merge_faces(chull, min_normal_similarity=0.97):
-    """
-        Merge adjacent faces of the convex hull if they have similar normals.
-        ---------
-        Arguments
-        ---------
-        chull - convex hull computed by scipy.spatial.ConvexHull
-        min_normal_similarity - minimal value that the pairwise dot product of the normals
-            of two faces need to have to be merged.
-        ---------
-        Returns
-        ---------
-        A tuple (clusters, face_clusters, num_clusters):
-            - clusters, a list of tuples (normal, vertices) - describes all clusters.
-                normal is a numpy array of length 3 describing the normal of a cluster (merged faces)
-                vertices is the set of vertex indices, which compose the cluster
-            - face_cluster - numpy array of length num_clusters, which stores for each original face
-                of chull which cluster it belongs to
-            - num_clusters, int - the total number of clusters
-    """
-    clusters = []
-    face_clusters = np.ones(chull.simplices.shape[0], dtype=int)
-    face_clusters *= -1
-    face_idx = 0
-    cluster_id = 0
-    cluster_candidates = collections.deque()
-    # run over all faces
-    while face_idx < chull.simplices.shape[0]:
-        if face_clusters[face_idx] == -1:  # we have not assigned this face to a cluster yet
-            cluster_normal = chull.equations[face_idx, :3]
-            current_cluster = (cluster_normal, set(chull.simplices[face_idx]))  # create a new cluster
-            clusters.append(current_cluster)
-            face_clusters[face_idx] = cluster_id  # assign this face to the new cluster
-            # grow cluster to include adjacent unclustered faces that have a similar normal
-            cluster_candidates.extend(chull.neighbors[face_idx])
-            while cluster_candidates:
-                candidate_idx = cluster_candidates.popleft()
-                # check if this face belongs to the same cluster, it does so, if the normal is almost the same
-                if np.dot(chull.equations[candidate_idx, :3], cluster_normal) >= min_normal_similarity:
-                    if face_clusters[candidate_idx] == -1:  # check if candidate is unclustered yet
-                        # add the vertices of this face to the cluster
-                        current_cluster[1].update(chull.simplices[candidate_idx])
-                        face_clusters[candidate_idx] = cluster_id  # assign the cluster to the face
-                        # add its neighbors to our extension candidates
-                        cluster_candidates.extend(chull.neighbors[candidate_idx])
-            cluster_id += 1
-        face_idx += 1
-    return clusters, face_clusters, cluster_id
-
-
-def compute_hull_distance(convex_hull, point):
-    """
-        Compute the signed distance of the given point
-        to the closest edge of the given 2d convex hull.
-        ---------
-        Arguments
-        ---------
-        convex_hull, ConvexHull - a convex hull of 2d points computed using scipy's wrapper
-            for QHull.
-        point, numpy array of shape (2,) - a 2d point to compute the distance for
-        ---------
-        Returns
-        ---------
-        distance, float - the signed distance to the closest edge of the convex hull
-        edge_id, int - the index of the closest edge
-    """
-    # min_distance = 0.0
-    assert(convex_hull.points[0].shape == point.shape)
-    assert(point.shape == (2,))
-    interior_distance = float('-inf')
-    exterior_distance = float('inf')
-    closest_int_edge = 0
-    closest_ext_edge = 0
-    for idx, edge in enumerate(convex_hull.simplices):
-        rel_point = point - convex_hull.points[edge[0]]
-        # there are 3 cases: the point is closest to edge[0], to edge[1] or to
-        # its orthogonal projection onto the edge
-        edge_dir = convex_hull.points[edge[1]] - convex_hull.points[edge[0]]
-        edge_length = np.linalg.norm(edge_dir)
-        assert(edge_length > 0.0)
-        edge_dir /= edge_length
-        # in any case we need the orthogonal distance to compute the sign
-        orthogonal_distance = np.dot(convex_hull.equations[idx, :2], rel_point)
-        # now check the different cases
-        directional_distance = np.dot(edge_dir, rel_point)
-        if directional_distance >= edge_length:
-            # closest distance is to edge[1]
-            edge_distance = np.linalg.norm(point - convex_hull.points[edge[1]])
-        elif directional_distance <= 0.0:
-            # closest distance is to edge[0]
-            edge_distance = np.linalg.norm(point - convex_hull.points[edge[0]])
-        else:
-            edge_distance = np.abs(orthogonal_distance)
-        if orthogonal_distance < 0.0:  # point is inside w.r.t to this edge
-            if interior_distance < -1.0 * edge_distance:
-                interior_distance = -1.0 * edge_distance
-                closest_int_edge = idx
-        elif edge_distance < exterior_distance:
-            exterior_distance = edge_distance
-            closest_ext_edge = idx
-    if exterior_distance == float('inf'):  # the point is inside the convex hull
-        return interior_distance, closest_int_edge
-    return exterior_distance, closest_ext_edge  # the point is outside the convex hull
-
-
-def compute_closest_point_on_line(start_point, end_point, query_point):
-    """
-        Compute the closest point to query_point that lies on the line spanned from 
-        start_point to end_point.
-        ---------
-        Arguments
-        ---------
-        start_point, numpy array of shape (n,)
-        end_point, numpy array of shape (n,)
-        query_point, numpy array of shape (n,)
-        -------
-        Returns
-        -------
-        distance, float - distance of query_point to the line
-        point, numpy array of shape (n,) - closest point on the line
-        t, float - t in [0, 1] indicating where on the line the closest point lies (0 - start_point, 1 end_point)
-    """
-    line_dir = end_point - start_point
-    rel_point = query_point - start_point
-    line_length = np.linalg.norm(line_dir)
-    if line_length == 0.0:
-        return np.linalg.norm(rel_point), start_point, 0.0
-    t = np.dot(line_dir / line_length, rel_point) / line_length
-    if t <= 0.0:
-        return np.linalg.norm(rel_point), start_point, 0.0
-    if t <= 1.0:
-        return np.linalg.norm(query_point - (start_point + t * line_dir)), start_point, t
-    if t > 1.0:
-        return np.linalg.norm(end_point), end_point, 1.0
-
-
 class SimplePlacementQuality(object):
     """
         Implements a simple quality function for a placement.
         This quality function is based on quasi-static analysis of contact stability.
         Assumes that gravity is pulling in direction -z = (0, 0, -1).
     """
-    class OrientationFilter(object):
-        """
-            A filter for placement faces based on their orientation.
-            ---------
-            Arguments
-            ---------
-            normal, numpy array of shape (3,) - the allowed normal
-            max_angle, float - the maximal allowed angle between placement plane's normal and the normal
-                of this filter.
-        """
-
-        def __init__(self, normal, max_angle):
-            self._normal = normal
-            self._max_angle = max_angle
-
-        def accept_plane(self, plane):
-            """
-                Return whether to accept the given plane or not.
-                ---------
-                Arguments
-                ---------
-                plane, numpy array of shape (n, 3), where the first element is the normal of the plane
-                    and all others the points on it
-            """
-            dot_product = np.clip(np.dot(self._normal, plane[0]), -1.0, 1.0)
-            return np.arccos(dot_product) < self._max_angle
-
-    class PreferenceFilterIO(object):
-        """
-            Implements an IO interface to load preference filters from files.
-        """
-
-        def __init__(self, base_dir):
-            """
-                Create a new IO filter that looks for preference filters in the given base_dir.
-                Currently only supports OrientationFilter
-                ---------
-                Arguments
-                ---------
-                base_dir, string - directory to look for preference filters in.
-            """
-            self._base_dir = base_dir
-            self._filters = {}
-
-        def get_filters(self, model_name):
-            """
-                Return preference filters for the given model.
-                Return None, if no filters available.
-            """
-            if model_name in self._filters:
-                return self._filters[model_name]
-            if os.path.exists(self._base_dir + '/' + model_name):
-                filename = self._base_dir + '/' + model_name + '/' + 'placement_filters.npy'
-                if os.path.exists(filename):
-                    new_filters = []
-                    filter_descs = np.load(filename)  # assumes array (n, 4), where n is the number of filters
-                    if len(filter_descs.shape) != 2 or filter_descs.shape[1] != 4:
-                        raise IOError(
-                            "Could not load filter for model %s. Invalid numpy array shape encountered." % model_name)
-                    for filter_desc in filter_descs:  # filter_desc is assumed to be (nx, ny, nz, angle)
-                        new_filters.append(SimplePlacementQuality.OrientationFilter(filter_desc[:3], filter_desc[3]))
-                    self._filters[model_name] = new_filters
-                    return new_filters
-            return None
 
     def __init__(self, env, filter_io, scene_sdf, parameters=None):
         """
@@ -342,7 +143,7 @@ class SimplePlacementQuality(object):
                         # handles.append(self._env.drawbox(projected_com, np.array([0.005, 0.005, 0.005])))
                         # TODO until here
                         # retrieve the distance to the closest edge
-                        chull_distance, _ = compute_hull_distance(contact_footprint, self._body.GetCenterOfMass()[:2])
+                        chull_distance, _ = chull_utils.compute_hull_distance(contact_footprint, self._body.GetCenterOfMass()[:2])
                         # angle between virtual placement plane and z-axis
                         dot_product = np.dot(virtual_plane_axes[:, 2], np.abs(self._dir_gravity))
                         alpha = np.arccos(np.clip(dot_product, -1.0, 1.0))
@@ -484,7 +285,7 @@ class SimplePlacementQuality(object):
         #                                  np.array([0.29, 0, 0.5]), tf))
         # ##### DRAW PROJECTED COM - END ######
         # accept the point if the projected center of mass is inside of the convex hull
-        dist2d, _ = compute_hull_distance(convex_hull, com2d)
+        dist2d, _ = chull_utils.compute_hull_distance(convex_hull, com2d)
         best_dist = np.min(convex_hull.equations[:, -1])
         return dist2d < -1.0 * self._parameters["min_com_distance"], dist2d, best_dist, dist3d
 
@@ -504,7 +305,7 @@ class SimplePlacementQuality(object):
         assert (convex_hull.equations[:, -1] < 0.0).all()
         self._interior_radius = np.min(np.abs(convex_hull.equations[:, -1]))
         # merge faces
-        clusters, _, _ = merge_faces(convex_hull, self._parameters["min_normal_similarity"])
+        clusters, _, _ = chull_utils.merge_faces(convex_hull, self._parameters["min_normal_similarity"])
         # handles = self._visualize_clusters(convex_hull, clusters, face_clusters)
         # handles = None
         self._placement_planes = []
@@ -1101,7 +902,7 @@ class QuasistaticFallingQuality(object):
             return rot_axis, rot_center
         else:  # contacts span a plane
             convex_hull = data
-            dist, edge_id = compute_hull_distance(convex_hull, com[:2])
+            dist, edge_id = chull_utils.compute_hull_distance(convex_hull, com[:2])
             if dist < self._parameters["minimal_chull_distance"]:
                 return None, None
             start_point = contacts[convex_hull.simplices[edge_id][0]][:3]
@@ -1128,7 +929,7 @@ class QuasistaticFallingQuality(object):
         """
         # proj_start = start[:2]
         # proj_end = end[:2]
-        _, _, t = compute_closest_point_on_line(start, end, com)
+        _, _, t = utils.compute_closest_point_on_line(start, end, com)
         grav_dir = np.array([0, 0, -1.0])
         if t == 0.0:
             rot_center = start

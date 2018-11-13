@@ -2,6 +2,7 @@ import os
 import operator
 import numpy as np
 from hfts_grasp_planner.utils import inverse_transform
+from scipy import ndimage
 
 
 class VoxelGrid(object):
@@ -353,7 +354,7 @@ class VoxelGrid(object):
         local_pos = self._base_pos + rel_pos
         if not b_global_frame:
             return local_pos
-        return np.dot(local_pos, self._transform[:3, :3].transpose())
+        return np.dot(local_pos, self._transform[:3, :3].transpose()) + self._transform[:3, 3]
 
     def get_grid_positions(self, b_center=True, b_global_frame=True):
         """
@@ -442,6 +443,33 @@ class VoxelGrid(object):
         idx = self.sanitize_idx(idx)
         self._additional_data[idx[0], idx[1], idx[2]] = data
 
+    # def get_interpolated_values(self, indices):
+    #     """
+    #         Return grid values for the given floating point indices.
+    #         The values are interpolated using trilinear interpolation.
+    #         @param indices - numpy array of type np.float_ with shape (n, 3), where n is the number of query indices
+    #         @return values - numpy array of type np.float_ and shape (n,).
+    #     """
+    #     # first shift indices so that integer coordinates correspond to the center of the interior cells (substract 0.5)
+    #     centered_coords = indices - 0.5
+    #     # we are going to compute trilinear interpolation for each interior point
+    #     floor_coords = np.floor(centered_coords)  # rounded down coordinates
+    #     w = centered_coords - floor_coords  # fractional part of index, i.e. distance to rounded down integer
+    #     wm = 1.0 - w  # 1 - fractional part of index
+    #     # compute the indices of each corner
+    #     corner_indices = (floor_coords[:, np.newaxis, :] + VoxelGrid._rel_grid_neighbor_mask).astype(int) + 1
+    #     assert(corner_indices.shape == (indices.shape[0], 8, 3))
+    #     # retrieve values for each corner - dummy + 1 is already added to the indices
+    #     corner_values = self._cells[corner_indices[:, :, 0], corner_indices[:, :, 1], corner_indices[:, :, 2]]
+    #     assert(corner_values.shape == (indices.shape[0], 8))
+    #     # weights for bilinear interpolation - each row of this matrix has the weights for the 4 corners
+    #     bi_weight_matrix = np.array((wm[:, 1] * wm[:, 0], wm[:, 1] * w[:, 0],
+    #                                  w[:, 1] * wm[:, 0], w[:, 1] * w[:, 0])).transpose()
+    #     assert(bi_weight_matrix.shape == (indices.shape[0], 4))
+    #     # combine the bilinear interpolation results to trilinearly interpolated values
+    #     return wm[:, 2] * np.sum(bi_weight_matrix * corner_values[:, :4], axis=1) + \
+    #         w[:, 2] * np.sum(bi_weight_matrix * corner_values[:, 4:], axis=1)
+
     def get_interpolated_values(self, indices):
         """
             Return grid values for the given floating point indices.
@@ -449,25 +477,7 @@ class VoxelGrid(object):
             @param indices - numpy array of type np.float_ with shape (n, 3), where n is the number of query indices
             @return values - numpy array of type np.float_ and shape (n,).
         """
-        # first shift indices so that integer coordinates correspond to the center of the interior cells (substract 0.5)
-        centered_coords = indices - 0.5
-        # we are going to compute trilinear interpolation for each interior point
-        floor_coords = np.floor(centered_coords)  # rounded down coordinates
-        w = centered_coords - floor_coords  # fractional part of index, i.e. distance to rounded down integer
-        wm = 1.0 - w  # 1 - fractional part of index
-        # compute the indices of each corner
-        corner_indices = (floor_coords[:, np.newaxis, :] + VoxelGrid._rel_grid_neighbor_mask).astype(int) + 1
-        assert(corner_indices.shape == (indices.shape[0], 8, 3))
-        # retrieve values for each corner - dummy + 1 is already added to the indices
-        corner_values = self._cells[corner_indices[:, :, 0], corner_indices[:, :, 1], corner_indices[:, :, 2]]
-        assert(corner_values.shape == (indices.shape[0], 8))
-        # weights for bilinear interpolation - each row of this matrix has the weights for the 4 corners
-        bi_weight_matrix = np.array((wm[:, 1] * wm[:, 0], wm[:, 1] * w[:, 0],
-                                     w[:, 1] * wm[:, 0], w[:, 1] * w[:, 0])).transpose()
-        assert(bi_weight_matrix.shape == (indices.shape[0], 4))
-        # combine the bilinear interpolation results to trilinearly interpolated values
-        return wm[:, 2] * np.sum(bi_weight_matrix * corner_values[:, :4], axis=1) + \
-            w[:, 2] * np.sum(bi_weight_matrix * corner_values[:, 4:], axis=1)
+        return ndimage.map_coordinates(self._cells, indices.transpose() + 0.5, order=1)
 
     def get_num_cells(self):
         """
@@ -612,3 +622,23 @@ class VoxelGrid(object):
             Return whether there is additional data stored in this grid.
         """
         return self._additional_data is not None
+
+
+# if __name__ == "__main__":
+#     import os
+
+#     def test_interpolation():
+#         grid = VoxelGrid.load(os.path.dirname(__file__) + '/../../../data/sdfs/placement_exp_0.sdf.static.sdf.grid')
+#         query_indices = np.random.rand(100000, 3)
+#         query_indices = query_indices * np.array(grid.get_num_cells())
+#         values_a = grid.get_interpolated_values(query_indices)
+#         values_b = grid.get_interpolated_values2(query_indices)
+#         errors = np.abs(values_a - values_b)
+#         bad_ones = np.where(errors > 0.1)
+#         print grid.get_num_cells()
+#         print bad_ones[0].shape
+#         print query_indices[bad_ones[0]]
+#         print np.min(errors), np.max(errors)
+#         assert(np.allclose(values_a, values_b))
+#         print "Passed!"
+    # test_interpolation()
