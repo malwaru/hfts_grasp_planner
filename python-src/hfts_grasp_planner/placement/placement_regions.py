@@ -11,10 +11,21 @@ import scipy.ndimage.morphology as scipy_morph
 
 class PlanarPlacementRegion(object):
     """
-        Struct-like class that stores information about a planar placement region.
+        Planar placement region described by contiguous region of
+        free occupancy grid cells.
     """
 
     def __init__(self, x_indices, y_indices, tf, cell_size):
+        """
+            Create a new PlanarPlacementRegion.
+            ---------
+            Arguments
+            ---------
+            x_indices, numpy array of int - x positions of cells
+            y_indices, numpy array of int - y positiong of cells
+            tf, numpy array of shape (4, 4) - transformation matrix describing the pose of front left cell
+            cell_size, float - dimension of cells
+        """
         self.base_tf = tf  # transform from local frame to world frame
         # the indices we have might not start at 0, 0, so let's shift them
         xshift, yshift = np.min((x_indices, y_indices), axis=1)
@@ -29,8 +40,8 @@ class PlanarPlacementRegion(object):
         assert(self.x_indices.shape[0] >= 1)
         assert(self.x_indices.shape[0] == self.y_indices.shape[0])
         self.cell_size = cell_size
+        self._subregions = None
 
-    # TODO construct search hiearchy (quadtree) around this -> only need to look at positions in self.labels
     def get_subregions(self):
         """
             Return a list of subregions of this region.
@@ -41,9 +52,11 @@ class PlanarPlacementRegion(object):
             -------
             subregions, list of PlanarPlacementRegion objects
         """
-        subregions = []
+        if self._subregions is not None:
+            return self._subregions
+        self._subregions = []
         if self.x_indices.shape[0] == 1 and self.y_indices.shape[0] == 1:
-            return subregions
+            return self._subregions
         max_indices = (self.x_indices[-1], self.y_indices[-1])
         split_indices = ((max_indices[0] + 1) / 2, (max_indices[1] + 1) / 2)
         left_filter = self.x_indices < split_indices[0]
@@ -60,21 +73,26 @@ class PlanarPlacementRegion(object):
                 tf = np.eye(4)
                 tf[:2, 3] = off * self.cell_size
                 tf = np.dot(self.base_tf, tf)
-                subregions.append(PlanarPlacementRegion(xx, yy, tf, self.cell_size))
+                self._subregions.append(PlanarPlacementRegion(xx, yy, tf, self.cell_size))
+        return self._subregions
 
-        # TODO remove me:
-        children_cells = 0
-        for region in subregions:
-            children_cells += region.x_indices.shape[0]
-        assert(children_cells == self.x_indices.shape[0])
-        return subregions
-        # def __str__(self):
-        #     return "PlanarPlacementRegion: base_tf: " + str(self.base_tf) + ", dimensions: " +\
-        #         str(self.dimensions) + ", height: " + str(self.height)
+    def get_num_subregions(self):
+        if self._subregions is None:
+            self.get_subregions()  # initializes subregions
+        return len(self._subregions)
 
-        # def __repr__(self):
-        #     return "PlanarPlacementRegion:\n base_tf:\n" + str(self.base_tf) + "\n dimensions: " +\
-        #         str(self.dimensions) + "\n height: " + str(self.height)
+    def get_subregion(self, key):
+        """
+            Return the subregion identified by key. The key may either be a single int and then
+            the returned subregion is the key'th subregion, or the key is a tuple of int which defines
+            the subregion recursively, i.e. (i, j) describes the jth subregion of the ith
+            subregion of this region.
+        """
+        regions = self.get_subregions()
+        if type(key) == int:
+            return regions[key]
+        assert(type(key) == tuple)
+        return regions[key[0]].get_subregions(key[1:])
 
 
 class PlanarRegionExtractor(object):
