@@ -118,7 +118,7 @@ class RobotInterface(object):
             active_manip = self._robot.GetActiveManipulator()
             assert(active_manip.GetName() == manip_name)
         self._manip = self._robot.GetActiveManipulator()
-        self._ik_solver = ik_module.IKSolver(self._env, robot_name, urdf_file_name)
+        self._ik_solver = ik_module.IKSolver(self._manip, urdf_file_name)
         self._hand_config = None
         self._grasp_tf = None  # from obj frame to eef-frame
         self._inv_grasp_tf = None  # from eef frame to object frame

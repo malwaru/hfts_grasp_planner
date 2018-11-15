@@ -1,3 +1,4 @@
+import heapq
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
     This module contains the definition of a naive placement goal sampler - purely random sampler.
@@ -6,6 +7,12 @@ import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 
 
 class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
+    def __init__(self, hierarchy, solution_constructor, validator, objective):
+        self._hierarchy = hierarchy
+        self._solution_constructor = solution_constructor
+        self._validator = validator
+        self._objective = objective
+
     def sample(self, num_solutions):
         """
             Sample new solutions.
@@ -18,7 +25,21 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             -------
             a list of PlacementGoals
         """
-        # TODO randomly sample everything!!!!
+        solutions = []
+        while len(solutions) < num_solutions:
+            # sample a random key
+            key = ()
+            child_key = self._hierarchy.get_random_child_key(key)
+            while child_key is not None:
+                key = child_key
+                child_key = self._hierarchy.get_random_child_key(key)
+            assert(key is not None)
+            solution = self._solution_constructor.construct_solution(key, True, True)
+            if self._validator.is_valid(solution):
+                value = self._objective.evaluate(solution)
+                solutions.append(value, solution)
+        solutions = solutions.sort(key=lambda x: x[0])
+        return [sol for (_, sol) in solutions]
 
     def set_reached_goals(self, goals):
         """

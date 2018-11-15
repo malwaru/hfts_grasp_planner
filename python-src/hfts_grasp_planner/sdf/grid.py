@@ -26,9 +26,9 @@ class VoxelGrid(object):
             """
                 Return an iterator over the valid neighbors of this cell.
             """
-            for ix in xrange(max(0, idx[0] - 1), min(idx[0] + 2, self._grid_num_cells[0])):
-                for iy in xrange(max(0, idx[1] - 1), min(idx[1] + 2, self._grid_num_cells[1])):
-                    for iz in xrange(max(0, idx[2] - 1), min(idx[2] + 2, self._grid_num_cells[2])):
+            for ix in xrange(max(0, self._idx[0] - 1), min(self._idx[0] + 2, self._grid._num_cells[0])):
+                for iy in xrange(max(0, self._idx[1] - 1), min(self._idx[1] + 2, self._grid._num_cells[1])):
+                    for iz in xrange(max(0, self._idx[2] - 1), min(self._idx[2] + 2, self._grid._num_cells[2])):
                         idx = (ix, iy, iz)
                         if idx != self._idx:
                             yield idx
@@ -81,7 +81,7 @@ class VoxelGrid(object):
             @param base_transform - if not None, any query point is transformed by base_transform
             b_additional_data - if True, each voxel can be associated with additional data of object type
             num_cells - if provided, the number of cells is not computed from the workspace aabb, but instead
-                set to the given one. The actual workspace this grid covers spans then from the min position in 
+                set to the given one. The actual workspace this grid covers spans then from the min position in
                 workspace aabb to the point min_position + num_cells * cell_size.
         """
         self._cell_size = cell_size
@@ -411,6 +411,21 @@ class VoxelGrid(object):
         if indices.dtype.type == np.float_ and self._cells.dtype.type == np.float_:
             return self.get_interpolated_values(indices)
         return self._cells[indices[:, 0] + 1, indices[:, 1] + 1, indices[:, 2] + 1]
+
+    def get_cell_values_pos(self, positions):
+        """
+            Returns the values of the cells with the specified positions (in world frame).
+            If some positions are out of bounds, None is returned for these positions.
+            ---------
+            Arguments
+            ---------
+            positions, numpy array of shape (n, 3) - query positions
+        """
+        values = np.full((positions.shape[0],), None)
+        _, grid_indices, valid_mask = self.map_to_grid_batch(positions, index_type=np.float_)
+        if valid_mask.any():
+            values[valid_mask] = self.get_cell_values(grid_indices)
+        return values
 
     def get_additional_data(self, idx):
         """

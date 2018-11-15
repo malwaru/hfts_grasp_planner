@@ -6,6 +6,7 @@ import collections
 import numpy as np
 import openravepy as orpy
 import skimage.measure as skm
+import hfts_grasp_planner.sdf.grid as grid_mod
 import scipy.ndimage.morphology as scipy_morph
 
 
@@ -87,12 +88,21 @@ class PlanarPlacementRegion(object):
             the returned subregion is the key'th subregion, or the key is a tuple of int which defines
             the subregion recursively, i.e. (i, j) describes the jth subregion of the ith
             subregion of this region.
+            If this region has no subregions, return self.
         """
         regions = self.get_subregions()
+        if len(regions) == 0 or len(key) == 0:
+            return self
         if type(key) == int:
             return regions[key]
         assert(type(key) == tuple)
-        return regions[key[0]].get_subregions(key[1:])
+        return regions[key[0]].get_subregion(key[1:])
+
+    def has_subregions(self):
+        """
+            Return whether this region has subregions.
+        """
+        return self.get_num_subregions() > 0
 
 
 class PlanarRegionExtractor(object):
@@ -143,11 +153,16 @@ class PlanarRegionExtractor(object):
             ---------
             Arguments
             ---------
-            grid, Voxel grid storing an occupancy grid. Value type should be bool.
+            grid, VoxelGrid storing an occupancy grid. Value type should be bool.
             max_region_size, float - maximum distance that one region is allowed to span along one axis
             -------
             Returns
             -------
+            contact_cells, VoxelGrid with bool values - a grid of same dimensions as the input
+                grid that stores for each cell whether it is a valid position for a placement contact.
+            labels, numpy array of the same shape as grid.get_num_cells(), where each entry stores to which 
+                placement region a cell belongs
+            num_regions, int - the number of contiguous placement regions
             placement_regions, list - a list of PlanarPlacementRegions
         """
         placement_regions = []
@@ -162,6 +177,11 @@ class PlanarRegionExtractor(object):
         v2 = np.int32(inner_shape[2])
         self.surface_detect_fn(cuda.In(data), cuda.Out(output_grid), v0, v1, v2,
                                grid=tuple(grid_shape), block=(8, 8, 8))
+        surface_grid = grid_mod.VoxelGrid(grid.get_workspace(), cell_size=grid.get_cell_size(),
+                                          num_cells=np.array(grid.get_num_cells()),
+                                          base_transform=grid.get_transform(),
+                                          dtype=bool)
+        surface_grid.set_raw_data(output_grid)
         # next cluster them
         label_offset = 0
         for layer in xrange(1, output_grid.shape[2]):
@@ -175,7 +195,7 @@ class PlanarRegionExtractor(object):
                     placement_regions.extend(PlanarRegionExtractor._compute_plcmnt_regions(
                         grid, output_grid, layer, r, max_cells_region_dim))
                 label_offset += num_regions
-        return output_grid, label_offset, placement_regions
+        return surface_grid, output_grid, label_offset, placement_regions
         # return placement_regions
 
     @staticmethod
@@ -321,11 +341,11 @@ if __name__ == "__main__":
 
     # import hfts_grasp_planner.sdf.visualization as vis_module
     # import mayavi.mlab
-    base_path = os.path.dirname(__file__) + '/../../../'
+    base_path = os.path.dirname(__file__) + '/../../../../'
     world_grid = grid_module.VoxelGrid.load(base_path + 'data/occupancy_grids/placement_exp_0_low_res')
     # Or create a new grid
     env = orpy.Environment()
-    env.Load(os.path.dirname(__file__) + '/../../../data/environments/placement_exp_0.xml')
+    env.Load(base_path + 'data/environments/placement_exp_0.xml')
     # aabb = np.array([-1.0, -1.0, 0.0, 1.0, 1.0, 1.5])
     # grid_builder = occupancy.OccupancyGridBuilder(env, 0.04)
     # grid = grid_module.VoxelGrid(aabb)
@@ -359,7 +379,7 @@ if __name__ == "__main__":
     #  transparent=True, opacity=0.5)
 
     gpu_kit = PlanarRegionExtractor()
-    labels, num_regions, regions = gpu_kit.extract_planar_regions(grid, max_region_size=0.2)
+    surface, labels, num_regions, regions = gpu_kit.extract_planar_regions(grid, max_region_size=0.2)
     # print "found %i regions" % len(regions)
     env.SetViewer('qtcoin')
     handles = []

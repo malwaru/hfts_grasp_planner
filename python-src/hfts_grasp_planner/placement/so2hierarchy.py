@@ -63,3 +63,10 @@ def get_key_gen(key, branching_factor):
         key generator that produces the keys of all children of the given key
     """
     return (key + (i,) for i in xrange(branching_factor))
+
+
+def is_leaf(key, depth):
+    """
+        Return whether the given key is a leaf.
+    """
+    return len(key) == depth
