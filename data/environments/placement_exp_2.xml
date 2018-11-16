@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/yumi/yumi.xml">
+        <RotationAxis>0 0 1 90</RotationAxis>
+        -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+        <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
+        <Translation>0 0.12 0.1</Translation>
+    </Robot>
+
+    <KinBody name="floor">
+        <Translation>0.3   0.0   -0.5</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>1 1.5 0.005</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="base">
+        <!-- <Translation>-0.13   0.0   -0.25</Translation>  -->
+        <Translation>-0.13   -0.0375   -0.27</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>0.45 0.275 0.25</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="table">
+        <Translation>-0.024   0.54   -0.15</Translation>
+        <RotationAxis>0 0 1 180</RotationAxis>
+        <Body type="static">
+            <Geom type="box">
+                <extents>0.45 0.275 0.25</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="crayola">
+        <Translation>-0.16 0.78 1.0</Translation>
+        <!-- <RotationAxis>0 0 1 20</RotationAxis> -->
+        <Body type="dynamic">
+            <Geom type="trimesh">
+                <Data>../crayola/objectModel_rot.ply</Data>
+                <!-- <Data>../crayola/objectModel.ply</Data> -->
+                <!-- <Render>../crayola/objectModel.ply</Render> -->
+            </Geom>
+        </Body>
+    </KinBody>
+</Environment> 

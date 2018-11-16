@@ -410,7 +410,10 @@ class VoxelGrid(object):
         """
         if indices.dtype.type == np.float_ and self._cells.dtype.type == np.float_:
             return self.get_interpolated_values(indices)
-        return self._cells[indices[:, 0] + 1, indices[:, 1] + 1, indices[:, 2] + 1]
+        query_indices = indices
+        if indices.dtype == np.float:
+            query_indices = indices.astype(int)
+        return self._cells[query_indices[:, 0] + 1, query_indices[:, 1] + 1, query_indices[:, 2] + 1]
 
     def get_cell_values_pos(self, positions):
         """

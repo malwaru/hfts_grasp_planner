@@ -30,13 +30,14 @@ class PlacementGoalSampler:
             self.data = data
 
     @abstractmethod
-    def sample(self, num_solutions):
+    def sample(self, num_solutions, max_attempts=1000):
         """
             Sample new solutions.
             ---------
             Arguments
             ---------
             num_solutions, int - number of new solutions to sample
+            max_attempts, int - maximal number of attempts (iterations or sth similar)
             -------
             Returns
             -------

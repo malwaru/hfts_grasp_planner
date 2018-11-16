@@ -204,21 +204,46 @@ class ORSDFVisualization(object):
         self._handles = []
 
 
-# def visualize_grid(grid, min_sat_value=None, max_sat_value=None):
-#     """
-#         Visualize the given grid using mlab.
-#         @param grid - the grid to visualize
-#         @param min_sat_value (optional) - all points with distance smaller than this will have the same color
-#         @param max_sat_value (optional) - all point with distance larger than this will have the same color
-#     """
-#     if min_sat_value is None:
-#         min_sat_value = np.min(grid.get_raw_data())
-#     if max_sat_value is None:
-#         max_sat_value = np.max(grid.get_raw_data())
-#     mlab.pipeline.volume(mlab.pipeline.scalar_field(grid.get_raw_data()), vmin=min_sat_value, vmax=max_sat_value)
+def visualize_occupancy_grid(or_env, grid, color=None):
+    """
+        Render occupancy grid in OpenRAVE viewer.
+        ---------
+        Arguments
+        ---------
+        or_env, OpenRAVE env to render in
+        grid, VoxelGrid of type bool - occupancy grid to render
+        color (optional), numpy array of shape (4,) - color of occupied cells
+        -------
+        Returns
+        -------
+        handles, list of OpenRAVE handles
+    """
+    handles = []
+    if color is None:
+        color = np.array([1.0, 0, 0, 1.0])
+    xx, yy, zz = np.where(grid.get_raw_data())
+    indices = np.column_stack((xx, yy, zz))
+    positions = grid.get_cell_positions(indices)
+    extents = np.array(3 * [grid.get_cell_size() / 2.0])
+    for pos in positions:
+        handles.append(or_env.drawbox(pos, extents, color))
+    return handles
 
-# def clear_visualization():
-#     """
-#         Clear visualization.
-#     """
-#     mlab.clf()
+    # def visualize_grid(grid, min_sat_value=None, max_sat_value=None):
+    #     """
+    #         Visualize the given grid using mlab.
+    #         @param grid - the grid to visualize
+    #         @param min_sat_value (optional) - all points with distance smaller than this will have the same color
+    #         @param max_sat_value (optional) - all point with distance larger than this will have the same color
+    #     """
+    #     if min_sat_value is None:
+    #         min_sat_value = np.min(grid.get_raw_data())
+    #     if max_sat_value is None:
+    #         max_sat_value = np.max(grid.get_raw_data())
+    #     mlab.pipeline.volume(mlab.pipeline.scalar_field(grid.get_raw_data()), vmin=min_sat_value, vmax=max_sat_value)
+
+    # def clear_visualization():
+    #     """
+    #         Clear visualization.
+    #     """
+    #     mlab.clf()

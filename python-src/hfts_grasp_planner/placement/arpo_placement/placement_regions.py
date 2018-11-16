@@ -37,10 +37,12 @@ class PlanarPlacementRegion(object):
         shift_tf[:2, 3] = np.array((xshift, yshift)) * cell_size
         self.base_tf = np.dot(self.base_tf, shift_tf)
         # width and depth in local frame
-        self.dimensions = cell_size * (np.array((self.x_indices[-1], self.y_indices[-1])) + 1)
+        self.dimensions = cell_size * (np.max((self.x_indices, self.y_indices), axis=1) + 1)
         assert(self.x_indices.shape[0] >= 1)
         assert(self.x_indices.shape[0] == self.y_indices.shape[0])
         self.cell_size = cell_size
+        self.contact_tf = np.array(self.base_tf)  # tf that a contact point should have
+        self.contact_tf[2, 3] += cell_size / 2.0  # is lifted by half the cell size
         self._subregions = None
 
     def get_subregions(self):
@@ -58,7 +60,7 @@ class PlanarPlacementRegion(object):
         self._subregions = []
         if self.x_indices.shape[0] == 1 and self.y_indices.shape[0] == 1:
             return self._subregions
-        max_indices = (self.x_indices[-1], self.y_indices[-1])
+        max_indices = np.max((self.x_indices, self.y_indices), axis=1)
         split_indices = ((max_indices[0] + 1) / 2, (max_indices[1] + 1) / 2)
         left_filter = self.x_indices < split_indices[0]
         bottom_filter = self.y_indices < split_indices[1]
@@ -322,7 +324,7 @@ if __name__ == "__main__":
     import IPython
     import os
     import hfts_grasp_planner.sdf.grid as grid_module
-    import openravepy as orpy
+    # import openravepy as orpy
 
     def compute_runtime():
         import timeit
@@ -340,12 +342,12 @@ if __name__ == "__main__":
         print timeit.timeit(evaluate_code_gpu, setup=setup_code + setup_code_gpu, number=1000)
 
     # import hfts_grasp_planner.sdf.visualization as vis_module
-    # import mayavi.mlab
+    import mayavi.mlab
     base_path = os.path.dirname(__file__) + '/../../../../'
     world_grid = grid_module.VoxelGrid.load(base_path + 'data/occupancy_grids/placement_exp_0_low_res')
     # Or create a new grid
-    env = orpy.Environment()
-    env.Load(base_path + 'data/environments/placement_exp_0.xml')
+    # env = orpy.Environment()
+    # env.Load(base_path + 'data/environments/placement_exp_0.xml')
     # aabb = np.array([-1.0, -1.0, 0.0, 1.0, 1.0, 1.5])
     # grid_builder = occupancy.OccupancyGridBuilder(env, 0.04)
     # grid = grid_module.VoxelGrid(aabb)
@@ -381,12 +383,13 @@ if __name__ == "__main__":
     gpu_kit = PlanarRegionExtractor()
     surface, labels, num_regions, regions = gpu_kit.extract_planar_regions(grid, max_region_size=0.2)
     # print "found %i regions" % len(regions)
-    env.SetViewer('qtcoin')
-    handles = []
-    xx, yy, zz = np.where(grid.get_raw_data() > 0)
-    colors = np.random.random((num_regions+1, 3))
-    color = np.empty(4)
-    tf = np.array(grid.get_transform())
+    # env.SetViewer('qtcoin')
+    # handles = []
+    surface_grid = surface.get_raw_data()
+    xx, yy, zz = np.where(surface_grid)
+    # colors = np.random.random((num_regions+1, 3))
+    # color = np.empty(4)
+    # tf = np.array(grid.get_transform())
     # IPython.embed()
     # for cell_id in xrange(len(xx)):
     #     color[:3] = colors[labels[xx[cell_id], yy[cell_id], zz[cell_id]]]
@@ -394,14 +397,16 @@ if __name__ == "__main__":
     #     color[3] = 0.3
     #     tf[:3, 3] = grid.get_cell_position((xx[cell_id], yy[cell_id], zz[cell_id]))
     #     handles.append(env.drawbox(np.array((0, 0, 0)), np.array(3 * [grid.get_cell_size() / 2.0]), color, tf))
-    handles.extend(visualize_plcmnt_regions(env, regions, height=grid.get_cell_size(), level=10))
+    # handles.extend(visualize_plcmnt_regions(env, regions, height=grid.get_cell_size(), level=10))
     # handles.extend(plcmnt_regions.visualize_plcmnt_regions(env, regions, height=grid.get_cell_size(), b_cells=True))
-    IPython.embed()
+    # IPython.embed()
     # print regions
     # for r in xrange(1, num_regions + 1):
     #     xx, yy, zz = np.where(surfaces == r)
     #     mayavi.mlab.points3d(xx, yy, zz, mode="cube", color=tuple(np.random.random(3)), scale_factor=1)
     # mayavi.mlab.show()
     # print grid._cells.shape
+    mayavi.mlab.points3d(xx, yy, zz, mode="cube", color=tuple(np.random.random(3)), scale_factor=1)
+    mayavi.mlab.show()
 
     # compute_runtime()

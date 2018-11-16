@@ -140,7 +140,7 @@ if __name__ == "__main__":
                                                     reachability_path=rmap_file,
                                                     **problem_desc['parameters'])
     # create an IK solver so we can compute the start configuration
-    ik_solver = ik_module.IKSolver(planner._env, problem_desc["robot_name"], problem_desc["urdf_file"])
+    ik_solver = ik_module.IKSolver(planner._manip, problem_desc["urdf_file"])
     # set a placement target volume
     placement_volume = (np.array(problem_desc["plcmnt_volume"][:3]),
                         np.array(problem_desc["plcmnt_volume"][3:]))

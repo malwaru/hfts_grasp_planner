@@ -1,4 +1,5 @@
 import numpy as np
+import openravepy as orpy
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.so2hierarchy as so2hierarchy
 import hfts_grasp_planner.placement.goal_sampler.interfaces as placement_interfaces
@@ -26,7 +27,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         (,) - root
         (a,) - chosen arm a, nothing else
         (a, r) - chosen arm a, region r, nothing else
-        (a, r, o) - chosen arm a, region r, placement orientation
+        (a, r, o, (), ()) - chosen arm a, region r, orientation o, nothing else
         (a, r, o, subregion_key, so2_key) - subregion_key and so2_key can also be partially defined in the same way.
 
         Hierarchy layout:
@@ -92,19 +93,25 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         elif len(key) == 2:
             return (key + (i,) for i in xrange(len(self._orientations)))
         else:
-            # extract sub region key
-            subregion_key = key[3]
-            subregion = self.get_placement_region(subregion_key)
+            if len(key) == 3:
+                subregion_key = ()
+                so2_key = ()
+            else:
+                assert(len(key) == 5)
+                # extract sub region key
+                subregion_key = key[3]
+                so2_key = key[4]
+            subregion = self.get_placement_region((key[1], subregion_key))
             b_region_leaf = not subregion.has_subregions()
-            b_so2_leaf = so2hierarchy.is_leaf(key[4], self._so2_depth)
+            b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
             if b_region_leaf and b_so2_leaf:
                 return None
             if b_region_leaf:
-                return (key + ((0, o),) for o in so2hierarchy.get_key_gen(key[4], self._so2_branching))
+                return (key[:3] + (subregion_key + (0,), so2_key + (o,)) for o in so2hierarchy.get_key_gen(key[4], self._so2_branching))
             if b_so2_leaf:
-                return (key + ((r, 0),) for r in xrange(subregion.get_num_subregions()))
-            return (key + ((r, o),) for r in xrange(subregion.get_num_subregions())
-                    for o in so2hierarchy.get_key_gen(key[4], self._so2_branching))
+                return (key[:3] + (subregion_key + (r,), so2_key + (0,)) for r in xrange(subregion.get_num_subregions()))
+            return (key[:3] + (subregion_key + (r,), (so2_key + (o,))) for r in xrange(subregion.get_num_subregions())
+                    for o in so2hierarchy.get_key_gen(so2_key, self._so2_branching))
 
     def get_random_child_key(self, key):
         """
@@ -126,21 +133,27 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         if len(key) == 2:
             return key + (np.random.randint(0, len(self._orientations)),)
         # extract sub region key
-        subregion_key = key[3]
-        subregion = self.get_placement_region(subregion_key)
+        if len(key) == 5:
+            subregion_key = key[3]
+            so2_key = key[4]
+        else:
+            assert(len(key) == 3)
+            subregion_key = ()
+            so2_key = ()
+        subregion = self.get_placement_region((key[1], subregion_key))
         b_region_leaf = not subregion.has_subregions()
-        b_so2_leaf = so2hierarchy.is_leaf(key[4], self._so2_depth)
+        b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
         if b_region_leaf and b_so2_leaf:
             return None
         if b_region_leaf:
-            return key + ((0, np.random.randint(self._so2_branching)),)
+            return key[:3] + (subregion_key + (0,), so2_key + (np.random.randint(self._so2_branching),))
         if b_so2_leaf:
-            return key + ((np.random.randint(subregion.get_num_subregions()), 0),)
-        return key + ((np.random.randint(subregion.get_num_subregions()), np.random.randint(self._so2_branching)),)
+            return key[:3] + (subregion_key + (np.random.randint(subregion.get_num_subregions()),), so2_key + (0,))
+        return key[:3] + (subregion_key + (np.random.randint(subregion.get_num_subregions()),), so2_key + (np.random.randint(self._so2_branching),))
 
     def get_minimum_depth_for_construction(self):
         """
-            Return the minimal depth, i.e. length of a key, for which it is possible 
+            Return the minimal depth, i.e. length of a key, for which it is possible
             to construct a solution.
         """
         return 3
@@ -152,7 +165,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             ---------
             Arguments
             ---------
-            region_key, int of tuple(int, tuple(int, ...)) - 
+            region_key, int of tuple(int, tuple(int, ...)) -
                 The region key can either be a single int or a tuple consisting of an
                 int and another tuple of ints. In case it is a single int, it identifies
                 a placement region. In case it is a tuple of the form (int, tuple(int, ...)),
@@ -181,11 +194,11 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         elif len(key) == 2:
             return (self._manips[key[0]], self._regions[key[1]])
         elif len(key) == 3:
-            return (self._manips[key[0]], self._regions[key[1]], self._regions[key[2]])
-
-        subregion = self.get_placement_region(key[3])
+            return (self._manips[key[0]], self._regions[key[1]], self._orientations[key[2]])
+        assert(len(key) == 5)
+        subregion = self.get_placement_region((key[1], key[3]))
         so2region = so2hierarchy.get_interval(key[4][:self._so2_depth], self._so2_branching)
-        return (self._manips[key[0]], self._regions[key[1]], self._regions[key[2]], subregion, so2region)
+        return (self._manips[key[0]], self._regions[key[1]], self._orientations[key[2]], subregion, so2region)
 
 
 class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
@@ -269,7 +282,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             key, object - a key object that identifies a node in a PlacementHierarchy
             boptimize_constraints, bool - if True, the solution constructor may put additional computational
                 effort into computing a valid solution, e.g. some optimization of a constraint relaxation
-            b_optimize_objective, bool - if True, the solution constructor may optimize an objective 
+            b_optimize_objective, bool - if True, the solution constructor may optimize an objective
                 given the hierarchy key
             -------
             Returns
@@ -279,7 +292,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         if len(key) < self._hierarchy.get_minimum_depth_for_construction():
             raise ValueError("Could not construct solution for the given key: " + str(key) +
                              " This key is describing a node too high up in the hierarchy")
-        arpo_info = self._hierarchy.get_arpo_information()
+        arpo_info = self._hierarchy.get_arpo_information(key)
         assert(len(arpo_info) >= 3)
         manip = arpo_info[0]
         region = arpo_info[1]
@@ -289,10 +302,16 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             region = arpo_info[3]
             so2_interval = arpo_info[4]
         # compute object pose
-        obj_tf = np.dot(region.base_tf, po.inv_reference_tf)
+        obj_tf = np.dot(region.contact_tf, po.inv_reference_tf)
         manip_data = self._manip_data[manip.GetName()]
+        # TODO REMOVE
+        import openravepy as orpy
+        env = manip.GetRobot().GetEnv()
+        body = env.GetKinBody('crayola')
+        body.SetTransform(obj_tf)
         # end-effector tf
         eef_tf = np.dot(obj_tf, manip_data.inv_grasp_tf)
+        handle = orpy.misc.DrawAxes(env, eef_tf)  # TODO remove
         # TODO check reachability map on whether there is point in calling IK solver?
         # TODO seed?
         config = manip_data.ik_solver.compute_ik(eef_tf)
@@ -321,17 +340,20 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         manip_data = self._manip_data[solution.manip.GetName()]
         robot = solution.manip.GetRobot()
         with robot:
-            # grab object
-            robot.SetActiveManipulator(manip_data.manip.GetName())
-            self._target_obj.SetTransform(np.dot(solution.manip.GetEndEffectorTransform(), manip_data.grasp_tf))
-            robot.Grab(self._target_obj)
-            robot.SetDOFValues(config, manip_data.manip.GetArmIndices())
-            robot.SetDOFValues(manip_data.grasp_config, manip_data.manip.GetGripperIndices())
-            env = robot.GetEnv()
-            solution_cache_entry.bcollision_free = not env.CheckCollision(robot)
+            with orpy.KinBodyStateSaver(self._target_obj):
+                # grab object
+                robot.SetActiveManipulator(manip_data.manip.GetName())
+                self._target_obj.SetTransform(np.dot(solution.manip.GetEndEffectorTransform(), manip_data.grasp_tf))
+                robot.Grab(self._target_obj)
+                robot.SetDOFValues(config, manip_data.manip.GetArmIndices())
+                robot.SetDOFValues(manip_data.grasp_config, manip_data.manip.GetGripperIndices())
+                env = robot.GetEnv()
+                solution_cache_entry.bcollision_free = not env.CheckCollision(robot)
+                robot.Release(self._target_obj)
         if not solution_cache_entry.bcollision_free:
             return False
         # next check whether the object pose is actually a stable placement
+        # solution_cache_entry.bstable = True
         solution_cache_entry.bstable = self._check_stability(solution_cache_entry)
         # TODO value must be better than some previous value
         return solution_cache_entry.bstable
@@ -350,7 +372,19 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         """
         obj_tf = cache_entry.solution.obj_tf
         po = cache_entry.plcmnt_orientation
-        contact_points = np.dot(po.placement_face[1:], obj_tf[:3, :3]) + obj_tf[:3, 3]
+        contact_points = np.dot(po.placement_face[1:], obj_tf[:3, :3].transpose()) + obj_tf[:3, 3]
+        # TODO delete this (debug output)
+        # self._target_obj.SetTransform(obj_tf)
+        # handles = []
+        # or_env = self._target_obj.GetEnv()
+        # _, grid_indices, valid_mask = self._valid_contact_points.map_to_grid_batch(contact_points, index_type=int)
+        # if valid_mask.any():
+        #     positions = self._valid_contact_points.get_cell_positions(grid_indices)
+        #     extents = np.array(3 * [self._valid_contact_points.get_cell_size() / 2.0])
+        #     for pos in positions:
+        #         handles.append(or_env.drawbox(pos, extents, np.array([0, 1.0, 0.0, 0.3])))
+        # return False
+        # TODO until here
         values = self._valid_contact_points.get_cell_values_pos(contact_points)
         none_values = values == None
         if none_values.any():

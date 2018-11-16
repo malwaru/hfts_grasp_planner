@@ -53,7 +53,7 @@
         </Body>
     </KinBody>
 
-    <KinBody name="dr_browns_bottle_brush" file="../placement_problems/objects/dr_browns_bottle_brush/kinbody/recommended.kinbody.xml">
+    <!-- <KinBody name="dr_browns_bottle_brush" file="../placement_problems/objects/dr_browns_bottle_brush/kinbody/recommended.kinbody.xml">
         <Translation>-0.16 0.78 0.1</Translation>
     </KinBody>
 
@@ -103,14 +103,14 @@
                 <Data>../placement_problems/objects/spam/010_potted_meat_can/poisson/nontextured.stl</Data>
             </Geom>
         </Body>
-    </KinBody>
+    </KinBody> -->
 
-    <KinBody name="table">
+    <!-- <KinBody name="table">
         <Translation>0.06 0.08 0.15</Translation>
         <Body type="dynamic">
             <Geom type="trimesh">
                 <Data>../placement_problems/objects/scaled_table.stl</Data>
             </Geom>
         </Body>
-    </KinBody>
+    </KinBody> -->
 </Environment> 

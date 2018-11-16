@@ -6,6 +6,7 @@ import itertools
 import collections
 import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
+import hfts_grasp_planner.placement.arpo_placement.placement_orientations as po_mod
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.placement.leafstage as leafstage
 import hfts_grasp_planner.placement.chull_utils as chull_utils
@@ -1162,7 +1163,7 @@ class PlacementHeuristic(object):
         self._grasp_compatibility = None
         self._inv_grasp_tf = None
         self._grasp_config = None
-        filter_io = SimplePlacementQuality.PreferenceFilterIO(object_base_path)
+        filter_io = po_mod.PreferenceFilterIO(object_base_path)
         self._stability_function = SimplePlacementQuality(env, filter_io, scene_sdf)  # TODO make settable as parameter
         if robot_name is not None:
             robot = self._env.GetRobot(robot_name)

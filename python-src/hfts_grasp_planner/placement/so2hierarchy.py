@@ -69,4 +69,4 @@ def is_leaf(key, depth):
     """
         Return whether the given key is a leaf.
     """
-    return len(key) == depth
+    return len(key) >= depth
