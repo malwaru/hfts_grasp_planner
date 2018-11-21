@@ -7,11 +7,12 @@ import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 
 
 class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
-    def __init__(self, hierarchy, solution_constructor, validator, objective):
+    def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names):
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
         self._validator = validator
         self._objective = objective
+        self._manip_names = manip_names
 
     def sample(self, num_solutions, max_attempts):
         """
@@ -24,12 +25,15 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             -------
             Returns
             -------
-            a list of PlacementGoals
+            a dict of PlacementGoals
+            num_found_sol, int - The number of found solutions.
         """
-        solutions = []
+        num_found_solutions = 0
+        solutions = dict((zip(self._manip_names, len(self._manip_names) *
+                              [[]])))  # store solutions for each manipulator separately
         for _ in xrange(max_attempts):
             # stop if we have sufficient solutions
-            if len(solutions) == num_solutions:
+            if num_found_solutions == num_solutions:
                 break
             # sample a random key
             key = ()
@@ -40,12 +44,13 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             assert(key is not None)
             solution = self._solution_constructor.construct_solution(key, True, True)
             if self._validator.is_valid(solution):
-                value = self._objective.evaluate(solution)
-                solutions.append((value, solution))
-        solutions.sort(key=lambda x: x[0])
-        if len(solutions) > 0:
-            return [sol for (_, sol) in solutions]
-        return []
+                solution.objective_value = self._objective.evaluate(solution)
+                solutions[solution.manip.GetName()].append(solution)
+                num_found_solutions += 1
+        if num_found_solutions > 0:
+            # TODO should we sort solutions here?
+            return solutions, num_found_solutions
+        return solutions, num_found_solutions
 
     def set_reached_goals(self, goals):
         """

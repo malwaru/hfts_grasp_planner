@@ -17,6 +17,7 @@ import hfts_grasp_planner.placement.arpo_placement.placement_orientations as plc
 import hfts_grasp_planner.placement.arpo_placement.placement_regions as plcmnt_regions_mod
 import hfts_grasp_planner.placement.arpo_placement.core as arpo_placement_mod
 import hfts_grasp_planner.placement.goal_sampler.random_sampler as rnd_sampler_mod
+import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
 
 
@@ -96,6 +97,18 @@ def or_motion_planner(sol, manip_data, target_obj):
     # now plan
     manipprob = orpy.interfaces.BaseManipulation(robot)
     manipprob.MoveManipulator(goal=sol.arm_config)
+    robot.WaitForController(0)
+    # release object again
+    robot.Release(target_obj)
+
+
+def show_traj(robot, traj, manip_data, target_obj):
+    # first attach target obj to manipulator
+    target_obj.SetTransform(np.dot(manip_data.manip.GetEndEffectorTransform(), manip_data.grasp_tf))
+    robot.SetActiveManipulator(manip_data.manip.GetName())
+    robot.Grab(target_obj)
+    # now plan
+    robot.GetController().SetPath(traj)
     robot.WaitForController(0)
     # release object again
     robot.Release(target_obj)
@@ -187,8 +200,11 @@ if __name__ == "__main__":
         # create arpo hierarchy
         hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, 4)
         arpo_bridge = arpo_placement_mod.ARPORobotBridge(hierarchy, manip_data, body, None, surface_grid)
-        random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge)
-        solutions = random_sampler.sample(10, 10000)
+        random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+                                                                manip.GetName() for manip in manips])
+        motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(random_sampler, manips)
+        traj = motion_planner.plan(1)
+        # solutions = random_sampler.sample(10, 10000)
         IPython.embed()
     finally:
         orpy.RaveDestroy()

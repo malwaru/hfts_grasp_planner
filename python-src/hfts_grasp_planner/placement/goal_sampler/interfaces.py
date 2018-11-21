@@ -20,7 +20,7 @@ class PlacementGoalSampler:
                 arm_config, numpy array (n,) - arm configuration
                 obj_tf, numpy array (4, 4) - pose of the object
                 key, object - key information that can be used by the placement goal sampler to identify this goal
-                objective_value - 
+                objective_value, float - objective value of this solution
                 data, object - optional additional data
             """
             self.manip = manip
@@ -28,6 +28,7 @@ class PlacementGoalSampler:
             self.obj_tf = obj_tf
             self.key = key
             self.data = data
+            self.objective_value = objective_value
 
     @abstractmethod
     def sample(self, num_solutions, max_attempts=1000):
@@ -41,7 +42,7 @@ class PlacementGoalSampler:
             -------
             Returns
             -------
-            a list of PlacementGoals
+            a dictionary that maps manipulator name to a list of PlacementGoals
         """
         pass
 
