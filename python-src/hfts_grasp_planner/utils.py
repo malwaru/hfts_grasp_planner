@@ -400,6 +400,25 @@ def is_dynamic_body(body):
     return reduce(operator.and_, [not link.IsStatic() for link in links])
 
 
+def set_grasp(manip, body, inv_grasp_tf, hand_config):
+    """
+        Make the manipulator grasp the given body. As a result the active manipulator
+        of manip.GetRobot() will be manip and the robot will be grabbing body.
+        ---------
+        Arguments
+        ---------
+        manip, OpenRAVE Manipulator - manipulator that should grasp the body
+        body, OpenRAVE Kinbody - body to grasp
+        inv_grasp_tf, np.array of shape (4,4) - object pose in end-effector frame
+        hand_config, np.arrayf of shape (h,) - hand configuration with h = manip.GetGripperDOF()
+    """
+    robot = manip.GetRobot()
+    robot.SetActiveManipulator(manip.GetName())
+    body.SetTransform(np.dot(manip.GetEndEffectorTransform(), inv_grasp_tf))
+    robot.Grab(body)
+    robot.SetDOFValues(hand_config, manip.GetGripperIndices())
+
+
 def path_to_trajectory(robot, path, vel_factor=0.2):
     """
         Create an OpenRAVE trajectory for the given path.

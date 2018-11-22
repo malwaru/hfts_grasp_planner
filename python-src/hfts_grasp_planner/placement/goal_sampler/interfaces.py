@@ -8,9 +8,12 @@ class PlacementGoalSampler:
     __metaclass__ = ABCMeta
 
     class PlacementGoal:
+        """
+            The numpy arrays in this object are all read only! If you need to modify an array, copy it first.
+        """
         __metaclass__ = ABCMeta
 
-        def __init__(self, manip, arm_config, obj_tf, key, objective_value, data=None):
+        def __init__(self, manip, arm_config, obj_tf, key, objective_value, grasp_tf, grasp_config, data=None):
             """
                 Create a new PlacementGoal.
                 ---------
@@ -21,14 +24,18 @@ class PlacementGoalSampler:
                 obj_tf, numpy array (4, 4) - pose of the object
                 key, object - key information that can be used by the placement goal sampler to identify this goal
                 objective_value, float - objective value of this solution
+                grasp_tf, np.array (4, 4) - eef frame in object frame
+                grasp_config, np.array (q,) - q = manip.GetGripperDOF(), hand configuration for grasp
                 data, object - optional additional data
             """
             self.manip = manip
             self.arm_config = arm_config
             self.obj_tf = obj_tf
             self.key = key
-            self.data = data
             self.objective_value = objective_value
+            self.grasp_tf = grasp_tf
+            self.grasp_config = grasp_config
+            self.data = data
 
     @abstractmethod
     def sample(self, num_solutions, max_attempts=1000):

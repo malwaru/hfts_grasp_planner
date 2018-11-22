@@ -226,7 +226,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 manip - OpenRAVE manipulator
                 ik_solver - IKSolver for this manipulator
                 reachability_map - ReachabilityMap for this manipulator
-                grasp_tf - grasp transform (object pose in robot frame)
+                grasp_tf - grasp transform (eef pose in object frame)
                 grasp_config, numpy array (n_h,) - hand configuration for grasp
             """
             self.manip = manip
@@ -310,14 +310,16 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         body = env.GetKinBody('crayola')
         body.SetTransform(obj_tf)
         # end-effector tf
-        eef_tf = np.dot(obj_tf, manip_data.inv_grasp_tf)
+        eef_tf = np.dot(obj_tf, manip_data.grasp_tf)
         handle = orpy.misc.DrawAxes(env, eef_tf)  # TODO remove
         # TODO check reachability map on whether there is point in calling IK solver?
         # TODO seed?
         config = manip_data.ik_solver.compute_ik(eef_tf)
         # TODO optimize constraints, optimize objective
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
-            manip, config, obj_tf, len(self._solutions_cache), None)
+            # TODO real objective value
+            manip=manip, arm_config=config, obj_tf=obj_tf, key=len(self._solutions_cache), objective_value=0.0,
+            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
         self._solutions_cache.append(ARPORobotBridge.SolutionCacheEntry(key, new_solution, region, po, so2_interval))
         return new_solution
 
@@ -341,12 +343,9 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         robot = solution.manip.GetRobot()
         with robot:
             with orpy.KinBodyStateSaver(self._target_obj):
-                # grab object
-                robot.SetActiveManipulator(manip_data.manip.GetName())
-                self._target_obj.SetTransform(np.dot(solution.manip.GetEndEffectorTransform(), manip_data.grasp_tf))
-                robot.Grab(self._target_obj)
+                # grab object (sets active manipulator for us)
+                utils.set_grasp(manip_data.manip, self._target_obj, manip_data.inv_grasp_tf, manip_data.grasp_config)
                 robot.SetDOFValues(config, manip_data.manip.GetArmIndices())
-                robot.SetDOFValues(manip_data.grasp_config, manip_data.manip.GetGripperIndices())
                 env = robot.GetEnv()
                 solution_cache_entry.bcollision_free = not env.CheckCollision(robot)
                 robot.Release(self._target_obj)
@@ -364,7 +363,8 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
 
     def evaluate(self, solution):
         # TODO implement me
-        return 0.0
+        solution.objective_value = solution.obj_tf[1, 3]
+        return solution.objective_value
 
     def _check_stability(self, cache_entry):
         """

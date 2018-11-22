@@ -29,8 +29,8 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             num_found_sol, int - The number of found solutions.
         """
         num_found_solutions = 0
-        solutions = dict((zip(self._manip_names, len(self._manip_names) *
-                              [[]])))  # store solutions for each manipulator separately
+        # store solutions for each manipulator separately
+        solutions = {manip_name: [] for manip_name in self._manip_names}
         for _ in xrange(max_attempts):
             # stop if we have sufficient solutions
             if num_found_solutions == num_solutions:

@@ -102,10 +102,10 @@ def or_motion_planner(sol, manip_data, target_obj):
     robot.Release(target_obj)
 
 
-def show_traj(robot, traj, manip_data, target_obj):
+def show_traj(robot, traj, goal, target_obj):
     # first attach target obj to manipulator
-    target_obj.SetTransform(np.dot(manip_data.manip.GetEndEffectorTransform(), manip_data.grasp_tf))
-    robot.SetActiveManipulator(manip_data.manip.GetName())
+    target_obj.SetTransform(np.dot(goal.manip.GetEndEffectorTransform(), inverse_transform(goal.grasp_tf)))
+    robot.SetActiveManipulator(goal.manip.GetName())
     robot.Grab(target_obj)
     # now plan
     robot.GetController().SetPath(traj)
@@ -182,7 +182,7 @@ if __name__ == "__main__":
             grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
             grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
             manip_data[manip.GetName()] = arpo_placement_mod.ARPORobotBridge.ManipulatorData(
-                manip, ik_solver, None, inverse_transform(grasp_pose), problem_desc['grasp_config'])
+                manip, ik_solver, None, grasp_pose, problem_desc['grasp_config'])
 
         # visualize placement regions
         env.SetViewer('qtcoin')  # WARNING: IK solvers also need to be created before setting the viewer
@@ -203,7 +203,10 @@ if __name__ == "__main__":
         random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                 manip.GetName() for manip in manips])
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(random_sampler, manips)
-        traj = motion_planner.plan(1)
+        start_time = time.time()
+        traj, goal = motion_planner.plan(10, body)
+        end_time = time.time()
+        print "Planning took %fs" % (end_time - start_time)
         # solutions = random_sampler.sample(10, 10000)
         IPython.embed()
     finally:
