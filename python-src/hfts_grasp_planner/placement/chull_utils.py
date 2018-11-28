@@ -1,17 +1,18 @@
 #!/usr/bin/env python
 import collections
+import scipy.spatial
 import numpy as np
 
 
-def merge_faces(chull, min_normal_similarity=0.97):
+def merge_faces(chull, min_normal_similarity=0.24):
     """
         Merge adjacent faces of the convex hull if they have similar normals.
         ---------
         Arguments
         ---------
         chull - convex hull computed by scipy.spatial.ConvexHull
-        min_normal_similarity - minimal value that the pairwise dot product of the normals
-            of two faces need to have to be merged.
+        min_normal_similarity(optional), float - if the angle between the normals of two adjacent face is smaller than
+            this threshold, the faces are merged
         ---------
         Returns
         ---------
@@ -41,7 +42,7 @@ def merge_faces(chull, min_normal_similarity=0.97):
             while cluster_candidates:
                 candidate_idx = cluster_candidates.popleft()
                 # check if this face belongs to the same cluster, it does so, if the normal is almost the same
-                if np.dot(chull.equations[candidate_idx, :3], cluster_normal) >= min_normal_similarity:
+                if np.dot(chull.equations[candidate_idx, :3], cluster_normal) >= np.cos(min_normal_similarity):
                     if face_clusters[candidate_idx] == -1:  # check if candidate is unclustered yet
                         # add the vertices of this face to the cluster
                         current_cluster[1].update(chull.simplices[candidate_idx])
@@ -57,6 +58,7 @@ def compute_hull_distance(convex_hull, point):
     """
         Compute the signed distance of the given point
         to the closest edge of the given 2d convex hull.
+        A negative distance means the point is inside, a positive outside.
         ---------
         Arguments
         ---------
@@ -106,3 +108,30 @@ def compute_hull_distance(convex_hull, point):
     if exterior_distance == float('inf'):  # the point is inside the convex hull
         return interior_distance, closest_int_edge
     return exterior_distance, closest_ext_edge  # the point is outside the convex hull
+
+
+def construct_plane_mesh(points3d, normal):
+    """
+        Constructs a mesh from the given planar 3d points.
+        ---------
+        Arguments
+        ---------
+        normal, numpy array of shape (3,) - normal of the plane
+        points3d, numpy array of shape (n, 3) - n 3d points that lie in the plane
+        -------
+        Returns
+        -------
+        vertices, numpy array of shape (n, 3) - the same as points3d
+        indices, numpy array of shape (m, 3) - each row represents a triangle
+    """
+    # project points to a plane
+    mean_point = np.mean(points3d, axis=0)
+    rel_points = points3d - mean_point
+    projected_points = rel_points - np.dot(rel_points, normal.transpose())[:, np.newaxis] * normal
+    axes = np.empty((3, 2))
+    axes[:, 0] = projected_points[1] - projected_points[0]
+    axes[:, 0] /= np.linalg.norm(axes[:, 0])
+    axes[:, 1] = np.cross(normal, axes[:, 0])
+    points_2d = np.dot(projected_points, axes)
+    tri = scipy.spatial.Delaunay(points_2d)
+    return points3d, tri.simplices

@@ -84,7 +84,7 @@ class PlacementOrientation(object):
         function in this module.
     """
 
-    def __init__(self, placement_face, body, com_distance3d, com_distance2d):
+    def __init__(self, placement_face, body, com_distance3d, com_distance2d, projected_com):
         """
             Create a new placement orientation.
             ---------
@@ -95,6 +95,7 @@ class PlacementOrientation(object):
             body, OpenRAVE kinbody - the object. Must have only one link!
             com_distance3d, float - distance of the center of mass to the placement plane
             com_distance2d, float - distance of the projected center of mass to the closest edge of the placement face
+            projected_com, np.array of shape (3,) - center of mass projected on placement plane
         """
         self.placement_face = placement_face
         self.body = body
@@ -108,6 +109,7 @@ class PlacementOrientation(object):
         self.reference_tf[:3, 1] = np.cross(self.reference_tf[:3, 2], self.reference_tf[:3, 0])  # y_axis
         self.reference_tf[:3, 3] = placement_face[1]  # position of first vertex
         self.inv_reference_tf = utils.inverse_transform(self.reference_tf)
+        self.projected_com = projected_com
 
 
 def is_stable_placement_plane(plane, com, min_com_distance=0.0):
@@ -127,6 +129,7 @@ def is_stable_placement_plane(plane, com, min_com_distance=0.0):
         dist2d, float - distance of the projected center of mass to any boundary
         min_dist2d, float minimal distance the projected center of mass can have
         dist3d, float - maximal distance the projected center of mass can have
+        projected_com - projected center of mass
     """
     # due to our tolerance value when clustering faces, the points may not be co-planar.
     # hence, project them
@@ -142,16 +145,26 @@ def is_stable_placement_plane(plane, com, min_com_distance=0.0):
     dir_to_com = com - mean_point
     projected_com = com - np.dot(dir_to_com, plane[0]) * plane[0]
     dist3d = np.linalg.norm(com - projected_com)
-    com2d = np.dot(projected_com, axes)
+    # we express the hull relative to the mean point, so also com needs to be expressed relative to that point
+    com2d = np.dot(projected_com - mean_point, axes)
     # compute the convex hull of the projected points
     convex_hull = scipy.spatial.ConvexHull(points_2d)
     # accept the point if the projected center of mass is inside of the convex hull
     dist2d, _ = chull_utils.compute_hull_distance(convex_hull, com2d)
     best_dist = np.min(convex_hull.equations[:, -1])
-    return dist2d < -1.0 * min_com_distance, dist2d, best_dist, dist3d
+    return dist2d < -1.0 * min_com_distance, dist2d, best_dist, dist3d, projected_com
 
 
-def compute_placement_orientations(body, user_filters=None, min_normal_similarity=0.01, min_com_distance=0.01):
+def show_placement_plane(plane, tf=None, color=None):
+    vertices, indices = chull_utils.construct_plane_mesh(plane[1:], plane[0])
+    if tf is not None:
+        vertices = np.dot(vertices, tf[:3, :3].transpose()) + tf[:3, 3]
+    if color is None:
+        color = np.random.rand(3)
+    return env.drawtrimesh(vertices, indices, color)
+
+
+def compute_placement_orientations(body, user_filters=None, min_normal_similarity=0.18, min_com_distance=0.01):
     """
         Compute all placement orientations for the given body.
         ---------
@@ -159,10 +172,14 @@ def compute_placement_orientations(body, user_filters=None, min_normal_similarit
         ---------
         body, OpenRAVE Kinbody - the body to compute placement orientations for. Must have only one link.
         user_filter(optional), list of OrientationFilter - orientations to filter out based on placement plane
-        min_normal_similarity(optional), float - if the angle between the normals of two adjacent face is smaller than this
-            threshold, the faces are merged
+        min_normal_similarity(optional), float - if the angle between the normals of two adjacent face is smaller than
+            this threshold, the faces are merged
         min_com_distance(optional), float - minimal distance that the com projection needs to have from its closest
             boundary of the support polygon (placement face).
+        -------
+        Returns
+        -------
+        list of PlacementOrientations
     """
     # first compute the convex hull of the body
     links = body.GetLinks()
@@ -194,9 +211,49 @@ def compute_placement_orientations(body, user_filters=None, min_normal_similarit
             if not acceptances.any():
                 continue
         # filter based on stability
-        b_stable, dist2d, _, dist3d = is_stable_placement_plane(plane, local_com, min_com_distance)
+        b_stable, dist2d, _, dist3d, proj_com = is_stable_placement_plane(plane, local_com, min_com_distance)
         if not b_stable:
             continue
         # if this plane passed all filters, we accept it
-        placement_orientations.append(PlacementOrientation(plane, body, dist3d, np.abs(dist2d)))
+        placement_orientations.append(PlacementOrientation(plane, body, dist3d, np.abs(dist2d), proj_com))
     return placement_orientations
+
+
+if __name__ == "__main__":
+    import argparse
+    import IPython
+    import sys
+    import openravepy as orpy
+    import time
+    parser = argparse.ArgumentParser(description="Show placement orientations for a given OpenRAVE kinbody.")
+    parser.add_argument('body', help="Path to OpenRAVE body to show placement orientations for", type=str)
+    args = parser.parse_args()
+    if not args.body:
+        sys.exit(1)
+    try:
+        env = orpy.Environment()
+        env.Load(args.body)
+        body = env.GetBodies()[0]
+        for link in body.GetLinks():
+            for geom in link.GetGeometries():
+                geom.SetTransparency(0.8)
+        env.SetViewer('qtcoin')
+        orientations = compute_placement_orientations(body)
+        print "Showing %i placement planes" % len(orientations)
+        for idx, orientation in enumerate(orientations):
+            vertices, indices = chull_utils.construct_plane_mesh(
+                orientation.placement_face[1:], orientation.placement_face[0])
+            color = np.random.rand(3)
+            handle_mesh = env.drawtrimesh(vertices, indices, color)
+            # handle_com = orpy.misc.DrawCircle(env, orientation.projected_com,
+            #                                   orientation.placement_face[0], orientation.com_distance_2d)
+            print "Placement plane: ", idx, " Number of vertices: ", len(
+                vertices), "Placement face: ", orientation.placement_face
+            print "Press any key to continue"
+            raw_input()
+            del(handle_mesh)
+            # del(handle_com)
+        print "All placement orientations shown."
+    finally:
+        orpy.RaveDestroy()
+        sys.exit(0)

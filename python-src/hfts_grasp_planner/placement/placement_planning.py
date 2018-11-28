@@ -267,9 +267,10 @@ class SimplePlacementQuality(object):
         points_2d = np.dot(projected_points, axes)
         # project the center of mass also on this plane
         dir_to_com = self._local_com - mean_point
-        projected_com = self._local_com - np.dot(dir_to_com, plane[0]) * plane[0]
-        dist3d = np.linalg.norm(self._local_com - projected_com)
-        com2d = np.dot(projected_com, axes)
+        projected_com = self._local_com - np.dot(dir_to_com, plane[0]) * plane[0]  # this is still object frame
+        dist3d = np.linalg.norm(self._local_com - projected_com)  # also still in object frame
+        # we express the hull relative to the mean point, so also com needs to be expressed relative to that point
+        com2d = np.dot(projected_com - mean_point, axes)  
         # compute the convex hull of the projected points
         convex_hull = scipy.spatial.ConvexHull(points_2d)
         # ##### DRAW CONVEX HULL ###### TODO remove
@@ -278,12 +279,12 @@ class SimplePlacementQuality(object):
         # boundary3d = boundary[:, 0, np.newaxis] * axes[:, 0] + boundary[:, 1, np.newaxis] * axes[:, 1] + mean_point
         # transform it to world frame
         # tf = self._body.GetTransform()
-        # boundary3d = np.dot(boundary3d, tf[:3, :3]) + tf[:3, 3]
+        # boundary3d = np.dot(boundary3d, tf[:3, :3].transpose()) + tf[:3, 3]
         # handles.append(self._visualize_boundary(boundary3d))
         # ##### DRAW CONVEX HULL - END ######
         # ##### DRAW PROJECTED COM ######
         # handles.append(self._env.drawbox(projected_com, np.array([0.005, 0.005, 0.005]),
-        #                                  np.array([0.29, 0, 0.5]), tf))
+                                        #  np.array([0.29, 0, 0.5]), tf))
         # ##### DRAW PROJECTED COM - END ######
         # accept the point if the projected center of mass is inside of the convex hull
         dist2d, _ = chull_utils.compute_hull_distance(convex_hull, com2d)
