@@ -236,6 +236,8 @@ class AnyTimePlacementPlanner:
                             assert(best_solution is None or
                                    best_solution[1].objective_value > reached_goal.objective_value)
                             best_solution = (traj, reached_goal)
+                            rospy.logdebug("Found new solution - it has objective value %f" %
+                                           best_solution[1].objective_value)
                             connected_goals.append(reached_goal)
             # lastly, inform goal sampler about the goals we reached this round
             self.goal_sampler.set_reached_goals(connected_goals)
