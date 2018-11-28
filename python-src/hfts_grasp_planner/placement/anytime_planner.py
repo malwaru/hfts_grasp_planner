@@ -178,6 +178,7 @@ class AnyTimePlacementPlanner:
             # mplanner = "OMPL_LazyPRM"
             # mplanner = "OMPL_LazyPRMstar"
             mplanner = "OMPL_RRTConnect"
+            # mplanner = "OMPL_SPARStwo"
         self.goal_sampler = goal_sampler
         self._motion_planners = {}  # store separate motion planner for each manipulator
         self._params = {"num_goal_samples": 10, "num_goal_iterations": 1000, "vel_scale": 0.1}
@@ -209,10 +210,13 @@ class AnyTimePlacementPlanner:
         for _, planner in self._motion_planners.iteritems():
             planner.setup(grasped_obj=target_object)
         # repeatedly query new goals, and plan motions
-        for _ in xrange(max_iter):
+        for iter_idx in xrange(max_iter):
+            rospy.logdebug("Running iteration %i" % iter_idx)
             connected_goals = []  # store goals that we manage to connect to in this iteration
             # TODO we may have some goals left from a previous iteration, what about those?
+            rospy.logdebug("Sampling %i new goals" % num_goal_samples)
             new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter)
+            rospy.logdebug("Got %i valid new goals" % num_new_goals)
             # TODO we could/should plan motions for each manipulator in parallel. For now, instead, plan
             # TODO for one at a time
             if num_new_goals > 0:
