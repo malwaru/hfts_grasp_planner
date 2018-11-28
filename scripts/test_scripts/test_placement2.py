@@ -114,6 +114,13 @@ def show_traj(robot, traj, goal, target_obj):
     robot.Release(target_obj)
 
 
+def plan(planner, body, it):
+    now = time.time()
+    traj, goal = planner.plan(it, body)
+    print "Planning took %fs" % (time.time() - now)
+    return traj, goal
+
+
 if __name__ == "__main__":
     # NOTE If the OpenRAVE viewer is created too early, nothing works! Collision checks may be incorrect!
     parser = argparse.ArgumentParser()
@@ -123,7 +130,8 @@ if __name__ == "__main__":
     parser.add_argument('--show_sdf_volume', help="If provided, visualize sdf volume", action="store_true")
     parser.add_argument('--show_sdf', help="If provided, visualize sdf", action="store_true")
     args = parser.parse_args()
-    rospy.init_node("TestPlacement2", anonymous=True, log_level=rospy.DEBUG)
+    log_level = rospy.DEBUG if args.debug else rospy.INFO
+    rospy.init_node("TestPlacement2", anonymous=True, log_level=log_level)
     with open(args.problem_desc, 'r') as f:
         problem_desc = yaml.load(f)
         resolve_paths(problem_desc, args.problem_desc)
@@ -203,10 +211,7 @@ if __name__ == "__main__":
         random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                 manip.GetName() for manip in manips])
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(random_sampler, manips)
-        start_time = time.time()
-        traj, goal = motion_planner.plan(10, body)
-        end_time = time.time()
-        print "Planning took %fs" % (end_time - start_time)
+        traj, goal = plan(motion_planner, body, 10)
         # solutions = random_sampler.sample(10, 10000)
         IPython.embed()
     finally:
