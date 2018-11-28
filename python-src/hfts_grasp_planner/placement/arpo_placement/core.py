@@ -347,7 +347,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 utils.set_grasp(manip_data.manip, self._target_obj, manip_data.inv_grasp_tf, manip_data.grasp_config)
                 robot.SetDOFValues(config, manip_data.manip.GetArmIndices())
                 env = robot.GetEnv()
-                solution_cache_entry.bcollision_free = not env.CheckCollision(robot)
+                solution_cache_entry.bcollision_free = not env.CheckCollision(robot) and not robot.CheckSelfCollision()
                 robot.Release(self._target_obj)
         if not solution_cache_entry.bcollision_free:
             return False
