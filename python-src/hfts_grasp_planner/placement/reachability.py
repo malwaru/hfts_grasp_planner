@@ -5,7 +5,8 @@ import so3hierarchy
 import openravepy as orpy
 from itertools import product
 import sklearn.neighbors as skn
-from hfts_grasp_planner.utils import inverse_transform, transform_pos_quats_by
+from hfts_grasp_planner.utils import inverse_transform, transform_pos_quats_by, get_manipulator_links,\
+    get_ordered_arm_joints
 
 
 class ReachabilityMap(object):
@@ -55,13 +56,13 @@ class ReachabilityMap(object):
             inv_base_tf = inverse_transform(base_tf)
             robot_tf_in_base = np.dot(inv_base_tf, robot.GetTransform())
             robot.SetTransform(robot_tf_in_base)  # set base link to global origin
-            maniplinks = ReachabilityMap.get_manipulator_links(self._manip)
+            maniplinks = get_manipulator_links(self._manip)
             arm_indices = self._manip.GetArmIndices()
             for link in robot.GetLinks():
                 link.Enable(link in maniplinks)
             # the axes' anchors are the best way to find the max radius
             # the best estimate of arm length is to sum up the distances of the anchors of all the points in between the chain
-            arm_joints = ReachabilityMap.get_ordered_arm_joints(robot, self._manip)
+            arm_joints = get_ordered_arm_joints(robot, self._manip)
             base_anchor = arm_joints[0].GetAnchor()
             eetrans = self._manip.GetEndEffectorTransform()[0:3, 3]
             arm_length = 0
@@ -215,34 +216,3 @@ class ReachabilityMap(object):
         colors = rel_reachable[good_reachability, np.newaxis] * reachable_col + \
             (1.0 - rel_reachable)[good_reachability, np.newaxis] * unreachable_col
         return env.plot3(positions[good_reachability], sprite_size, colors)
-
-    @staticmethod
-    def get_manipulator_links(manip):
-        """
-            Copied from OpenRAVEpy.
-            Return all links of the given manipulator.
-        """
-        links = manip.GetChildLinks()
-        # add the links connecting to the base link.... although this reduces the freespace of the arm, it is better to have than not (ie waist on humanoid)
-        tobasejoints = manip.GetRobot().GetChain(0, manip.GetBase().GetIndex())
-        dofindices = [np.arange(joint.GetDOFIndex(), joint.GetDOFIndex()+joint.GetDOF())
-                      for joint in tobasejoints if joint.GetDOFIndex() >= 0 and not joint.IsStatic()]
-        tobasedofs = np.hstack(dofindices) if len(dofindices) > 0 else np.array([], int)
-        robot = manip.GetRobot()
-        joints = robot.GetJoints()
-        for jindex in np.r_[manip.GetArmIndices(), tobasedofs]:
-            joint = joints[jindex]
-            if joint.GetFirstAttached() and not joint.GetFirstAttached() in links:
-                links.append(joint.GetFirstAttached())
-            if joint.GetSecondAttached() and not joint.GetSecondAttached() in links:
-                links.append(joint.GetSecondAttached())
-        # don't forget the rigidly attached links
-        for link in links[:]:
-            for newlink in link.GetRigidlyAttachedLinks():
-                if newlink not in links:
-                    links.append(newlink)
-        return links
-
-    @staticmethod
-    def get_ordered_arm_joints(robot, manip):
-        return [j for j in robot.GetDependencyOrderedJoints() if j.GetJointIndex() in manip.GetArmIndices()]

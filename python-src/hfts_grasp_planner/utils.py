@@ -468,6 +468,58 @@ def path_to_trajectory(robot, path, vel_factor=0.2):
     return traj
 
 
+def get_manipulator_links(manip):
+    """
+        Copied from OpenRAVEpy.
+        Return all links of the given manipulator.
+        ---------
+        Arguments
+        ---------
+        manip, OpenRAVE manipulator
+        -------
+        Returns
+        -------
+        list of OpenRAVE Links
+    """
+    links = manip.GetChildLinks()
+    # add the links connecting to the base link.... although this reduces the freespace of the arm,
+    # it is better to have than not (ie waist on humanoid)
+    tobasejoints = manip.GetRobot().GetChain(0, manip.GetBase().GetIndex())
+    dofindices = [np.arange(joint.GetDOFIndex(), joint.GetDOFIndex()+joint.GetDOF())
+                  for joint in tobasejoints if joint.GetDOFIndex() >= 0 and not joint.IsStatic()]
+    tobasedofs = np.hstack(dofindices) if len(dofindices) > 0 else np.array([], int)
+    robot = manip.GetRobot()
+    joints = robot.GetJoints()
+    for jindex in np.r_[manip.GetArmIndices(), tobasedofs]:
+        joint = joints[jindex]
+        if joint.GetFirstAttached() and not joint.GetFirstAttached() in links:
+            links.append(joint.GetFirstAttached())
+        if joint.GetSecondAttached() and not joint.GetSecondAttached() in links:
+            links.append(joint.GetSecondAttached())
+    # don't forget the rigidly attached links
+    for link in links[:]:
+        for newlink in link.GetRigidlyAttachedLinks():
+            if newlink not in links:
+                links.append(newlink)
+    return links
+
+
+def get_ordered_arm_joints(robot, manip):
+    """
+        Return joint indices of the manipulator in hierarchical order starting at the base link.
+        ---------
+        Arguments
+        ---------
+        robot, OpenRAVE robot
+        manip, OpenRAVE manipulator
+        -------
+        Returns
+        -------
+        list of int - each entry is a joint index
+    """
+    return [j for j in robot.GetDependencyOrderedJoints() if j.GetJointIndex() in manip.GetArmIndices()]
+
+
 def dist_in_range(d, r):
     if d < r[0]:
         return r[0] - d
