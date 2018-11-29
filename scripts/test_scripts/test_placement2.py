@@ -8,10 +8,11 @@ import argparse
 import numpy as np
 import openravepy as orpy
 # import hfts_grasp_planner.placement
-from hfts_grasp_planner.utils import is_dynamic_body, inverse_transform
+from hfts_grasp_planner.utils import is_dynamic_body, inverse_transform, get_manipulator_links
 import hfts_grasp_planner.sdf.grid as grid_module
 import hfts_grasp_planner.ik_solver as ik_module
 import hfts_grasp_planner.sdf.core as sdf_module
+import hfts_grasp_planner.sdf.robot as robot_sdf_module
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf_module
 import hfts_grasp_planner.placement.arpo_placement.placement_orientations as plcmnt_orientations_mod
 import hfts_grasp_planner.placement.arpo_placement.placement_regions as plcmnt_regions_mod
@@ -48,7 +49,7 @@ def resolve_paths(problem_desc, yaml_file):
         cwd = os.getcwd()
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
-    for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file']:
+    for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file', 'robot_occtree']:
         if key in problem_desc:
             problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
@@ -147,21 +148,26 @@ if __name__ == "__main__":
         #     tf[:3, 3] = problem_desc['initial_obj_pose'][:3]
         #     tb.SetTransform(tf)
 
-        dynamic_bodies = [body for body in env.GetBodies() if is_dynamic_body(body)]
         scene_occ = None
-        # scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=dynamic_bodies)
         try:
             scene_occ = grid_module.VoxelGrid.load(problem_desc['occ_file'])
         except IOError as e:
-            print "Could not load %s. Please provide an occupancy grid of the scene."
-            print "There is a script to create one!" % problem_desc['occ_file']
+            rospy.logerr("Could not load %s. Please provide an occupancy grid of the scene." % problem_desc['occ_file'])
+            rospy.logerr("There is a script to create one!")
             sys.exit(0)
 
-        # if os.path.exists(problem_desc['sdf_file']):
-        #     scene_sdf.load(problem_desc['sdf_file'])
-        # else:
-        #     print "Could not load %s. Please provide a signed distance field of the scene. There is a script to create one!" % problem_desc[
-        #         'sdf_file']
+        dynamic_bodies = [body for body in env.GetBodies() if is_dynamic_body(body)]
+        scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=dynamic_bodies)
+        # scene_sdf = sdf_module.SceneSDF(env, [], excluded_bodies=[
+                                        # problem_desc['robot_name'], problem_desc['target_name']])
+        if os.path.exists(problem_desc['sdf_file']):
+            now = time.time()
+            scene_sdf.load(problem_desc['sdf_file'])
+            rospy.logdebug("Loading scene sdf took %fs" % (time.time() - now))
+        else:
+            rospy.logerr("Could not load %s. Please provide a signed distance field of the scene." % problem_desc['sdf_file'])
+            rospy.logerr("There is a script to create one!")
+            sys.exit(0)
 
         target_obj_name = problem_desc['target_name']
         # placement_planner = pp_module.PlacementGoalPlanner(problem_desc['data_path'], env, scene_sdf)
@@ -178,12 +184,14 @@ if __name__ == "__main__":
         surface_grid, labels, num_regions, regions = gpu_kit.extract_planar_regions(
             occ_target_volume, max_region_size=0.2)
         # extract placement orientations
-        body = env.GetKinBody(target_obj_name)
-        orientations = plcmnt_orientations_mod.compute_placement_orientations(body)
-        # extract manipulator
+        target_object = env.GetKinBody(target_obj_name)
+        orientations = plcmnt_orientations_mod.compute_placement_orientations(target_object)
+        # prepare robot data
         robot = env.GetRobot(problem_desc['robot_name'])
-        manips = robot.GetManipulators()
+        # extract manipulators
+        link_names = []
         manip_data = {}
+        manips = robot.GetManipulators()
         for manip in manips:
             ik_solver = ik_module.IKSolver(manip, problem_desc['urdf_file'])
             # TODO have different grasp poses for each manipulator
@@ -191,7 +199,25 @@ if __name__ == "__main__":
             grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
             manip_data[manip.GetName()] = arpo_placement_mod.ARPORobotBridge.ManipulatorData(
                 manip, ik_solver, None, grasp_pose, problem_desc['grasp_config'])
-
+            manip_links = [link.GetName() for link in get_manipulator_links(manip)]
+            # remove base link - it does not move so
+            manip_links.remove(manip.GetBase().GetName())
+            link_names.extend(manip_links)
+        # build robot_octree
+        try:
+            now = time.time()
+            robot_octree = robot_sdf_module.RobotOccupancyOctree.load(base_file_name=problem_desc['robot_occtree'],
+                                                                      robot=robot, link_names=link_names)
+            rospy.logdebug("Loading robot octree took %fs" % (time.time() - now))
+        except IOError:
+            robot_octree = robot_sdf_module.RobotOccupancyOctree(
+                problem_desc['parameters']['occ_tree_cell_size'], robot, link_names)
+            robot_octree.save(problem_desc['robot_occtree'])
+        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_octree, manip_data)
+        # create object data
+        obj_octree = kinbody_sdf_module.OccupancyOctree(
+            problem_desc['parameters']['occ_tree_cell_size'], target_object.GetLinks()[0])
+        object_data = arpo_placement_mod.ARPORobotBridge.ObjectData(target_object, obj_octree)
         # visualize placement regions
         env.SetViewer('qtcoin')  # WARNING: IK solvers also need to be created before setting the viewer
         handles = []
@@ -207,11 +233,13 @@ if __name__ == "__main__":
         handles = []
         # create arpo hierarchy
         hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, 4)
-        arpo_bridge = arpo_placement_mod.ARPORobotBridge(hierarchy, manip_data, body, None, surface_grid)
+        arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
+                                                         object_data=object_data, objective_fn=None,
+                                                         valid_contact_points=surface_grid, scene_sdf=scene_sdf)
         random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                 manip.GetName() for manip in manips])
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(random_sampler, manips)
-        traj, goal = plan(motion_planner, body, 10)
+        traj, goal = plan(motion_planner, target_object, 10)
         # solutions = random_sampler.sample(10, 10000)
         IPython.embed()
     finally:

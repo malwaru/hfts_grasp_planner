@@ -1277,7 +1277,7 @@ class PlacementHeuristic(object):
             self._kinbody.SetTransform(pose)
             # We get a pose as argument when we are evaluating a single pose, which is currently only
             # done for computing a constraint in the leaf stage.
-            _, _, _, score, _, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
+            _, _, _, score, _ = self._kinbody_octree.compute_intersection(self._scene_sdf)
             rob_col = 0.0
             if self._gripper_octree is not None:
                 robot_pose = np.dot(pose, self._inv_grasp_tf)

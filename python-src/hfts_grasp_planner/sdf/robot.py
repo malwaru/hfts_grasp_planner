@@ -17,7 +17,7 @@ class RobotOccupancyOctree(object):
         of the robot with an obstacle, the intersections of all links together is summed up.
     """
 
-    def __init__(self, cell_size, robot, link_names=None):
+    def __init__(self, cell_size, robot, link_names=None, occupancy_trees=None):
         """
             Construct new RobotOccupancyOctree.
             ---------
@@ -25,26 +25,67 @@ class RobotOccupancyOctree(object):
             ---------
             cell_size, float - minimum edge length of a cell (all cells are cubes)
             robot, OpenRAVE robot - the robot
-            link_names, list of strings - if provided, limits the intersection cost to 
+            link_names, list of strings - if provided, limits the intersection cost to
                 the specified links
+            occupancy_trees (internal use), list of OccupancyOctree -
+                NOTE: for internal use, used to load OccupancyOctrees from file rather than creating them
         """
-        self._cell_size = cell_size
         self._robot = robot
         self._occupancy_trees = []
         self._total_volume = 0.0
         self._total_num_occupied_cells = 0
-        self._link_names = []
-        for link in self._robot.GetLinks():
-            if link_names is not None and link.GetName() not in link_names:
-                continue
-            self._occupancy_trees.append(OccupancyOctree(cell_size, link))
-            self._link_names.append(link.GetName())
-            self._total_volume += self._occupancy_trees[-1].get_volume()
-            self._total_num_occupied_cells += self._occupancy_trees[-1].get_num_occupied_cells()
+        self._link_names = [link.GetName() for link in self._robot.GetLinks()]
+        if link_names:
+            self._link_names = [name for name in self._link_names if name in link_names]
+        links = [robot.GetLink(name) for name in self._link_names]
+        if occupancy_trees is None:
+            self._occupancy_trees = OccupancyOctree.create_occupancy_octrees(cell_size, links)
+        else:
+            self._occupancy_trees = occupancy_trees
+        self._total_volume = sum([tree.get_volume() for tree in self._occupancy_trees])
+        self._total_num_occupied_cells = sum([tree.get_num_occupied_cells() for tree in self._occupancy_trees])
+
+    @staticmethod
+    def load(base_file_name, robot, link_names=None):
+        """
+            Load a robot occupancy octree from disk. There is no sanity check performed on whether
+            any of the loaded OccuancyOctree really represent the given robot's links.
+            ---------
+            Arguments
+            ---------
+            base_file_name, string - base file name
+            robot, OpenRAVE robot to load occupancy octree for
+            link_name (optional), list of string - list of links to create the occupancy octree for.
+                If not provided, all links are loaded.
+            ------
+            Throws
+            ------
+            IOError if files do not exist
+        """
+        if link_names is not None:
+            links = [robot.GetLink(link_name) for link_name in link_names]
+        else:
+            links = robot.GetLinks()
+            link_names = [link.GetName() for link in links]
+        trees = []
+        for link_name, link in zip(link_names, links):
+            trees.append(OccupancyOctree.load(base_file_name + '.' + link_name, link))
+        return RobotOccupancyOctree(None, robot, link_names, trees)
+
+    def save(self, base_file_name):
+        """
+            Save this RobotOccupancyOctree to file.
+            ---------
+            Arguments
+            ---------
+            base_file_name, string - base file name. Use this string again to load it again.
+        """
+        for link_name, octree in zip(self._link_names, self._occupancy_trees):
+            octree.save(base_file_name + '.' + link_name)
 
     def compute_intersection(self, robot_pose, robot_config, scene_sdf):
         """
-            Computes the intersection between the octrees of the robot's links 
+            Computes the intersection between the octrees of the robot's links
             and the geometry in the scene described by the provided scene sdf.
             ---------
             Arguments
@@ -63,14 +104,15 @@ class RobotOccupancyOctree(object):
                 adc is this cost divided by the number of intersecting cells, i.e. the average
                     signed distance of the intersecting cells
         """
-        self._robot.SetTransform(robot_pose)
-        self._robot.SetActiveDOFValues(robot_config)
-        v, dc = 0.0, 0.0
-        for tree in self._occupancy_trees:
-            tv, _, tdc, _, _, _ = tree.compute_intersection(scene_sdf)
-            v += tv
-            dc += tdc
-        return v, v / self._total_volume, dc, dc / self._total_num_occupied_cells
+        with self._robot:
+            self._robot.SetTransform(robot_pose)
+            self._robot.SetActiveDOFValues(robot_config)
+            v, dc = 0.0, 0.0
+            for tree in self._occupancy_trees:
+                tv, _, tdc, _, _ = tree.compute_intersection(scene_sdf)
+                v += tv
+                dc += tdc
+            return v, v / self._total_volume, dc, dc / self._total_num_occupied_cells
 
     def compute_max_penetration(self, robot_pose, robot_config, scene_sdf, b_compute_dir=False):
         """
@@ -92,19 +134,20 @@ class RobotOccupancyOctree(object):
             v_to_border, numpy array of shape (3,) - translation vector to move the cell with maximum penetration
                 out of collision (None if b_compute_dir is False)
             pos, numpy array of shape (3,) - world position of the cell with maximum penetration
-            link_name, string - name of the link with maximal penetration 
+            link_name, string - name of the link with maximal penetration
         """
-        self._robot.SetTransform(robot_pose)
-        self._robot.SetActiveDOFValues(robot_config)
-        pdist, vdir, pos, link_name = 0.0, None, None, None
-        for tree, name in izip(self._occupancy_trees, self._link_names):
-            tdist, tdir, tpos = tree.compute_max_penetration(scene_sdf, b_compute_dir=b_compute_dir)
-            if tdist < pdist:
-                pdist = tdist
-                vdir = tdir
-                pos = tpos
-                link_name = name
-        return pdist, vdir, pos, link_name
+        with self._robot:
+            self._robot.SetTransform(robot_pose)
+            self._robot.SetActiveDOFValues(robot_config)
+            pdist, vdir, pos, link_name = 0.0, None, None, None
+            for tree, name in izip(self._occupancy_trees, self._link_names):
+                tdist, tdir, tpos = tree.compute_max_penetration(scene_sdf, b_compute_dir=b_compute_dir)
+                if tdist < pdist:
+                    pdist = tdist
+                    vdir = tdir
+                    pos = tpos
+                    link_name = name
+            return pdist, vdir, pos, link_name
 
     def get_robot(self):
         """
@@ -131,13 +174,13 @@ class RobotOccupancyOctree(object):
 
 class GrabbingRobotOccupancyTree(RobotOccupancyOctree):
     """
-        Like a RobotOccupancyOctree but it also considers the object that is 
+        Like a RobotOccupancyOctree but it also considers the object that is
         currently grasped by the robot.
     """
 
     def __init__(self, cell_size, robot, link_names=None):
         """
-            Create a new GrabbingRobotOccupancyTree. 
+            Create a new GrabbingRobotOccupancyTree.
             See RobotOccupancyTree for information on arguments.
             NOTE: Before using this object, you need to call update_object().
         """
@@ -148,7 +191,7 @@ class GrabbingRobotOccupancyTree(RobotOccupancyOctree):
 
     def update_object(self):
         """
-            Update the object octree. 
+            Update the object octree.
             If the grabbed object is still the same as last time
             this function was called, this is a no-op. Otherwise, it will
             update the internal object octree. It is assumed that the robot
@@ -176,19 +219,19 @@ class GrabbingRobotOccupancyTree(RobotOccupancyOctree):
 
     def compute_intersection(self, robot_pose, robot_config, scene_sdf):
         """
-            See RobotOccupancyTree for documentation. 
+            See RobotOccupancyTree for documentation.
             Also considers the grasped object.
         """
         v, rv, dc, adc = super(GrabbingRobotOccupancyTree, self).compute_intersection(
             robot_pose, robot_config, scene_sdf)
         if self._object_octree is not None:
-            ov, orv, odc, oadc, _, _ = self._object_octree.compute_intersection(scene_sdf)
+            ov, orv, odc, oadc, _ = self._object_octree.compute_intersection(scene_sdf)
             return v + ov, rv + orv, dc + odc, adc + oadc  # TODO figure out what to doe with the relative values
         return v, rv, dc, adc
 
     def compute_max_penetration(self, robot_pose, robot_config, scene_sdf, b_compute_dir=False):
         """
-            See RobotOccupancyTree for documentation. 
+            See RobotOccupancyTree for documentation.
             Also considers the grasped object.
         """
         pdist, vdir, ppos, link_name = super(GrabbingRobotOccupancyTree, self).compute_max_penetration(
@@ -300,7 +343,7 @@ class RobotSDF(object):
         for link_idx in self._link_indices:
             nb, off = self._ball_indices[link_idx]  # number of balls, offset
             self._query_positions[off:off +
-                                  nb] = np.dot(self._ball_positions[off:off + nb, :3], link_tfs[link_idx].transpose())
+                                  nb] = np.dot(self._ball_positions[off: off + nb, : 3], link_tfs[link_idx].transpose())
         return self._sdf.get_distances(self._query_positions) - self._ball_radii
 
     def visualize_balls(self):
@@ -316,9 +359,9 @@ class RobotSDF(object):
         color = np.array((1, 0, 0, 0.6))
         for link_idx in self._link_indices:
             (nb, off) = self._ball_indices[link_idx]  # number of balls, offest
-            positions = np.dot(self._ball_positions[off:off + nb], link_tfs[link_idx].transpose())
+            positions = np.dot(self._ball_positions[off: off + nb], link_tfs[link_idx].transpose())
             for ball_idx in range(nb):
-                handle = env.plot3(positions[ball_idx, :3], self._ball_radii[off + ball_idx],
+                handle = env.plot3(positions[ball_idx, : 3], self._ball_radii[off + ball_idx],
                                    color, 1)
                 self._handles.append(handle)
 
