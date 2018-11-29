@@ -216,7 +216,37 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         we can cache a lot at a single location.
         # TODO do we really need all this in one class?
     """
-    class ManipulatorData:
+    class ObjectData(object):
+        """
+            Struct that stores object data.
+            It stores a kinbody, i.e. the object, and a volumetric representation of it - 
+            an instance of sdf.kinbody.OccupancyTree
+        """
+
+        def __init__(self, kinbody, occtree):
+            self.kinbody = kinbody
+            self.octree = occtree
+
+    class RobotData(object):
+        """
+            Struct that stores robot data
+        """
+
+        def __init__(self, robot, robot_occtree, manip_data):
+            """
+                Create a new instance of robot data.
+                ---------
+                Arguments
+                ---------
+                robot - OpenRAVE robot
+                robot_occtree, sdf.robot.RobotOccupancyTree - volumetric model of the robot
+                manip_data, dict of ManipulatorData - dict that maps manipulator names to ManipulatorData struct
+            """
+            self.robot = robot
+            self.octree = robot_occtree
+            self.manip_data = manip_data
+
+    class ManipulatorData(object):
         """
             Struct (named tuple) that stores manipulator data.
         """
@@ -240,7 +270,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             self.grasp_config = grasp_config
             self.inv_grasp_tf = utils.inverse_transform(self.grasp_tf)
 
-    class SolutionCacheEntry:
+    class SolutionCacheEntry(object):
         """
             Cache all relevant information for a particular solution.
         """
@@ -257,7 +287,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             self.bstable = None  # store whether pose is actually a stable placement
             self.objective_val = None  # store objective value
 
-    class ContactConstraint:
+    class ContactConstraint(object):
         """
             This constraint expresses that all contact points of a placement face need to
             be in contact with a support surface, i.e. within a placement region.
@@ -301,23 +331,33 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # TODO requires distance field to contact regions. 2D distance fields enough?
             pass
 
-    class CollisionConstraint:
+    class CollisionConstraint(object):
         """
             This constraint expresses that both the manipulator and the target object is
             not in collision with anything.
         """
 
-        def __init__(self, target_obj, manip_data):
+        def __init__(self, object_data, robot_data, scene_sdf,
+                     max_robot_intersection=0.1):
             """
                 Create a new instance of a collision constraint.
                 ---------
                 Arguments
                 ---------
-                target_obj, OpenRAVE KinBody - the target object to place
-                manip_data, ARPORobotBridge.ManipulatorData - manipulator data to use
+                object_data, ARPORobotBridge.ObjectData - information about the object
+                robot_data, ARPORobotBridge.RobotData - information about the robot
+                scene_sdf, sdf.core.SceneSDF - signed distance field of the scene
+                    to compute intersection, i.e. constraint relaxation
+                max_robot_intersection, float - determines maximum percentage to which the robot
+                    may be in collision so that the robot's contribution to the
+                    contraint relaxation value is non-zero
             """
-            self._target_obj = target_obj
-            self._manip_data = manip_data
+            self._target_obj = object_data.kinbody
+            self._manip_data = robot_data.manip_data
+            self._robot_octree = robot_data.octree
+            self._object_octree = object_data.octree
+            self._scene_sdf = scene_sdf
+            self._max_robot_intersection = max_robot_intersection
 
         def check_collision(self, cache_entry):
             """
@@ -354,16 +394,38 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 Compute relaxation of collision constraint.
                 #TODO
             """
-            # TODO requires collision intersection function -> sdf.kinbody
-            pass
+            robot_intersection = 0.0
+            arm_config = None
+            if cache_entry.solution.arm_config is None:
+                # TODO compute intersection using approximate arm configuration
+                robot_intersection = 0.0
+            else:
+                arm_config = cache_entry.solution.arm_config
+            # first compute intersection for the arm
+            if arm_config is not None:
+                manip = cache_entry.solution.manip
+                manip_data = self._manip_data[manip.GetName()]
+                robot = manip.GetRobot()
+                with robot:
+                    robot.SetActiveDOFs(manip.GetArmIndices())
+                    isec_values = self._robot_octree.compute_intersection(
+                        robot.GetTransform(), arm_config, self._scene_sdf)
+                    robot_intersection = isec_values[1]
+            # next compute intersection for the object
+            isec_values = self._object_octree.compute_intersection(self._scene_sdf, cache_entry.solution.obj_tf)
+            # from this compute relaxation value that is in interval 0, 1
+            object_intersection = isec_values[1]
+            violation_term = np.clip((object_intersection - robot_intersection /
+                                      self._max_robot_intersection)/2.0, 0.0, 1.0)
+            return 1.0 - violation_term
 
-    class ReachabilityConstraint:
+    class ReachabilityConstraint(object):
         """
             This constraint expresses that a solution needs to be kinematically reachable.
         """
 
-        def __init__(self):
-            pass
+        def __init__(self, robot_data):
+            self._manip_data = robot_data.manip_data
 
         def check_reachability(self, cache_entry):
             """
@@ -389,7 +451,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # TODO requires reachability map
             pass
 
-    class ObjectiveImprovementConstraint:
+    class ObjectiveImprovementConstraint(object):
         """
             This constraint expresses that a new solution needs to be better than a previously
             found one.
@@ -426,26 +488,28 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # TODO requires known objective values so far
             pass
 
-    def __init__(self, arpo_hierarchy, manipulator_data, target_obj, objective_fn, valid_contact_points):
+    def __init__(self, arpo_hierarchy, robot_data, object_data,
+                 objective_fn, valid_contact_points, scene_sdf):
         """
             Create a new ARPORobotBridge
             ---------
             Arguments
             ---------
             arpo_hierarchy, ARPOHierarchy - arpo hierarchy to create solutions for
-            manipulator_data, dict - mapping from manipulator names to ManipulatorData
-            target_obj, OpenRAVE kinbody - object that is to be placed
+            robot_data, RobotData - struct that stores robot information including ManipulatorData for each manipulator
+            object_data, ObjectData - struct that stores object information
             objective_fn, ??? - TODO
             valid_contact_points, VoxelGrid with bool values - stores for the scene where object
                 contact points may be located
         """
         self._hierarchy = arpo_hierarchy
-        self._manip_data = manipulator_data
+        self._robot_data = robot_data
+        self._manip_data = robot_data.manip_data  # shortcut to manipulator data
         self._objective_fn = objective_fn
-        self._target_obj = target_obj
+        self._object_data = object_data
         self._contact_constraint = ARPORobotBridge.ContactConstraint(valid_contact_points)
-        self._collision_constraint = ARPORobotBridge.CollisionConstraint(self._target_obj, self._manip_data)
-        self._reachability_constraint = ARPORobotBridge.ReachabilityConstraint()
+        self._collision_constraint = ARPORobotBridge.CollisionConstraint(object_data, robot_data, scene_sdf)
+        self._reachability_constraint = ARPORobotBridge.ReachabilityConstraint(robot_data)
         self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint()
         self._solutions_cache = []  # array of SolutionCacheEntry objects
 
