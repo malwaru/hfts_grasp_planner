@@ -447,7 +447,7 @@ class RigidBodyOccupancyGrid(object):
         that overlap with the link given its current transform.
     """
 
-    def __init__(self, cell_size, link):
+    def __init__(self, cell_size, link, grid=None):
         """
             Create a new RigidBodyOccupancy Grid.
             ---------
@@ -455,13 +455,23 @@ class RigidBodyOccupancyGrid(object):
             ---------
             cell_size, float - cell size of the grid
             link, OpenRAVE Link - link to represent
+            grid (optional), VoxelGrid - You may provide the voxel grid yourself, e.g.
+                if you want to load it from a file. There is no sanity check performed though,
+                whether this grid really represents the link. In case you provide a grid,
+                the argument cell_size is ignored.
         """
         self._link = link
         self._body = link.GetParent()
-        self._grid = construct_grid([link], cell_size)[0]
+        if grid is None:
+            self._grid = construct_grid([link], cell_size)[0]
+        else:
+            self._grid = grid
         cells = self._grid.get_raw_data()
         xx, yy, zz = np.nonzero(cells)
         indices_mat = np.column_stack((xx, yy, zz))
+        self._num_occupied_cells = xx.shape[0]
+        self._cell_volume = pow(cell_size, 3)
+        self._total_volume = self._num_occupied_cells * self._cell_volume
         self._locc_positions = self._grid.get_cell_positions(indices_mat, b_center=True, b_global_frame=False)
 
     def sum(self, field, tf=None, default_value=0.0):
@@ -486,7 +496,7 @@ class RigidBodyOccupancyGrid(object):
 
     def count(self, field, val, comp=np.greater_equal, tf=None):
         """
-            Count how many cell values occupied by this link are >, >=, ==, <= or < than val.
+            Count how many cell values in field occupied by this link are >, >=, ==, <= or < than val.
             ---------
             Arguments
             ---------
@@ -504,11 +514,75 @@ class RigidBodyOccupancyGrid(object):
             return np.count_nonzero(comp(field.get_cell_values(indices), val))
         return 0
 
+    def intersect(self, scene_sdf, tf=None):
+        """
+            Return how many cells of this occupancy grid correspond to positions
+            with negative or zero distance in the given scene_sdf.
+            ---------
+            Arguments
+            ---------
+            scene_sdf, SceneSDF - signed distance field of a scene
+            tf (optional), np.array of shape 4,4 - transformation matrix for this link,
+                if not provided current tf of link is used.
+            -------
+            Returns
+            -------
+            num_intersecting_cells, int - number of cells with negative or zero distance
+            percentage, float - percentage of cells that have negative or zero distance
+            volume, float - the total volume of the occupied cells
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        distances = scene_sdf.get_distances(query_pos)
+        num_intersecting_cells = np.sum(distances <= 0.0)
+        return num_intersecting_cells, float(num_intersecting_cells) / self._num_occupied_cells, num_intersecting_cells * self._cell_volume
+
     def get_link(self):
         """
             Return the link this grid represents.
         """
         return self._link
+
+    def get_volume(self):
+        """
+            Return approximate volume of the link.
+        """
+        return self._total_volume
+
+    def get_num_occupied_cells(self):
+        """
+            Return the number of cells in the underlying grid that are occupied.
+        """
+        return self._num_occupied_cells
+
+    def save(self, filename):
+        """
+            Save the underlying grid to file.
+            ---------
+            Arguments
+            ---------
+            filename, string - path where to store grid
+        """
+        self._grid.save(filename)
+
+    @staticmethod
+    def load(filename, link):
+        """
+            Construct a RigidBodyOccupancyGrid from a grid stored on disk.
+            ---------
+            Arguments
+            ---------
+            filename, string - the filename where to load grid from
+            link, OpenRAVE link - the link this grid is for
+        """
+        grid = grid_mod.VoxelGrid.load(filename)
+        return RigidBodyOccupancyGrid(None, link, grid)
+
+    @staticmethod
+    def create_occupancy_grids(cell_size, links):
+        grids = construct_grid(links, cell_size)
+        return [RigidBodyOccupancyGrid(None, link, grid) for link, grid in zip(links, grids)]
 
 
 if __name__ == '__main__':
@@ -607,8 +681,27 @@ if __name__ == '__main__':
         total = timeit.timeit(run_code, setup=setup_code, number=num_runs)
         print "Total:",  total, "per run: ", total / num_runs
 
+    def mtimeit_grid_intersection():
+        setup_code = """import openravepy as orpy;\
+        from __main__ import RigidBodyOccupancyGrid;\
+        import hfts_grasp_planner.sdf.core as sdf_core;\
+        env = orpy.Environment();\
+        base_path = \'/home/joshua/projects/placement_planning/src/hfts_grasp_planner/\';\
+        env.Load(base_path + \'data/environments/placement_exp_0.xml\');\
+        body = env.GetKinBody(\'crayola\');\
+        occupancy_grid = RigidBodyOccupancyGrid(0.01, body.GetLinks()[0]);\
+        scene_sdf = sdf_core.SceneSDF(env, [], [\'Yumi\', \'crayola\']);\
+        scene_sdf.load(base_path + \'data/sdfs/placement_exp_0.sdf\');\
+        """
+        run_code = """occupancy_grid.intersect(scene_sdf);"""
+        import timeit
+        num_runs = 10000
+        total = timeit.timeit(run_code, setup=setup_code, number=num_runs)
+        print "Total:",  total, "per run: ", total / num_runs
+
     # mtest_count_occgrid()
     # mtest_sum_occgrid()
     # mtimeit_sum_occgrid()
-    mtimeit_count_occgrid()
+    # mtimeit_count_occgrid()
     # mtimeit_intersection()
+    mtimeit_grid_intersection()

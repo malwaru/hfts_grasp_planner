@@ -7,7 +7,114 @@ import rospy
 import numpy as np
 from itertools import izip
 from hfts_grasp_planner.sdf.core import SceneSDF
-from hfts_grasp_planner.sdf.kinbody import OccupancyOctree
+from hfts_grasp_planner.sdf.kinbody import OccupancyOctree, RigidBodyOccupancyGrid
+
+
+class RobotOccupancyGrid(object):
+    """
+        This class provides a series of occupancy grids representing a robot.
+        Each link is represented by an RigidBodyOccupancyGrid. For computing the intersection
+        of the robot with an obstacle, the intersections of all links together is summed up.
+        This is class is somehow similar to RobotOccupancyOctree but uses RigidBodyOccupancyGrid
+        as underlying data structure. Accordingly, it offers a slightly different interface.
+    """
+
+    def __init__(self, cell_size, robot, link_names=None, occupancy_grids=None):
+        """
+            Construct new RobotOccupancyGrid.
+            ---------
+            Arguments
+            ---------
+            cell_size, float - minimum edge length of a cell (all cells are cubes)
+            robot, OpenRAVE robot - the robot
+            link_names, list of strings - if provided, limits the intersection cost to
+                the specified links
+            occupancy_grids (internal use), list of RigidBodyOccupancyGrid -
+                NOTE: for internal use, used to load RigidBodyOccupancyGrid from file rather than creating them
+        """
+        self._robot = robot
+        self._occupancy_grids = []
+        self._total_volume = 0.0
+        self._total_num_occupied_cells = 0
+        self._link_names = [link.GetName() for link in self._robot.GetLinks()]
+        if link_names:
+            self._link_names = [name for name in self._link_names if name in link_names]
+        links = [robot.GetLink(name) for name in self._link_names]
+        if occupancy_grids is None:
+            self._occupancy_grids = RigidBodyOccupancyGrid.create_occupancy_grids(cell_size, links)
+        else:
+            self._occupancy_grids = occupancy_grids
+        self._total_volume = sum([grid.get_volume() for grid in self._occupancy_grids])
+        self._total_num_occupied_cells = sum([grid.get_num_occupied_cells() for grid in self._occupancy_grids])
+
+    @staticmethod
+    def load(base_file_name, robot, link_names=None):
+        """
+            Load a RobotOccupancyGrid from disk. There is no sanity check performed on whether
+            any of the loaded RigidBodyOccupancyGrids really represent the given robot's links.
+            ---------
+            Arguments
+            ---------
+            base_file_name, string - base file name
+            robot, OpenRAVE robot to load occupancy octree for
+            link_name (optional), list of string - list of links to create the occupancy octree for.
+                If not provided, all links are loaded.
+            ------
+            Throws
+            ------
+            IOError if files do not exist
+        """
+        if link_names is not None:
+            links = [robot.GetLink(link_name) for link_name in link_names]
+        else:
+            links = robot.GetLinks()
+            link_names = [link.GetName() for link in links]
+        grids = [RigidBodyOccupancyGrid.load(base_file_name + '.' + link_name, link)
+                 for link_name, link in zip(link_names, links)]
+        return RobotOccupancyGrid(None, robot, link_names, grids)
+
+    def save(self, base_file_name):
+        """
+            Save this RobotOccupancyGrid to file.
+            ---------
+            Arguments
+            ---------
+            base_file_name, string - base file name. Use this string again to load it again.
+        """
+        for link_name, grid in zip(self._link_names, self._occupancy_grids):
+            grid.save(base_file_name + '.' + link_name)
+
+    def compute_intersection(self, robot_pose, robot_config, scene_sdf):
+        """
+            Computes the intersection between the occupancy grids of the robot's links
+            and the geometry in the scene described by the provided scene sdf.
+            ---------
+            Arguments
+            ---------
+            robot_pose, numpy array of shape (4, 4) - pose of the robot
+            robot_config, numpy array of shape (q,) - configuration of active DOFs
+            scene_sdf, signed distance field
+            -------
+            Returns
+            -------
+            v, rv -
+                v is the total volume that is intersecting
+                rv is this volume relative to the robot's total volume, i.e. in range [0, 1]
+        """
+        with self._robot:
+            self._robot.SetTransform(robot_pose)
+            self._robot.SetActiveDOFValues(robot_config)
+            v = 0.0
+            for grid in self._occupancy_grids:
+                _, _, lv, = grid.intersect(scene_sdf)
+                v += lv
+            return v, v / self._total_volume
+
+    def get_robot(self):
+        """
+            Return the robot this occupancy tree is created for.
+        """
+        return self._robot
 
 
 class RobotOccupancyOctree(object):
