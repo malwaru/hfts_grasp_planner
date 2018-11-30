@@ -113,7 +113,7 @@ class PlacementHierarchy:
     @abstractmethod
     def get_minimum_depth_for_construction(self):
         """
-            Return the minimal depth, i.e. length of a key, for which it is possible 
+            Return the minimal depth, i.e. length of a key, for which it is possible
             to construct a solution.
         """
         pass
@@ -132,7 +132,7 @@ class PlacementSolutionConstructor:
             key, object - a key object that identifies a node in a PlacementHierarchy
             boptimize_constraints, bool - if True, the solution constructor may put additional computational
                 effort into computing a valid solution, e.g. some optimization of a constraint relaxation
-            b_optimize_objective, bool - if True, the solution constructor may optimize an objective 
+            b_optimize_objective, bool - if True, the solution constructor may optimize an objective
                 given the hierarchy key
             -------
             Returns

@@ -219,7 +219,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
     class ObjectData(object):
         """
             Struct that stores object data.
-            It stores a kinbody, i.e. the object, and a volumetric representation of it - 
+            It stores a kinbody, i.e. the object, and a volumetric representation of it -
             an instance of sdf.kinbody.OccupancyTree
         """
 
@@ -275,12 +275,13 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             Cache all relevant information for a particular solution.
         """
 
-        def __init__(self, key, solution, region, plcmnt_orientation, so2_interval):
+        def __init__(self, key, solution, region, plcmnt_orientation, so2_interval, eef_tf):
             self.key = key  # arpo hierarchy key
             self.solution = solution  # PlacementGoal
             self.region = region  # PlacementRegion from key
             self.plcmnt_orientation = plcmnt_orientation  # PlacementOrientation from key
             self.so2_interval = so2_interval  # SO2 interval from key
+            self.eef_tf = eef_tf  # store end-effector transform
             self.bkinematically_reachable = None  # store whether ik solutions exist
             self.bcollision_free = None  # store whether collision-free
             self.bbetter_objective = None  # store whether it has better objective than the current best
@@ -293,11 +294,11 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             be in contact with a support surface, i.e. within a placement region.
         """
 
-        def __init__(self, valid_contact_points):
+        def __init__(self, contact_point_distances):
             """
                 Create a new instance of contact constraint.
             """
-            self._valid_contact_points = valid_contact_points
+            self._contact_point_distances = contact_point_distances
 
         def check_contacts(self, cache_entry):
             """
@@ -311,25 +312,45 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 Side effects
                 ------------
                 sets the bstable flag in cache_entry
+                -------
+                Returns
+                -------
+                bstable, bool - whether the solution is stable
             """
             cache_entry.bstable = False
             obj_tf = cache_entry.solution.obj_tf
             po = cache_entry.plcmnt_orientation
             contact_points = np.dot(po.placement_face[1:], obj_tf[:3, :3].transpose()) + obj_tf[:3, 3]
-            values = self._valid_contact_points.get_cell_values_pos(contact_points)
+            values = self._contact_point_distances.get_cell_values_pos(contact_points)
             none_values = values == None  # Ignore linter warning!
             if none_values.any():
                 return False
-            cache_entry.bstable = values.all()  # for heuristic return ratio of true vs none
+            cache_entry.bstable = (values == 0.0).all()
             return cache_entry.bstable
 
         def get_relaxation(self, cache_entry):
             """
                 Compute relaxation of contact constraint.
-                #TODO
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                -------
+                Returns
+                -------
+                val, float - relaxation value
             """
-            # TODO requires distance field to contact regions. 2D distance fields enough?
-            pass
+            obj_tf = cache_entry.solution.obj_tf
+            po = cache_entry.plcmnt_orientation
+            contact_points = np.dot(po.placement_face[1:], obj_tf[:3, :3].transpose()) + obj_tf[:3, 3]
+            values = self._contact_point_distances.get_cell_values_pos(contact_points)
+            none_values = values == None  # Ignore linter warning!
+            if none_values.any():
+                return 0.0  # contact points are out of range, that means it's definitely a bad placement
+            # TODO need to prevent VoxelGrid from iterpolating with inf values -> SliceGrid???
+            assert((values != float('inf')).all())
+            max_distance = np.max(values)
+            return 1.0 - max_distance / po.max_contact_pair_distance
 
     class CollisionConstraint(object):
         """
@@ -392,7 +413,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         def get_relaxation(self, cache_entry):
             """
                 Compute relaxation of collision constraint.
-                #TODO
+                # TODO
             """
             robot_intersection = 0.0
             arm_config = None
@@ -439,6 +460,10 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 Side effects
                 ------------
                 sets the bkinematically_reachable flag in cache_entry
+                -------
+                Returns
+                -------
+                bool whether solution is reachable or not
             """
             cache_entry.bkinematically_reachable = cache_entry.solution.arm_config is not None
             return cache_entry.bkinematically_reachable
@@ -446,28 +471,6 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         def get_relaxation(self, cache_entry):
             """
                 Compute relaxation of reachability constraint.
-                #TODO
-            """
-            # TODO requires reachability map
-            pass
-
-    class ObjectiveImprovementConstraint(object):
-        """
-            This constraint expresses that a new solution needs to be better than a previously
-            found one.
-        """
-
-        def __init__(self):
-            """
-                Construct new QualityImprovementConstraint
-            """
-            self._best_value = float('inf')
-
-        def check_objective_improvement(self, cache_entry):
-            """
-                Check whether the solution stored in cache entry is has a better quality than the best
-                reached so far.
-                Returns True or False. TODO: implement relaxation
                 ---------
                 Arguments
                 ---------
@@ -475,21 +478,64 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 ------------
                 Side effects
                 ------------
-                sets the bbetter_objective flag in cache_entry
+                TODO: set approximate arm configuration
+                -------
+                Returns
+                -------
+                val, float - relaxation value in [0, 1]
             """
-            cache_entry.bbetter_objective = cache_entry.solution.objective_value < self._best_value
-            return cache_entry.bbetter_objective
+            if cache_entry.solution.arm_config is not None:
+                return 1.0
+            # else compute heuristic value using reachability map
+            manip = cache_entry.solution.manip
+            manip_data = self._manip_data[manip.GetName()]
+            pose = np.empty((1, 7))
+            pose[0, :3] = cache_entry.eef_tf[:3, 3]
+            pose[0, 3:] = orpy.quatFromRotationMatrix(cache_entry.eef_tf[:3, :3])
+            cdist, qdist = manip_data.reachability_map.query(pose)
+            # relate cartesian distance to the size of the placement region
+            # normalize quaternion distance
+            return 1.0 - 0.5 * np.clip(cdist[0] / cache_entry.region.radius, 0.0, 1.0) - 0.5 * qdist[0] / np.pi
 
-        def get_relaxation(self, cache_entry):
-            """
-                Compute relaxation of objctive constraint.
-                #TODO
-            """
-            # TODO requires known objective values so far
-            pass
+    # class ObjectiveImprovementConstraint(object):
+    #     """
+    #         This constraint expresses that a new solution needs to be better than a previously
+    #         found one.
+    #     """
+
+    #     def __init__(self):
+    #         """
+    #             Construct new QualityImprovementConstraint
+    #         """
+    #         self._best_value = float('inf')
+
+    #     def check_objective_improvement(self, cache_entry):
+    #         """
+    #             Check whether the solution stored in cache entry is has a better quality than the best
+    #             reached so far.
+    #             Returns True or False. TODO: implement relaxation
+    #             ---------
+    #             Arguments
+    #             ---------
+    #             cache_entry, SolutionCacheEntry
+    #             ------------
+    #             Side effects
+    #             ------------
+    #             sets the bbetter_objective flag in cache_entry
+    #         """
+    #         cache_entry.bbetter_objective = cache_entry.solution.objective_value < self._best_value
+    #         return cache_entry.bbetter_objective
+
+    #     def get_relaxation(self, cache_entry):
+    #         """
+    #             Compute relaxation of objctive constraint.
+    #             #TODO
+    #         """
+    #         # TODO requires known objective values so far
+    #         pass
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
-                 objective_fn, valid_contact_points, scene_sdf):
+                 objective_fn, contact_point_distances, scene_sdf):
         """
             Create a new ARPORobotBridge
             ---------
@@ -499,7 +545,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             robot_data, RobotData - struct that stores robot information including ManipulatorData for each manipulator
             object_data, ObjectData - struct that stores object information
             objective_fn, ??? - TODO
-            valid_contact_points, VoxelGrid with bool values - stores for the scene where object
+            contact_point_distances, VoxelGrid with float values - stores for the scene distances to where
                 contact points may be located
         """
         self._hierarchy = arpo_hierarchy
@@ -507,10 +553,10 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         self._manip_data = robot_data.manip_data  # shortcut to manipulator data
         self._objective_fn = objective_fn
         self._object_data = object_data
-        self._contact_constraint = ARPORobotBridge.ContactConstraint(valid_contact_points)
+        self._contact_constraint = ARPORobotBridge.ContactConstraint(contact_point_distances)
         self._collision_constraint = ARPORobotBridge.CollisionConstraint(object_data, robot_data, scene_sdf)
         self._reachability_constraint = ARPORobotBridge.ReachabilityConstraint(robot_data)
-        self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint()
+        # self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint() # TODO move this into goal sampler
         self._solutions_cache = []  # array of SolutionCacheEntry objects
 
     def construct_solution(self, key, b_optimize_constraints=False, b_optimize_objective=False):
@@ -546,15 +592,14 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         manip_data = self._manip_data[manip.GetName()]
         # end-effector tf
         eef_tf = np.dot(obj_tf, manip_data.grasp_tf)
-        # TODO check reachability map on whether there is point in calling IK solver?
-        # TODO seed?
         config = manip_data.ik_solver.compute_ik(eef_tf)
-        # TODO optimize constraints, optimize objective
+        # TODO optimize constraints, optimize objective, if requested
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             # TODO real objective value
             manip=manip, arm_config=config, obj_tf=obj_tf, key=len(self._solutions_cache), objective_value=0.0,
             grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
-        self._solutions_cache.append(ARPORobotBridge.SolutionCacheEntry(key, new_solution, region, po, so2_interval))
+        self._solutions_cache.append(ARPORobotBridge.SolutionCacheEntry(
+            key, new_solution, region, po, so2_interval, eef_tf))
         return new_solution
 
     def is_valid(self, solution):
@@ -564,6 +609,10 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             Arguments
             ---------
             solution, PlacementSolution - solution to evaluate
+            -------
+            Returns
+            -------
+            valid, bool
         """
         cache_entry = self._solutions_cache[solution.key]
         assert(cache_entry.solution == solution)
@@ -576,12 +625,28 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         # next check whether the object pose is actually a stable placement
         if not self._contact_constraint.check_contacts(cache_entry):
             return False
-        # lastly check whether we have an improvement in quality
-        return self._objective_constraint.check_objective_improvement(cache_entry)
+        return True
 
     def get_constraint_relaxation(self, solution):
-        # TODO implement me
-        raise RuntimeError("Not yet implemented")
+        """
+            Return a value in the interval [0, 1], where 0 corresponds to invalid
+            and 1 to valid. If a solution is somehow close to being valid, a value in the interval
+            [0, 1] is returned. The larger the value, the closer it is to being a valid solution.
+            ---------
+            Arguments
+            ---------
+            solution, PlacementSolution - solution to evaluate
+            -------
+            Returns
+            -------
+            val, float
+        """
+        cache_entry = self._solutions_cache[solution.key]
+        assert(cache_entry.solution == solution)
+        reachability_val = self._reachability_constraint.get_relaxation(cache_entry)
+        contact_val = self._contact_constraint.get_relaxation(cache_entry)
+        col_val = self._collision_constraint.get_relaxation(cache_entry)
+        return (reachability_val + contact_val + col_val) / 3.0  # TODO could add weights here
 
     def evaluate(self, solution):
         # TODO implement me

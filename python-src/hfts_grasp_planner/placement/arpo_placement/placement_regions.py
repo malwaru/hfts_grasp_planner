@@ -41,8 +41,10 @@ class PlanarPlacementRegion(object):
         assert(self.x_indices.shape[0] >= 1)
         assert(self.x_indices.shape[0] == self.y_indices.shape[0])
         self.cell_size = cell_size
+        # TODO move contact_tf to the center of the region? i.e. median?
         self.contact_tf = np.array(self.base_tf)  # tf that a contact point should have
         self.contact_tf[2, 3] += cell_size / 2.0  # is lifted by half the cell size
+        self.radius = np.linalg.norm(self.dimensions)  # radius of encompassing circle with center in contact_tf
         self._subregions = None
 
     def get_subregions(self):
@@ -183,7 +185,7 @@ class PlanarRegionExtractor(object):
                                           num_cells=np.array(grid.get_num_cells()),
                                           base_transform=grid.get_transform(),
                                           dtype=bool)
-        surface_grid.set_raw_data(output_grid)
+        surface_grid.set_raw_data(output_grid.astype(bool))
         # next cluster them
         label_offset = 0
         for layer in xrange(1, output_grid.shape[2]):
@@ -199,6 +201,41 @@ class PlanarRegionExtractor(object):
                 label_offset += num_regions
         return surface_grid, output_grid, label_offset, placement_regions
         # return placement_regions
+
+    @staticmethod
+    def compute_surface_distance_field(surface_grid):
+        """
+            Compute a grid that stores in each cell the x,y distance to the contact surface
+            described in surface_grid.
+            ---------
+            Arguments
+            ---------
+            surface_grid, VoxelGrid with bool values - a grid storing where valid positions of placement
+                contacts are
+            -------
+            Returns
+            -------
+            distance_surface_grid, VoxelGrid with float values - a grid storing x,y distance to closest valid position
+                of placement contact within that plane.
+        """
+        occ_transposed = surface_grid.get_raw_data().transpose().astype(bool)
+        distance_map = grid_mod.VoxelGrid(np.array(surface_grid.get_workspace()),
+                                          num_cells=np.array(surface_grid.get_num_cells()),
+                                          cell_size=surface_grid.get_cell_size())
+        distance_data = distance_map.get_raw_data()
+        distance_data_t = distance_data.transpose()  # transposed view on distance_data
+        # run over each layer
+        for idx in xrange(occ_transposed.shape[0]):
+            if np.any(occ_transposed[idx]):
+                inv_occ_layer = np.invert(occ_transposed[idx])
+                xy_distance_field = scipy_morph.distance_transform_edt(
+                    inv_occ_layer, sampling=distance_map.get_cell_size())
+            else:
+                xy_distance_field = np.full(occ_transposed[idx].shape, float("inf"))
+            distance_data_t[idx] = xy_distance_field
+        distance_map.set_raw_data(distance_data)
+        # TODO need to prevent VoxelGrid from iterpolating with inf values
+        return distance_map
 
     @staticmethod
     def _compute_plcmnt_regions(grid, labels, layer, cluster, max_region_extent):
@@ -382,11 +419,12 @@ if __name__ == "__main__":
 
     gpu_kit = PlanarRegionExtractor()
     surface, labels, num_regions, regions = gpu_kit.extract_planar_regions(grid, max_region_size=0.2)
+    surface_distance = PlanarRegionExtractor.compute_surface_distance_field(surface)
     # print "found %i regions" % len(regions)
     # env.SetViewer('qtcoin')
     # handles = []
-    surface_grid = surface.get_raw_data()
-    xx, yy, zz = np.where(surface_grid)
+    # surface_grid = surface.get_raw_data()
+    # xx, yy, zz = np.where(surface_grid)
     # colors = np.random.random((num_regions+1, 3))
     # color = np.empty(4)
     # tf = np.array(grid.get_transform())
@@ -406,7 +444,8 @@ if __name__ == "__main__":
     #     mayavi.mlab.points3d(xx, yy, zz, mode="cube", color=tuple(np.random.random(3)), scale_factor=1)
     # mayavi.mlab.show()
     # print grid._cells.shape
-    mayavi.mlab.points3d(xx, yy, zz, mode="cube", color=tuple(np.random.random(3)), scale_factor=1)
+    # mayavi.mlab.points3d(xx, yy, zz, mode="cube", color=tuple(np.random.random(3)), scale_factor=1)
+    mayavi.mlab.volume_slice(surface_distance._cells, slice_index=2, plane_orientation="z_axes")
     mayavi.mlab.show()
 
     # compute_runtime()

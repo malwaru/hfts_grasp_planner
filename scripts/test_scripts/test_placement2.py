@@ -18,7 +18,9 @@ import hfts_grasp_planner.placement.arpo_placement.placement_orientations as plc
 import hfts_grasp_planner.placement.arpo_placement.placement_regions as plcmnt_regions_mod
 import hfts_grasp_planner.placement.arpo_placement.core as arpo_placement_mod
 import hfts_grasp_planner.placement.goal_sampler.random_sampler as rnd_sampler_mod
+import hfts_grasp_planner.placement.goal_sampler.mcts_sampler as mcts_sampler_mod
 import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
+import hfts_grasp_planner.placement.reachability as rmap_mod
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
 
 
@@ -49,7 +51,8 @@ def resolve_paths(problem_desc, yaml_file):
         cwd = os.getcwd()
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
-    for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file', 'robot_occtree']:
+    for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file',
+                'robot_occtree', 'reachability_path']:
         if key in problem_desc:
             problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
@@ -183,6 +186,7 @@ if __name__ == "__main__":
         gpu_kit = plcmnt_regions_mod.PlanarRegionExtractor()
         surface_grid, labels, num_regions, regions = gpu_kit.extract_planar_regions(
             occ_target_volume, max_region_size=0.2)
+        sufrace_distance_grid = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid)
         # extract placement orientations
         target_object = env.GetKinBody(target_obj_name)
         orientations = plcmnt_orientations_mod.compute_placement_orientations(target_object)
@@ -197,8 +201,15 @@ if __name__ == "__main__":
             # TODO have different grasp poses for each manipulator
             grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
             grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
+            rmap = rmap_mod.ReachabilityMap(manip, ik_solver)
+            try:
+                filename = problem_desc["reachability_path"] + '/' + robot.GetName() + '_' + manip.GetName() + '.npy'
+                rmap.load(filename)
+            except IOError:
+                rospy.logerr("Could not load reachability map for %s from file %s. Please provide one!" % (manip.GetName(), filename))
+                sys.exit(1)
             manip_data[manip.GetName()] = arpo_placement_mod.ARPORobotBridge.ManipulatorData(
-                manip, ik_solver, None, grasp_pose, problem_desc['grasp_config'])
+                manip, ik_solver, rmap, grasp_pose, problem_desc['grasp_config'])
             manip_links = [link.GetName() for link in get_manipulator_links(manip)]
             # remove base link - it does not move so
             manip_links.remove(manip.GetBase().GetName())
@@ -235,12 +246,15 @@ if __name__ == "__main__":
         hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, 4)
         arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
                                                          object_data=object_data, objective_fn=None,
-                                                         valid_contact_points=surface_grid, scene_sdf=scene_sdf)
-        random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+                                                         contact_point_distances=sufrace_distance_grid, scene_sdf=scene_sdf)
+        # random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+        #                                                         manip.GetName() for manip in manips])
+        mcts_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                 manip.GetName() for manip in manips])
-        motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(random_sampler, manips)
-        traj, goal = plan(motion_planner, target_object, 10)
-        # solutions = random_sampler.sample(10, 10000)
+
+        motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(mcts_sampler, manips)
+        # traj, goal = plan(motion_planner, target_object, 10)
+        solutions = mcts_sampler.sample(10, 100)
         IPython.embed()
     finally:
         orpy.RaveDestroy()

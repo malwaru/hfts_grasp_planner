@@ -1,4 +1,3 @@
-import heapq
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
     This module contains the definition of a naive placement goal sampler - purely random sampler.

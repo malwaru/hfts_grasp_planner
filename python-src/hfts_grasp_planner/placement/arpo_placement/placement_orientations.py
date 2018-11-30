@@ -110,6 +110,7 @@ class PlacementOrientation(object):
         self.reference_tf[:3, 3] = placement_face[1]  # position of first vertex
         self.inv_reference_tf = utils.inverse_transform(self.reference_tf)
         self.projected_com = projected_com
+        self.max_contact_pair_distance = np.max(np.linalg.norm(placement_face[2:] - placement_face[1], axis=1))
 
 
 def is_stable_placement_plane(plane, com, min_com_distance=0.0):
