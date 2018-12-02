@@ -1,3 +1,4 @@
+import rospy
 import numpy as np
 import openravepy as orpy
 import hfts_grasp_planner.utils as utils
@@ -347,7 +348,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             none_values = values == None  # Ignore linter warning!
             if none_values.any():
                 return 0.0  # contact points are out of range, that means it's definitely a bad placement
-            # TODO need to prevent VoxelGrid from iterpolating with inf values -> SliceGrid???
+            # TODO this may still fail if placement planes are not perfect planes...
             assert((values != float('inf')).all())
             max_distance = np.max(values)
             return 1.0 - max_distance / po.max_contact_pair_distance
@@ -646,6 +647,15 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         reachability_val = self._reachability_constraint.get_relaxation(cache_entry)
         contact_val = self._contact_constraint.get_relaxation(cache_entry)
         col_val = self._collision_constraint.get_relaxation(cache_entry)
+        rospy.logdebug("Reachability value: %f, contact value: %f, collision value: %f" %
+                       (reachability_val, contact_val, col_val))
+        # TODO remove:
+        self._object_data.kinbody.SetTransform(solution.obj_tf)
+        if solution.arm_config is not None:
+            robot = solution.manip.GetRobot()
+            old_config = robot.GetDOFValues()
+            robot.SetDOFValues(solution.arm_config, solution.manip.GetArmIndices())
+            robot.SetDOFValues(old_config)
         return (reachability_val + contact_val + col_val) / 3.0  # TODO could add weights here
 
     def evaluate(self, solution):

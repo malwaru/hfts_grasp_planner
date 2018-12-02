@@ -203,7 +203,7 @@ class PlanarRegionExtractor(object):
         # return placement_regions
 
     @staticmethod
-    def compute_surface_distance_field(surface_grid):
+    def compute_surface_distance_field(surface_grid, padding=0.0):
         """
             Compute a grid that stores in each cell the x,y distance to the contact surface
             described in surface_grid.
@@ -212,18 +212,24 @@ class PlanarRegionExtractor(object):
             ---------
             surface_grid, VoxelGrid with bool values - a grid storing where valid positions of placement
                 contacts are
+            padding (optional), float - additional padding by which the returned grid should be larger than the
+                input surface grid.
             -------
             Returns
             -------
             distance_surface_grid, VoxelGrid with float values - a grid storing x,y distance to closest valid position
                 of placement contact within that plane.
         """
-        occ_transposed = surface_grid.get_raw_data().transpose().astype(bool)
+        if padding > 0.0:
+            # first enlarge surface grid
+            surface_grid = surface_grid.enlarge(padding, False)
         distance_map = grid_mod.VoxelGrid(np.array(surface_grid.get_workspace()),
+                                          cell_size=surface_grid.get_cell_size(),
                                           num_cells=np.array(surface_grid.get_num_cells()),
-                                          cell_size=surface_grid.get_cell_size())
+                                          b_in_slices=True)
         distance_data = distance_map.get_raw_data()
         distance_data_t = distance_data.transpose()  # transposed view on distance_data
+        occ_transposed = surface_grid.get_raw_data().transpose().astype(bool)
         # run over each layer
         for idx in xrange(occ_transposed.shape[0]):
             if np.any(occ_transposed[idx]):
@@ -234,7 +240,6 @@ class PlanarRegionExtractor(object):
                 xy_distance_field = np.full(occ_transposed[idx].shape, float("inf"))
             distance_data_t[idx] = xy_distance_field
         distance_map.set_raw_data(distance_data)
-        # TODO need to prevent VoxelGrid from iterpolating with inf values
         return distance_map
 
     @staticmethod
@@ -419,7 +424,7 @@ if __name__ == "__main__":
 
     gpu_kit = PlanarRegionExtractor()
     surface, labels, num_regions, regions = gpu_kit.extract_planar_regions(grid, max_region_size=0.2)
-    surface_distance = PlanarRegionExtractor.compute_surface_distance_field(surface)
+    surface_distance = PlanarRegionExtractor.compute_surface_distance_field(surface, 0.3)
     # print "found %i regions" % len(regions)
     # env.SetViewer('qtcoin')
     # handles = []

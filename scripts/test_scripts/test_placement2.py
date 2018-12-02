@@ -182,14 +182,15 @@ if __name__ == "__main__":
         # placement_volume = (np.array([0.24, 0.58, 0.51]), np.array([0.29, 0.8, 0.55]))  # volume in small gap
         placement_volume = (np.array(problem_desc['plcmnt_volume'][:3]), np.array(problem_desc['plcmnt_volume'][3:]))
         occ_target_volume = scene_occ.get_subset(placement_volume[0], placement_volume[1])
+        # extract placement orientations
+        target_object = env.GetKinBody(target_obj_name)
+        orientations = plcmnt_orientations_mod.compute_placement_orientations(target_object)
         # extract placement regions
         gpu_kit = plcmnt_regions_mod.PlanarRegionExtractor()
         surface_grid, labels, num_regions, regions = gpu_kit.extract_planar_regions(
             occ_target_volume, max_region_size=0.2)
-        sufrace_distance_grid = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid)
-        # extract placement orientations
-        target_object = env.GetKinBody(target_obj_name)
-        orientations = plcmnt_orientations_mod.compute_placement_orientations(target_object)
+        obj_radius = np.linalg.norm(target_object.ComputeAABB().extents())
+        sufrace_distance_grid = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid, obj_radius)
         # prepare robot data
         robot = env.GetRobot(problem_desc['robot_name'])
         # extract manipulators
