@@ -351,8 +351,10 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                     "Contact relaxation encountered None values. This should not happen! The contact point distance field is too small")
                 return 0.0  # contact points are out of range, that means it's definitely a bad placement
             # TODO this may still fail if placement planes are not perfect planes...
+            # TODO I.e. the height variance is larger than the cell size
             assert((values != float('inf')).all())
-            max_distance = np.max(values)
+            # get max distance. Clip it because the signed distance field isn't perfectly accurate
+            max_distance = np.clip(np.max(values), 0.0, po.max_contact_pair_distance)
             return 1.0 - max_distance / po.max_contact_pair_distance
 
     class CollisionConstraint(object):

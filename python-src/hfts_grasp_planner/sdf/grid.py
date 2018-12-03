@@ -423,14 +423,14 @@ class VoxelGrid(object):
             y, numpy array of shape (n,m,l) with type float - y coordinates of cells
             z, numpy array of shape (n,m,l) with type float - z coordinates of cells
         """
-        xs = np.linspace(self._aabb[0], self._aabb[3], self._num_cells[0] + 1)
-        ys = np.linspace(self._aabb[1], self._aabb[4], self._num_cells[1] + 1)
-        zs = np.linspace(self._aabb[2], self._aabb[5], self._num_cells[2] + 1)
+        xs = np.linspace(self._aabb[0], self._aabb[3], self._num_cells[0], endpoint=False)
+        ys = np.linspace(self._aabb[1], self._aabb[4], self._num_cells[1], endpoint=False)
+        zs = np.linspace(self._aabb[2], self._aabb[5], self._num_cells[2], endpoint=False)
         if b_center:
             xs += self._cell_size / 2.0
             ys += self._cell_size / 2.0
             zs += self._cell_size / 2.0
-        xx, yy, zz = np.meshgrid(xs, ys, zs)
+        xx, yy, zz = np.meshgrid(xs, ys, zs, indexing='ij')
         if not b_global_frame:
             return xx, yy, zz
         # transform each coordinate separately: x' = r00 * x + r01 * y + r02 * z + b_x,...

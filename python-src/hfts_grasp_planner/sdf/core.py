@@ -211,7 +211,7 @@ class SDF(object):
 
     def get_grid(self):
         """
-            Return the underlying VoxelGrid. 
+            Return the underlying VoxelGrid.
             Use with caution!
         """
         return self._grid
@@ -590,3 +590,25 @@ class SceneSDF(object):
             if not body_sdf.has_direction():
                 return False
         return True
+
+
+if __name__ == "__main__":
+    import os
+    import IPython
+    import mayavi.mlab
+    base_path = os.path.dirname(__file__) + '/../../../'
+    sdf_file = base_path + 'data/sdfs/placement_exp_2.static.sdf'
+    sdf = SDF.load(sdf_file)
+    occ_file = base_path + 'data/occupancy_grids/placement_exp_2'
+    occ = VoxelGrid.load(occ_file)
+    xx, yy, zz = sdf._grid.get_grid_positions()
+    mayavi.mlab.contour3d(xx, yy, zz, sdf._grid._cells[1:-1, 1:-1, 1:-1],
+                          contours=[0.0], color=(0.9, 0.0, 0.0))
+    occ_indices = np.nonzero(occ._cells[1:-1, 1:-1, 1:-1])
+    x = xx[occ_indices].flatten()
+    y = yy[occ_indices].flatten()
+    z = zz[occ_indices].flatten()
+    mayavi.mlab.points3d(x, y, z, x.shape[0] * [occ.get_cell_size()],
+                         mode="sphere", scale_factor=1, mask_points=1, transparent=True, opacity=0.8)
+    mayavi.mlab.show()
+    # IPython.embed()
