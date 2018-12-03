@@ -347,6 +347,8 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             values = self._contact_point_distances.get_cell_values_pos(contact_points)
             none_values = values == None  # Ignore linter warning!
             if none_values.any():
+                rospy.logwarn(
+                    "Contact relaxation encountered None values. This should not happen! The contact point distance field is too small")
                 return 0.0  # contact points are out of range, that means it's definitely a bad placement
             # TODO this may still fail if placement planes are not perfect planes...
             assert((values != float('inf')).all())
@@ -644,18 +646,18 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         """
         cache_entry = self._solutions_cache[solution.key]
         assert(cache_entry.solution == solution)
+        self._object_data.kinbody.SetTransform(solution.obj_tf)  # TODO remove
+        if solution.arm_config is not None:  # TODO remove
+            robot = solution.manip.GetRobot()  # TODO remove
+            old_config = robot.GetDOFValues()  # TODO remove
+            robot.SetDOFValues(solution.arm_config, solution.manip.GetArmIndices())  # TODO remove
         reachability_val = self._reachability_constraint.get_relaxation(cache_entry)
         contact_val = self._contact_constraint.get_relaxation(cache_entry)
         col_val = self._collision_constraint.get_relaxation(cache_entry)
         rospy.logdebug("Reachability value: %f, contact value: %f, collision value: %f" %
                        (reachability_val, contact_val, col_val))
-        # TODO remove:
-        self._object_data.kinbody.SetTransform(solution.obj_tf)
-        if solution.arm_config is not None:
-            robot = solution.manip.GetRobot()
-            old_config = robot.GetDOFValues()
-            robot.SetDOFValues(solution.arm_config, solution.manip.GetArmIndices())
-            robot.SetDOFValues(old_config)
+        if solution.arm_config is not None:  # TODO remove
+            robot.SetDOFValues(old_config)  # TODO remove
         return (reachability_val + contact_val + col_val) / 3.0  # TODO could add weights here
 
     def evaluate(self, solution):

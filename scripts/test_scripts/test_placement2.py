@@ -190,7 +190,8 @@ if __name__ == "__main__":
         surface_grid, labels, num_regions, regions = gpu_kit.extract_planar_regions(
             occ_target_volume, max_region_size=0.2)
         obj_radius = np.linalg.norm(target_object.ComputeAABB().extents())
-        sufrace_distance_grid = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid, obj_radius)
+        sufrace_distance_grid = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid,
+                                                                                                        2.0 * obj_radius)
         # prepare robot data
         robot = env.GetRobot(problem_desc['robot_name'])
         # extract manipulators
