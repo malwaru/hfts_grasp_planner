@@ -36,10 +36,12 @@ class RobotOccupancyGrid(object):
         self._occupancy_grids = []
         self._total_volume = 0.0
         self._total_num_occupied_cells = 0
-        self._link_names = [link.GetName() for link in self._robot.GetLinks()]
+        all_link_names = [link.GetName() for link in self._robot.GetLinks()]
         if link_names:
-            self._link_names = [name for name in self._link_names if name in link_names]
-        links = [robot.GetLink(name) for name in self._link_names]
+            link_names = [name for name in all_link_names if name in link_names]
+        else:
+            link_names = all_link_names
+        links = [robot.GetLink(name) for name in link_names]
         if occupancy_grids is None:
             self._occupancy_grids = RigidBodyOccupancyGrid.create_occupancy_grids(cell_size, links)
         else:
@@ -81,7 +83,7 @@ class RobotOccupancyGrid(object):
             ---------
             base_file_name, string - base file name. Use this string again to load it again.
         """
-        for link_name, grid in zip(self._link_names, self._occupancy_grids):
+        for link_name, grid in self._occupancy_grids.iteritems():
             grid.save(base_file_name + '.' + link_name)
 
     def compute_intersection(self, robot_pose, robot_config, scene_sdf):
@@ -138,7 +140,7 @@ class RobotOccupancyOctree(object):
                 NOTE: for internal use, used to load OccupancyOctrees from file rather than creating them
         """
         self._robot = robot
-        self._occupancy_trees = []
+        self._occupancy_trees = {}
         self._total_volume = 0.0
         self._total_num_occupied_cells = 0
         self._link_names = [link.GetName() for link in self._robot.GetLinks()]
@@ -146,11 +148,12 @@ class RobotOccupancyOctree(object):
             self._link_names = [name for name in self._link_names if name in link_names]
         links = [robot.GetLink(name) for name in self._link_names]
         if occupancy_trees is None:
-            self._occupancy_trees = OccupancyOctree.create_occupancy_octrees(cell_size, links)
+            trees = OccupancyOctree.create_occupancy_octrees(cell_size, links)
         else:
-            self._occupancy_trees = occupancy_trees
-        self._total_volume = sum([tree.get_volume() for tree in self._occupancy_trees])
-        self._total_num_occupied_cells = sum([tree.get_num_occupied_cells() for tree in self._occupancy_trees])
+            trees = occupancy_trees
+        self._occupancy_trees = dict(zip(self._link_names, trees))
+        self._total_volume = sum([tree.get_volume() for tree in self._occupancy_trees.values()])
+        self._total_num_occupied_cells = sum([tree.get_num_occupied_cells() for tree in self._occupancy_trees.values()])
 
     @staticmethod
     def load(base_file_name, robot, link_names=None):
@@ -187,10 +190,10 @@ class RobotOccupancyOctree(object):
             ---------
             base_file_name, string - base file name. Use this string again to load it again.
         """
-        for link_name, octree in zip(self._link_names, self._occupancy_trees):
+        for link_name, octree in self._occupancy_trees.iteritems():
             octree.save(base_file_name + '.' + link_name)
 
-    def compute_intersection(self, robot_pose, robot_config, scene_sdf):
+    def compute_intersection(self, robot_pose, robot_config, scene_sdf, links=None):
         """
             Computes the intersection between the octrees of the robot's links
             and the geometry in the scene described by the provided scene sdf.
@@ -200,6 +203,8 @@ class RobotOccupancyOctree(object):
             robot_pose, numpy array of shape (4, 4) - pose of the robot
             robot_config, numpy array of shape (q,) - configuration of active DOFs
             scene_sdf, signed distance field
+            links (optional), list of OpenRAVE links - if provided, limits intersection computation
+                on the given links
             -------
             Returns
             -------
@@ -215,11 +220,16 @@ class RobotOccupancyOctree(object):
             self._robot.SetTransform(robot_pose)
             self._robot.SetActiveDOFValues(robot_config)
             v, dc = 0.0, 0.0
-            for tree in self._occupancy_trees:
-                tv, _, tdc, _, _ = tree.compute_intersection(scene_sdf)
+            if links is not None:
+                trees = [self._occupancy_trees[link.GetName()]
+                         for link in links if link.GetName() in self._occupancy_trees]
+            else:
+                trees = self._occupancy_trees.values()
+            for tree in trees:
+                tv, _, tdc, _, _ = tree.compute_intersection(scene_sdf, bvolume_in_cells=True)
                 v += tv
                 dc += tdc
-            return v, v / self._total_volume, dc, dc / self._total_num_occupied_cells
+            return v, v / self._total_num_occupied_cells, dc, dc / self._total_num_occupied_cells
 
     def compute_max_penetration(self, robot_pose, robot_config, scene_sdf, b_compute_dir=False):
         """
@@ -247,7 +257,7 @@ class RobotOccupancyOctree(object):
             self._robot.SetTransform(robot_pose)
             self._robot.SetActiveDOFValues(robot_config)
             pdist, vdir, pos, link_name = 0.0, None, None, None
-            for tree, name in izip(self._occupancy_trees, self._link_names):
+            for tree, name in self._occupancy_trees.iteritems():
                 tdist, tdir, tpos = tree.compute_max_penetration(scene_sdf, b_compute_dir=b_compute_dir)
                 if tdist < pdist:
                     pdist = tdist
@@ -274,7 +284,7 @@ class RobotOccupancyOctree(object):
         if config:
             self._robot.SetActiveDOFValues(config)
         handles = []
-        for tree in self._occupancy_trees:
+        for tree in self._occupancy_trees.values():
             handles.extend(tree.visualize(level))
         return handles
 

@@ -265,6 +265,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 grasp_config, numpy array (n_h,) - hand configuration for grasp
             """
             self.manip = manip
+            self.manip_links = utils.get_manipulator_links(manip)
             self.ik_solver = ik_solver
             self.reachability_map = reachability_map
             self.grasp_tf = grasp_tf
@@ -435,13 +436,13 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 with robot:
                     robot.SetActiveDOFs(manip.GetArmIndices())
                     isec_values = self._robot_octree.compute_intersection(
-                        robot.GetTransform(), arm_config, self._scene_sdf)
+                        robot.GetTransform(), arm_config, self._scene_sdf, links=manip_data.manip_links)
                     robot_intersection = isec_values[1]
             # next compute intersection for the object
             isec_values = self._object_octree.compute_intersection(self._scene_sdf, cache_entry.solution.obj_tf)
             # from this compute relaxation value that is in interval 0, 1
             object_intersection = isec_values[1]
-            violation_term = np.clip((object_intersection - robot_intersection /
+            violation_term = np.clip((object_intersection + robot_intersection /
                                       self._max_robot_intersection)/2.0, 0.0, 1.0)
             return 1.0 - violation_term
 

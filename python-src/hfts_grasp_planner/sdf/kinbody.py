@@ -313,7 +313,7 @@ class OccupancyOctree(object):
                 cells_to_render.extend(cell.children)
         return handles
 
-    def compute_intersection(self, scene_sdf, tf=None):
+    def compute_intersection(self, scene_sdf, tf=None, bvolume_in_cells=False):
         """
             Computes the intersection between an octree and the geometry
             of the scene described by the provided scene sdf.
@@ -323,6 +323,8 @@ class OccupancyOctree(object):
             scene_sdf - signed distance field of the environment that the body
                 this map belongs to resides in
             tf (optional), np.array - pose of the object. If not provided, current pose is used
+            bvolume_in_cells (optional), bool - if True, return the intersecting volume as number of cells,
+                else the actual volume of these cells
             -------
             Returns
             -------
@@ -378,7 +380,10 @@ class OccupancyOctree(object):
             current_layer, next_layer = next_layer, current_layer
             next_layer.clear()
             layer_idx += 1
-        intersection_volume = num_intersecting_leaves * np.power(self._cell_size, 3)
+        if bvolume_in_cells:
+            intersection_volume = num_intersecting_leaves
+        else:
+            intersection_volume = num_intersecting_leaves * np.power(self._cell_size, 3)
         relative_volume = num_intersecting_leaves / float(self._root.num_occupied_leaves)
         normalized_distance_cost = distance_cost / float(self._root.num_occupied_leaves)
         return intersection_volume, relative_volume, distance_cost, normalized_distance_cost, max_ext_distance
