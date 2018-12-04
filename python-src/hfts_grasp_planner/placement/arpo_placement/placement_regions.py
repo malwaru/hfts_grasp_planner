@@ -43,8 +43,10 @@ class PlanarPlacementRegion(object):
         self.cell_size = cell_size
         # TODO move contact_tf to the center of the region? i.e. median?
         self.contact_tf = np.array(self.base_tf)  # tf that a contact point should have
-        self.contact_tf[2, 3] += cell_size / 2.0  # is lifted by half the cell size
+        # is lifted by half the cell size
+        self.contact_tf[:3, 3] += np.dot(self.base_tf[:3, :3], np.array((0.0, 0.0, 0.5 * cell_size)))
         self.radius = np.linalg.norm(self.dimensions)  # radius of encompassing circle with center in contact_tf
+        self.normal = np.dot(self.base_tf[:3, :3], np.array((0, 0, 1.0)))
         self._subregions = None
 
     def get_subregions(self):
@@ -164,7 +166,7 @@ class PlanarRegionExtractor(object):
             -------
             contact_cells, VoxelGrid with bool values - a grid of same dimensions as the input
                 grid that stores for each cell whether it is a valid position for a placement contact.
-            labels, numpy array of the same shape as grid.get_num_cells(), where each entry stores to which 
+            labels, numpy array of the same shape as grid.get_num_cells(), where each entry stores to which
                 placement region a cell belongs
             num_regions, int - the number of contiguous placement regions
             placement_regions, list - a list of PlanarPlacementRegions

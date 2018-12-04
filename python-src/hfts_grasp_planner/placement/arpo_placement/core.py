@@ -439,7 +439,10 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                         robot.GetTransform(), arm_config, self._scene_sdf, links=manip_data.manip_links)
                     robot_intersection = isec_values[1]
             # next compute intersection for the object
-            isec_values = self._object_octree.compute_intersection(self._scene_sdf, cache_entry.solution.obj_tf)
+            obj_tf = np.array(cache_entry.solution.obj_tf)
+            # shift the obj tf a bit away from the contact region to ensure we do not count in contact on the surface
+            obj_tf[:3, 3] += cache_entry.region.normal * self._object_octree.get_cell_size()
+            isec_values = self._object_octree.compute_intersection(self._scene_sdf, obj_tf)
             # from this compute relaxation value that is in interval 0, 1
             object_intersection = isec_values[1]
             violation_term = np.clip((object_intersection + robot_intersection /

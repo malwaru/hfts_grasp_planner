@@ -291,6 +291,12 @@ class OccupancyOctree(object):
         """
         return self._root
 
+    def get_cell_size(self):
+        """
+            Return the cell size.
+        """
+        return self._cell_size
+
     def visualize(self, level):
         """
             Visualize the octree for the given level.
