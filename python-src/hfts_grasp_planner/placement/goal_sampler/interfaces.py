@@ -118,6 +118,20 @@ class PlacementHierarchy(object):
         """
         pass
 
+    @abstractmethod
+    def is_leaf(self, key):
+        """
+            Return whether the given key corresponds to a leaf node.
+        """
+        pass
+
+    @abstractmethod
+    def get_num_children(self, key):
+        """
+            Return the total number of possible children for the given key.
+        """
+        pass
+
 
 class PlacementSolutionConstructor(object):
     __metaclass__ = ABCMeta
@@ -138,6 +152,13 @@ class PlacementSolutionConstructor(object):
             Returns
             -------
             PlacementSolution sol, a placement solution for the given key
+        """
+        pass
+
+    @abstractmethod
+    def can_construct_solution(self, key):
+        """
+            Return whether it is possible to construct a solution from the given (partially defined) key.
         """
         pass
 

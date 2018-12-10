@@ -163,6 +163,54 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         """
         return 3
 
+    def is_leaf(self, key):
+        """
+            Return whether the given key corresponds to a leaf node.
+        """
+        if len(key) < 3:
+            return False
+        if len(key) == 3:
+            subregion_key = ()
+            so2_key = ()
+        else:
+            assert(len(key) == 5)
+            # extract sub region key
+            subregion_key = key[3]
+            so2_key = key[4]
+        subregion = self.get_placement_region((key[1], subregion_key))
+        b_region_leaf = not subregion.has_subregions()
+        b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
+        return b_region_leaf and b_so2_leaf
+
+    def get_num_children(self, key):
+        """
+            Return the total number of possible children for the given key.
+        """
+        if len(key) == 0:
+            return len(self._manips)
+        if len(key) == 1:
+            return len(self._regions)
+        if len(key) == 2:
+            return len(self._orientations)
+        # extract sub region key
+        if len(key) == 5:
+            subregion_key = key[3]
+            so2_key = key[4]
+        else:
+            assert(len(key) == 3)
+            subregion_key = ()
+            so2_key = ()
+        subregion = self.get_placement_region((key[1], subregion_key))
+        b_region_leaf = not subregion.has_subregions()
+        b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
+        if b_region_leaf and b_so2_leaf:
+            return 0
+        if b_region_leaf:
+            return self._so2_branching
+        if b_so2_leaf:
+            return np.random.randint(subregion.get_num_subregions())
+        return subregion.get_num_subregions() * self._so2_branching
+
     def get_placement_region(self, region_key):
         """
             Return the placement region with the specified region key.
@@ -610,6 +658,12 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         self._solutions_cache.append(ARPORobotBridge.SolutionCacheEntry(
             key, new_solution, region, po, so2_interval, eef_tf))
         return new_solution
+
+    def can_construct_solution(self, key):
+        """
+            Return whether it is possible to construct a solution from the given (partially defined) key.
+        """
+        return len(key) >= self._hierarchy.get_minimum_depth_for_construction()
 
     def is_valid(self, solution):
         """

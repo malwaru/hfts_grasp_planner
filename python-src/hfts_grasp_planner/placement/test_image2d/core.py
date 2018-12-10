@@ -36,25 +36,29 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         self._max_depth = np.int(np.floor(np.log(self._image.shape[0]) / np.log(branching)))
 
     def get_child_key_gen(self, key):
-        if len(key) == self._max_depth:
+        if self.is_leaf(key):
             return None
         if len(key) == 0:
-            return ((x, y) for x in xrange(self._branching) for y in xrange(self._branching))
+            return (((x,), (y,)) for x in xrange(self._branching) for y in xrange(self._branching))
         return ((key[0] + (x,), key[1] + (y,)) for x in xrange(self._branching)
-                                               for y in xrange(self._branching))
+                for y in xrange(self._branching))
 
     def get_random_child_key(self, key):
         if len(key) == 0:
             return ((np.random.randint(self._branching),), (np.random.randint(self._branching),))
-        if len(key[0]) == self._max_depth:
+        if self.is_leaf(key):
             return None
         return (key[0] + (np.random.randint(self._branching),), key[1] + (np.random.randint(self._branching),))
 
     def get_minimum_depth_for_construction(self):
         return 1
 
+    def can_construct_solution(self, key):
+        return len(key) != 0
+
     def construct_solution(self, key, b_optimize_constraints, b_optimize_objective):
-        solution = plcmnt_interfaces.PlacementGoalSampler.PlacementGoal(ImageGoalRegion.FakeManipulator(), None, None, key, 0.0, None, None)
+        solution = plcmnt_interfaces.PlacementGoalSampler.PlacementGoal(
+            ImageGoalRegion.FakeManipulator(), None, None, key, 0.0, None, None)
         idx = self._get_index(solution.key)
         # self._debug_image[idx, 3] = np.clip(self._debug_image[idx, 2] - 1.0, 0.0, 1.0)
         self._debug_image[idx] = 1.0
@@ -64,6 +68,16 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
     def is_valid(self, solution):
         idx = self._get_index(solution.key)
         return self._image[idx][0] == 1.0
+
+    def is_leaf(self, key):
+        if len(key) == 0:
+            return False
+        return len(key[0]) == self._max_depth
+
+    def get_num_children(self, key):
+        if self.is_leaf(key):
+            return 0
+        return self._branching * self._branching
 
     def get_constraint_relaxation(self, solution):
         idx = self._get_index(solution.key)

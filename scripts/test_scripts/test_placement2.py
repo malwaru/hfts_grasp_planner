@@ -249,14 +249,16 @@ if __name__ == "__main__":
         arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
                                                          object_data=object_data, objective_fn=None,
                                                          contact_point_distances=sufrace_distance_grid, scene_sdf=scene_sdf)
-        # random_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+        # goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
         #                                                         manip.GetName() for manip in manips])
-        mcts_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+        goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                 manip.GetName() for manip in manips])
 
-        motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(mcts_sampler, manips)
+        motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips)
         # traj, goal = plan(motion_planner, target_object, 10)
-        solutions = mcts_sampler.sample(10, 100)
+        solutions, num_solutions = goal_sampler.sample(10, 1000)
+        # probe = env.GetKinBody("probe")
+        # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])
         IPython.embed()
     finally:
         orpy.RaveDestroy()
