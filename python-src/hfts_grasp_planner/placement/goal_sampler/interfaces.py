@@ -4,10 +4,10 @@ from abc import ABCMeta, abstractmethod
 """
 
 
-class PlacementGoalSampler:
+class PlacementGoalSampler(object):
     __metaclass__ = ABCMeta
 
-    class PlacementGoal:
+    class PlacementGoal(object):
         """
             The numpy arrays in this object are all read only! If you need to modify an array, copy it first.
         """
@@ -76,7 +76,7 @@ class PlacementGoalSampler:
         pass
 
 
-class PlacementHierarchy:
+class PlacementHierarchy(object):
     # TODO define an interface that allows exchanging arpo hierarchy easily?
     @abstractmethod
     def get_child_key_gen(self, key):
@@ -119,7 +119,7 @@ class PlacementHierarchy:
         pass
 
 
-class PlacementSolutionConstructor:
+class PlacementSolutionConstructor(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
@@ -142,7 +142,7 @@ class PlacementSolutionConstructor:
         pass
 
 
-class PlacementValidator:
+class PlacementValidator(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
@@ -174,7 +174,7 @@ class PlacementValidator:
         pass
 
 
-class PlacementObjective:
+class PlacementObjective(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
