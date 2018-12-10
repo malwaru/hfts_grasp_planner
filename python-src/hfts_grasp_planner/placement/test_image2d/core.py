@@ -2,6 +2,7 @@ from PIL import Image
 import numpy as np
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 import matplotlib.pyplot as plt_module
+import scipy.ndimage.morphology
 
 
 class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
@@ -17,7 +18,7 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         def GetName(self):
             return "fake_manip"
 
-    def __init__(self, img_path, branching=2):
+    def __init__(self, img_path, branching=4):
         """
             Create a new ImageGoalRegion.
             ---------
@@ -29,6 +30,9 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         self._image = np.array(Image.open(img_path)).transpose((1, 0, 2))
         # normalize image
         self._image = self._image / 255.0
+        self._distance_img = scipy.ndimage.morphology.distance_transform_edt(1.0 - self._image[:, :, 0])
+        self._distance_img = np.exp(10* (1.0 - self._distance_img / np.max(self._distance_img)))
+        self._distance_img = self._distance_img / np.max(self._distance_img)
         self._debug_image = np.zeros(self._image.shape[:2])
         if self._image.shape[0] != self._image.shape[1]:
             raise ValueError("X and Y dimension of the loaded are image are not identical.")
@@ -81,7 +85,9 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
 
     def get_constraint_relaxation(self, solution):
         idx = self._get_index(solution.key)
-        return self._image[idx][0]
+        # return 1.0 - self._distance_img[idx] / self._max_distance
+        return self._distance_img[idx]
+        # return self._image[idx][0]
 
     def evaluate(self, solution):
         idx = self._get_index(solution.key)
@@ -111,4 +117,6 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         render_image = np.array(self._image)
         render_image[:, :] += self._debug_image[:, :, np.newaxis]
         plt_module.imshow(render_image.transpose((1, 0, 2)))
+        print np.sum(self._debug_image)
+        # plt_module.imshow(self._distance_img.transpose())
         plt_module.show(block=False)

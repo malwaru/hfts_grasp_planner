@@ -90,6 +90,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             # stop if we have sufficient solutions
             if num_found_solutions == num_solutions:
                 break
+            print _
             num_found_solutions += self._run_mcts(solutions)
         return solutions, num_found_solutions
 
@@ -207,6 +208,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         obj_value = self._objective.evaluate(new_solution)
         # TODO evaluate whether objective constraint is fulfilled
         node.update_rec(obj_value, base_reward)
+        print "Sampled solution from node ", node.key
         if b_is_valid:
             return new_solution
         return None
