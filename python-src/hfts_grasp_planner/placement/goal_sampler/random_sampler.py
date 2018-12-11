@@ -1,3 +1,4 @@
+import rospy
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
     This module contains the definition of a naive placement goal sampler - purely random sampler.
@@ -30,7 +31,7 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         num_found_solutions = 0
         # store solutions for each manipulator separately
         solutions = {manip_name: [] for manip_name in self._manip_names}
-        for _ in xrange(max_attempts):
+        for num_attempts in xrange(max_attempts):
             # stop if we have sufficient solutions
             if num_found_solutions == num_solutions:
                 break
@@ -49,6 +50,7 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         if num_found_solutions > 0:
             # TODO should we sort solutions here?
             return solutions, num_found_solutions
+        rospy.logdebug("Random sampler made %i attempts to sample %i solutions" % (num_attempts, num_found_solutions))
         return solutions, num_found_solutions
 
     def set_reached_goals(self, goals):

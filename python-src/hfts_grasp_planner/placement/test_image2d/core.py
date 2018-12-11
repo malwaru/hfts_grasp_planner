@@ -31,13 +31,15 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         # normalize image
         self._image = self._image / 255.0
         self._distance_img = scipy.ndimage.morphology.distance_transform_edt(1.0 - self._image[:, :, 0])
-        self._distance_img = np.exp(10* (1.0 - self._distance_img / np.max(self._distance_img)))
+        self._distance_img = np.exp(10 * (1.0 - self._distance_img / np.max(self._distance_img)))
         self._distance_img = self._distance_img / np.max(self._distance_img)
         self._debug_image = np.zeros(self._image.shape[:2])
         if self._image.shape[0] != self._image.shape[1]:
             raise ValueError("X and Y dimension of the loaded are image are not identical.")
         self._branching = branching
         self._max_depth = np.int(np.floor(np.log(self._image.shape[0]) / np.log(branching)))
+        # number of calls for solution construction, validity check, relaxation and evaluation
+        self._stats = np.array([0, 0, 0, 0])
 
     def get_child_key_gen(self, key):
         if self.is_leaf(key):
@@ -67,10 +69,12 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         # self._debug_image[idx, 3] = np.clip(self._debug_image[idx, 2] - 1.0, 0.0, 1.0)
         self._debug_image[idx] = 1.0
         # print "Constructing solution at pixel ", idx
+        self._stats[0] += 1
         return solution
 
     def is_valid(self, solution):
         idx = self._get_index(solution.key)
+        self._stats[1] += 1
         return self._image[idx][0] == 1.0
 
     def is_leaf(self, key):
@@ -91,6 +95,7 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
 
     def evaluate(self, solution):
         idx = self._get_index(solution.key)
+        self._stats[2] += 1
         return self._image[idx][1]
 
     def _get_index(self, key):
@@ -120,3 +125,27 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         print np.sum(self._debug_image)
         # plt_module.imshow(self._distance_img.transpose())
         plt_module.show(block=False)
+
+    def get_num_construction_calls(self, b_reset=True):
+        val = self._stats[0]
+        if b_reset:
+            self._stats[0] = 0
+        return val
+
+    def get_num_validity_calls(self, b_reset=True):
+        val = self._stats[1]
+        if b_reset:
+            self._stats[1] = 0
+        return val
+
+    def get_num_relaxation_calls(self, b_reset=True):
+        val = self._stats[2]
+        if b_reset:
+            self._call_stats[2] = 0
+        return val
+
+    def get_num_evaluate_calls(self, b_reset=True):
+        val = self._stats[3]
+        if b_reset:
+            self._stats[3] = 0
+        return val

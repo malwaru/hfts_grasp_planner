@@ -162,6 +162,21 @@ class PlacementSolutionConstructor(object):
         """
         pass
 
+    @abstractmethod
+    def get_num_construction_calls(self, b_reset=True):
+        """
+            Return statistics on how many times construct_solution has been called.
+            ---------
+            Arguments
+            ---------
+            b_reset, bool - if True, reset counter
+            -------
+            Returns
+            -------
+            num_calls, int - number of times construct_solution has been called
+        """
+        pass
+
 
 class PlacementValidator(object):
     __metaclass__ = ABCMeta
@@ -194,6 +209,36 @@ class PlacementValidator(object):
         """
         pass
 
+    @abstractmethod
+    def get_num_validity_calls(self, b_reset=True):
+        """
+            Return statistics on how many times is_valid has been called.
+            ---------
+            Arguments
+            ---------
+            b_reset, bool - if True, reset counter
+            -------
+            Returns
+            -------
+            num_calls, int - number of times the validity check has been performed
+        """
+        pass
+
+    @abstractmethod
+    def get_num_relaxation_calls(self, b_reset=True):
+        """
+            Return statistics on how many times get_constraint_relaxation has been called.
+            ---------
+            Arguments
+            ---------
+            b_reset, bool - if True, reset counter
+            -------
+            Returns
+            -------
+            num_calls, int - number of times the validity check has been performed
+        """
+        pass
+
 
 class PlacementObjective(object):
     __metaclass__ = ABCMeta
@@ -210,5 +255,20 @@ class PlacementObjective(object):
             Returns
             --------
             val, float - objective value (the smaller the better)
+        """
+        pass
+
+    @abstractmethod
+    def get_num_evaluate_calls(self, b_reset=True):
+        """
+            Return statistics on how many times evaluate has been called.
+            ---------
+            Arguments
+            ---------
+            b_reset, bool - if True, reset counter
+            -------
+            Returns
+            -------
+            num_calls, int - number of times the evaluate function has been called
         """
         pass

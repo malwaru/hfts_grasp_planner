@@ -109,12 +109,12 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             if b_region_leaf and b_so2_leaf:
                 return None
             if b_region_leaf:
-                return (key[:3] + (subregion_key + (0,), so2_key + (o,))
+                return (key[:3] + (subregion_key + (0,), o)
                         for o in so2hierarchy.get_key_gen(key[4], self._so2_branching))
             if b_so2_leaf:
                 return (key[:3] + (subregion_key + (r,), so2_key + (0,))
                         for r in xrange(subregion.get_num_subregions()))
-            return (key[:3] + (subregion_key + (r,), (so2_key + (o,))) for r in xrange(subregion.get_num_subregions())
+            return (key[:3] + (subregion_key + (r,), o) for r in xrange(subregion.get_num_subregions())
                     for o in so2hierarchy.get_key_gen(so2_key, self._so2_branching))
 
     def get_random_child_key(self, key):
@@ -615,6 +615,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         self._reachability_constraint = ARPORobotBridge.ReachabilityConstraint(robot_data)
         # self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint() # TODO move this into goal sampler
         self._solutions_cache = []  # array of SolutionCacheEntry objects
+        self._call_stats = np.array([0, 0, 0, 0])  # num sol constructions, is_valid, get_relaxation, evaluate
 
     def construct_solution(self, key, b_optimize_constraints=False, b_optimize_objective=False):
         """
@@ -657,6 +658,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
         self._solutions_cache.append(ARPORobotBridge.SolutionCacheEntry(
             key, new_solution, region, po, so2_interval, eef_tf))
+        self._call_stats[0] += 1
         return new_solution
 
     def can_construct_solution(self, key):
@@ -679,6 +681,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         """
         cache_entry = self._solutions_cache[solution.key]
         assert(cache_entry.solution == solution)
+        self._call_stats[1] += 1
         # kinematic reachability?
         if not self._reachability_constraint.check_reachability(cache_entry):
             return False
@@ -718,9 +721,35 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                        (reachability_val, contact_val, col_val))
         if solution.arm_config is not None:  # TODO remove
             robot.SetDOFValues(old_config)  # TODO remove
+        self._call_stats[2] += 1
         return (reachability_val + contact_val + col_val) / 3.0  # TODO could add weights here
 
     def evaluate(self, solution):
         # TODO implement me
+        self._call_stats[3] += 1
         solution.objective_value = solution.obj_tf[1, 3]
         return solution.objective_value
+
+    def get_num_construction_calls(self, b_reset=True):
+        val = self._call_stats[0]
+        if b_reset:
+            self._call_stats[0] = 0
+        return val
+
+    def get_num_validity_calls(self, b_reset=True):
+        val = self._call_stats[1]
+        if b_reset:
+            self._call_stats[1] = 0
+        return val
+
+    def get_num_relaxation_calls(self, b_reset=True):
+        val = self._call_stats[2]
+        if b_reset:
+            self._call_stats[2] = 0
+        return val
+
+    def get_num_evaluate_calls(self, b_reset=True):
+        val = self._call_stats[3]
+        if b_reset:
+            self._call_stats[3] = 0
+        return val

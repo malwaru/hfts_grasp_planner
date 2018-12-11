@@ -21,7 +21,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 Create a new MCTSNode for the hierarchy node with the given key.
             """
             self.key = key
-            # self.solution = None
+            self.solutions = []  # list of all solutions that were created for this particular node
             self.branch_objectives = []  # stores all objective values found in this branch
             self.num_visits = 0
             self.acc_rewards = 0.0  # stores sum of all rewards (excluding objective value based reward)
@@ -29,6 +29,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self.child_gen = None
             self.children = []
             self.parent = parent
+            self.last_uct_value = 0.0  # for debug purposes
+            self.last_fup_value = 0.0  # for debug purposes
 
         def update_rec(self, obj_value, base_reward):
             """
@@ -45,7 +47,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             if self.parent is not None:
                 self.parent.update_rec(obj_value, base_reward)
 
-    def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, c=1.0, objective_weight=1.0/3.0):
+    def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, c=1.0, objective_weight=1.0/3.0,
+                 debug_visualizer=None):
         """
             Create new MCTS Sampler.
             ---------
@@ -58,16 +61,20 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             manip_names, list of string - manipulator names
             c, float - exploration parameter
             objective_weight, float - parameter to weight objective constraint relaxation w.r.t to other constraints
+            debug_visualizer(optional), mcts_visualization.MCTSVisualizer - visualizer for MCTS hierarchy
         """
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
         self._validator = validator
         self._objective = objective
         self._manip_names = manip_names
-        self._root_node = MCTSPlacementSampler.MCTSNode((), None)
-        self._root_node.child_gen = self._hierarchy.get_child_key_gen(self._root_node.key)
         self._c = c
         self._obj_constr_weight = objective_weight
+        self._debug_visualizer = debug_visualizer
+        self._root_node = MCTSPlacementSampler.MCTSNode((), None)
+        self._root_node.child_gen = self._hierarchy.get_child_key_gen(self._root_node.key)
+        if self._debug_visualizer:
+            self._debug_visualizer.add_node(self._root_node)
 
     def sample(self, num_solutions, max_attempts):
         """
@@ -90,7 +97,6 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             # stop if we have sufficient solutions
             if num_found_solutions == num_solutions:
                 break
-            print _
             num_found_solutions += self._run_mcts(solutions)
         return solutions, num_found_solutions
 
@@ -141,8 +147,9 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # TODO incorporate objective values
         assert(node.parent is not None)
         assert(node.num_visits > 0)
-        return node.acc_rewards / node.num_visits + \
+        node.last_uct_value = node.acc_rewards / node.num_visits + \
             self._c * np.sqrt(2.0 * np.log(node.parent.num_visits) / node.num_visits)
+        return node.last_uct_value
 
     def _compute_fup_uct(self, node):
         """
@@ -160,8 +167,10 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         avg_rewards = np.array([child.acc_rewards / child.num_visits for child in node.children])
         num_visits = len(node.children)
         if num_visits == 0:
-            return float("inf")
-        return np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / num_visits)
+            node.last_fup_value = float("inf")
+        else:
+            node.last_fup_value = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / num_visits)
+        return node.last_fup_value
 
     def _add_new_child(self, node):
         """
@@ -179,8 +188,11 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # try:
         new_child_key = node.child_gen.next()
         new_node = MCTSPlacementSampler.MCTSNode(new_child_key, node)
-        new_node.child_gen = self._hierarchy.get_child_key_gen(node.key)
+        new_node.child_gen = self._hierarchy.get_child_key_gen(new_node.key)
         node.children.append(new_node)
+        if self._debug_visualizer:
+            self._debug_visualizer.add_node(new_node)
+            self._debug_visualizer.render(bupdate_data=False)
         # except:
         # node.child_gen = None
         return new_node
@@ -208,7 +220,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         obj_value = self._objective.evaluate(new_solution)
         # TODO evaluate whether objective constraint is fulfilled
         node.update_rec(obj_value, base_reward)
-        print "Sampled solution from node ", node.key
+        node.solutions.append(new_solution)
         if b_is_valid:
             return new_solution
         return None
@@ -240,6 +252,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         assert(self._is_sampleable(current_node))
         # sample it: compute a new solution, propagate result up
         new_solution = self._sample(current_node)  # this is equal to a Monte Carlo rollout + backpropagation
+        if self._debug_visualizer:
+            self._debug_visualizer.render(bupdate_data=True)
         if new_solution is not None:
             solutions[new_solution.manip.GetName()].append(new_solution)
             return 1
