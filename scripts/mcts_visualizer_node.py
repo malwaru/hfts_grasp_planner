@@ -34,7 +34,7 @@ class GUI(Gtk.Window):
         self.show_all()
         self.desired_width = 1920
         self.nominal_width = 1920
-        self.desired_height = 1000
+        self.desired_height = 1080
         self.min_node_distance = 35
         self.node_size = 10
         self.margin = 20
