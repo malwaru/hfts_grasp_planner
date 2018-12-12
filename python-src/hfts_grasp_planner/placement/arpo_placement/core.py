@@ -4,6 +4,7 @@ import openravepy as orpy
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.so2hierarchy as so2hierarchy
 import hfts_grasp_planner.placement.goal_sampler.interfaces as placement_interfaces
+import hfts_grasp_planner.external.transformations as tf_mod
 """
     This module defines the placement planning interfaces for an
     Arm-Region-PlacementOrientation(arpo)-hierarchy.
@@ -57,7 +58,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         and SO2 interval length.
     """
 
-    def __init__(self, manipulators, regions, orientations, so2_depth, so2_branching=2):
+    def __init__(self, manipulators, regions, orientations, so2_depth, so2_branching=4):
         """
             Create a new ARPO hierarchy.
             ---------
@@ -110,7 +111,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
                 return None
             if b_region_leaf:
                 return (key[:3] + (subregion_key + (0,), o)
-                        for o in so2hierarchy.get_key_gen(key[4], self._so2_branching))
+                        for o in so2hierarchy.get_key_gen(so2_key, self._so2_branching))
             if b_so2_leaf:
                 return (key[:3] + (subregion_key + (r,), so2_key + (0,))
                         for r in xrange(subregion.get_num_subregions()))
@@ -208,7 +209,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         if b_region_leaf:
             return self._so2_branching
         if b_so2_leaf:
-            return np.random.randint(subregion.get_num_subregions())
+            return subregion.get_num_subregions()
         return subregion.get_num_subregions() * self._so2_branching
 
     def get_placement_region(self, region_key):
@@ -646,7 +647,8 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             region = arpo_info[3]
             so2_interval = arpo_info[4]
         # compute object pose
-        obj_tf = np.dot(region.contact_tf, po.inv_reference_tf)
+        angle = (so2_interval[1] + so2_interval[0]) / 2.0  # rotation around local z axis
+        obj_tf = np.dot(region.contact_tf, np.dot(tf_mod.rotation_matrix(angle, [0., 0., 1]), po.inv_reference_tf))
         manip_data = self._manip_data[manip.GetName()]
         # end-effector tf
         eef_tf = np.dot(obj_tf, manip_data.grasp_tf)
