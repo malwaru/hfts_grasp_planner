@@ -217,6 +217,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             base_reward = self._validator.get_constraint_relaxation(new_solution)
         else:
             base_reward = 1.0 if b_is_valid else 0.0  # leaves do not get a relaxation reward
+            if node.num_visits > 0:
+                base_reward /= node.num_visits
         obj_value = self._objective.evaluate(new_solution)
         # TODO evaluate whether objective constraint is fulfilled
         node.update_rec(obj_value, base_reward)
