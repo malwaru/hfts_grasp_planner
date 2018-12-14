@@ -41,11 +41,19 @@ class PlanarPlacementRegion(object):
         assert(self.x_indices.shape[0] >= 1)
         assert(self.x_indices.shape[0] == self.y_indices.shape[0])
         self.cell_size = cell_size
-        # TODO move contact_tf to the center of the region? i.e. median?
+        # set the reference point for this region to its median
+        median_point = np.percentile(np.column_stack((self.x_indices, self.y_indices)),
+                                     q=50, axis=0, interpolation='nearest')
         self.contact_tf = np.array(self.base_tf)  # tf that a contact point should have
-        # is lifted by half the cell size
-        self.contact_tf[:3, 3] += np.dot(self.base_tf[:3, :3], np.array((0.0, 0.0, 0.5 * cell_size)))
-        self.radius = np.linalg.norm(self.dimensions)  # radius of encompassing circle with center in contact_tf
+        median_pos = median_point * cell_size
+        # also lift it by half the cell size
+        self.contact_tf[:3, 3] += np.dot(self.base_tf[:3, :3],
+                                         np.array((median_pos[0], median_pos[1], 0.5 * cell_size)))
+        # next, compute radius of encompassing circle with center in contact_tf
+        self.radius = np.max((np.linalg.norm(median_pos),  # distance to origin
+                              np.linalg.norm(median_pos - self.dimensions),  # distance to bounding box's max point
+                              np.linalg.norm(median_pos - (self.dimensions[0], 0.0)),  # distance to right bottom point
+                              np.linalg.norm(median_pos - (0.0, self.dimensions[1]))))  # distance to left top point
         self.normal = np.dot(self.base_tf[:3, :3], np.array((0, 0, 1.0)))
         self._subregions = None
 
@@ -81,6 +89,8 @@ class PlanarPlacementRegion(object):
                 tf[:2, 3] = off * self.cell_size
                 tf = np.dot(self.base_tf, tf)
                 self._subregions.append(PlanarPlacementRegion(xx, yy, tf, self.cell_size))
+        # sort subregions by area
+        self._subregions.sort(key=lambda x: -x.get_area())
         return self._subregions
 
     def get_num_subregions(self):
@@ -109,6 +119,12 @@ class PlanarPlacementRegion(object):
             Return whether this region has subregions.
         """
         return self.get_num_subregions() > 0
+
+    def get_area(self):
+        """
+            Return the approximate contact area covered by this region.
+        """
+        return self.x_indices.shape[0] * self.cell_size**2
 
 
 class PlanarRegionExtractor(object):
@@ -201,6 +217,8 @@ class PlanarRegionExtractor(object):
                     placement_regions.extend(PlanarRegionExtractor._compute_plcmnt_regions(
                         grid, output_grid, layer, r, max_cells_region_dim))
                 label_offset += num_regions
+        # sort placement regions by area
+        placement_regions.sort(key=lambda x: -x.get_area())
         return surface_grid, output_grid, label_offset, placement_regions
         # return placement_regions
 
