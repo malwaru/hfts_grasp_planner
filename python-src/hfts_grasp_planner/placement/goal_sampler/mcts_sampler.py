@@ -131,46 +131,110 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         return self._solution_constructor.can_construct_solution(node.key) and \
             (self._hierarchy.is_leaf(node.key) or node.num_visits == 0)
 
-    def _compute_uct(self, node):
-        """
-            Compute UCT score for the given node.
-            ---------
-            Arguments
-            ---------
-            node, MCTSNode - node to compute score for
-            parent, MCTSNode - parent node
-            -------
-            Returns
-            -------
-            score, float - UCB score
-        """
-        # TODO incorporate objective values
-        assert(node.parent is not None)
-        assert(node.num_visits > 0)
-        node.last_uct_value = node.acc_rewards / node.num_visits + \
-            self._c * np.sqrt(2.0 * np.log(node.parent.num_visits) / node.num_visits)
-        return node.last_uct_value
+    # def _compute_uct(self, node):
+    #     """
+    #         Compute UCT score for the given node.
+    #         ---------
+    #         Arguments
+    #         ---------
+    #         node, MCTSNode - node to compute score for
+    #         parent, MCTSNode - parent node
+    #         -------
+    #         Returns
+    #         -------
+    #         score, float - UCB score
+    #     """
+    #     # TODO incorporate objective values
+    #     # assert(node.parent is not None)
+    #     # assert(node.num_visits > 0)
+    #     node.last_uct_value = node.acc_rewards / node.num_visits + \
+    #         self._c * np.sqrt(2.0 * np.log(node.parent.num_visits) / node.num_visits)
+    #     return node.last_uct_value
 
-    def _compute_fup_uct(self, node):
+    # def _compute_uct_batch(self, node):
+    #     """
+    #         Compute uct scores for the children of the given node.
+    #         ---------
+    #         Arguments
+    #         ---------
+    #         node, MCTSNode - node to compute score for
+    #         -------
+    #         Returns
+    #         -------
+    #         scores, np.array of float - UCB scores (might be empty)
+    #     """
+    #     if node.num_visits:
+    #         acc_rewards = np.array([child.acc_rewards for child in node.children])
+    #         visits = np.array([child.num_visits for child in node.children])
+    #         uct_scores = acc_rewards / visits + self._c * np.sqrt(2.0 * np.log(node.num_visits) / visits)
+    #         return uct_scores
+    #     return np.array([])
+
+    def _compute_fup_and_uct(self, node, bcompute_fup):
         """
-            Compute UCT score for first play urgency move from the given node.
+            Compute uct scores for the children of the given node and the node's fup score.
             ---------
             Arguments
             ---------
-            node, MCTSNode - node to compute score for
+            node, MCTSNode - node to compute scores for
+            bcompute_fup, bool - if True compute fup score, else return 0.0 for it
             -------
             Returns
             -------
-            score, float - UCB score (may be infinite)
+            scores, np.array of float - UCB scores (might be empty) of children
+            fup, float - fup score of the node
         """
-        # TODO incoporate objective values
-        avg_rewards = np.array([child.acc_rewards / child.num_visits for child in node.children])
-        num_visits = len(node.children)
-        if num_visits == 0:
-            node.last_fup_value = float("inf")
-        else:
-            node.last_fup_value = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / num_visits)
-        return node.last_fup_value
+        if len(node.children):
+            acc_rewards = np.array([child.acc_rewards for child in node.children])
+            visits = np.array([child.num_visits for child in node.children])
+            avg_rewards = acc_rewards / visits
+            uct_scores = avg_rewards + self._c * np.sqrt(2.0 * np.log(node.num_visits) / visits)
+            if bcompute_fup:
+                fup_score = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / len(node.children))
+            else:
+                fup_score = 0.0
+            return uct_scores, fup_score
+        return np.array([]), float("inf")
+    # def _compute_uct_batch(self, node):
+    #     """
+    #         Compute uct scores for the children of the given node.
+    #     """
+    #     values = np.array([(child.acc_rewards, child.num_visits) for child in node.children])
+    #     if len(values):
+    #         uct_scores = values[:, 0] / values[:, 1] + self._c * np.sqrt(2.0 * np.log(node.num_visits) / values[:, 1])
+    #     else:
+    #         uct_scores = []
+    #     return uct_scores
+
+    # def _compute_uct_batch(self, node):
+    #     """
+    #         Compute uct scores for the children of the given node.
+    #     """
+    #     values = np.array([[child.acc_rewards, child.num_visits] for child in node.children]).transpose()
+    #     if len(values):
+    #         return values[0, :] / values[1, :] + self._c * np.sqrt(2.0 * np.log(node.num_visits) / values[1, :])
+    #     return np.array([])
+
+    # def _compute_fup_uct(self, node):
+    #     """
+    #         Compute UCT score for first play urgency move from the given node.
+    #         ---------
+    #         Arguments
+    #         ---------
+    #         node, MCTSNode - node to compute score for
+    #         -------
+    #         Returns
+    #         -------
+    #         score, float - UCB score (may be infinite)
+    #     """
+    #     # TODO incoporate objective values
+    #     avg_rewards = np.array([child.acc_rewards / child.num_visits for child in node.children])
+    #     num_visits = len(node.children)
+    #     if num_visits == 0:
+    #         node.last_fup_value = float("inf")
+    #     else:
+    #         node.last_fup_value = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / num_visits)
+    #     return node.last_fup_value
 
     def _add_new_child(self, node):
         """
@@ -233,14 +297,16 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # descend in hierarchy until we reach the first unsampled sampleable node
         while current_node.children or not self._is_sampleable(current_node):
             # get arms
-            ucts_scores = np.array([self._compute_uct(child) for child in current_node.children])
+            # ucts_scores = self._compute_uct_batch(current_node)
+            b_compute_fup = self._hierarchy.get_num_children(current_node.key) > len(current_node.children)
+            ucts_scores, fup_score = self._compute_fup_and_uct(current_node, b_compute_fup)
             # get best performing arm
             best_choice = np.argmax(ucts_scores) if len(ucts_scores) > 0 else None
             # add an additional arm if there are children that haven't been added to mct yet (first play urgency)
-            if self._hierarchy.get_num_children(current_node.key) > len(current_node.children):
-                fup_score = self._compute_fup_uct(current_node)
-            else:
-                fup_score = 0.0
+            # if self._hierarchy.get_num_children(current_node.key) > len(current_node.children):
+            #     fup_score = self._compute_fup_uct(current_node)
+            # else:
+            #     fup_score = 0.0
             # decide whether to move down in mct or add a new child to mct
             if best_choice is None or fup_score > ucts_scores[best_choice]:
                 # if we decide to add a new child, choose this child as new current node

@@ -47,10 +47,8 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 solution.objective_value = self._objective.evaluate(solution)
                 solutions[solution.manip.GetName()].append(solution)
                 num_found_solutions += 1
-        if num_found_solutions > 0:
-            # TODO should we sort solutions here?
-            return solutions, num_found_solutions
         rospy.logdebug("Random sampler made %i attempts to sample %i solutions" % (num_attempts, num_found_solutions))
+        # TODO should we sort solutions here?
         return solutions, num_found_solutions
 
     def set_reached_goals(self, goals):

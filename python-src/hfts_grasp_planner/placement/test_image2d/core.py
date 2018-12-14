@@ -117,14 +117,15 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
         """
             Open a window showing the image
         """
+        pass
         # plt_module.imshow(self._image.transpose((1, 0, 2)))
         # plt_module.imshow(self._debug_image.transpose((1, 0)))
-        render_image = np.array(self._image)
-        render_image[:, :] += self._debug_image[:, :, np.newaxis]
-        plt_module.imshow(render_image.transpose((1, 0, 2)))
-        print np.sum(self._debug_image)
+        # render_image = np.array(self._image)
+        # render_image[:, :] += self._debug_image[:, :, np.newaxis]
+        # plt_module.imshow(render_image.transpose((1, 0, 2)))
+        # print np.sum(self._debug_image)
         # plt_module.imshow(self._distance_img.transpose())
-        plt_module.show(block=False)
+        # plt_module.show(block=False)
 
     def get_num_construction_calls(self, b_reset=True):
         val = self._stats[0]
@@ -141,7 +142,7 @@ class ImageGoalRegion(plcmnt_interfaces.PlacementHierarchy,
     def get_num_relaxation_calls(self, b_reset=True):
         val = self._stats[2]
         if b_reset:
-            self._call_stats[2] = 0
+            self._stats[2] = 0
         return val
 
     def get_num_evaluate_calls(self, b_reset=True):

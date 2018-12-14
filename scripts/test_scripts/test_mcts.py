@@ -1,3 +1,4 @@
+#! /usr/bin/python
 import IPython
 import sys
 import os
@@ -23,15 +24,15 @@ if __name__ == "__main__":
     mcts_visualizer = None
     mcts_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, hierarchy, hierarchy, hierarchy, ["fake_manip"],
                                                          c=1, debug_visualizer=mcts_visualizer)
-    mcts_solutions, mcts_num_solutions = mcts_sampler.sample(1000, 10000)
+    mcts_solutions, mcts_num_solutions = mcts_sampler.sample(100000, 1000000)
     mcts_stats = (hierarchy.get_num_construction_calls(), hierarchy.get_num_validity_calls(),
                   hierarchy.get_num_relaxation_calls(), hierarchy.get_num_evaluate_calls())
-    rnd_solutions, rnd_num_solutions = random_sampler.sample(1000, 10000)
-    rnd_stats = (hierarchy.get_num_construction_calls(), hierarchy.get_num_validity_calls(),
-                 hierarchy.get_num_relaxation_calls(), hierarchy.get_num_evaluate_calls())
+    # rnd_solutions, rnd_num_solutions = random_sampler.sample(1000, 10000)
+    # rnd_stats = (hierarchy.get_num_construction_calls(), hierarchy.get_num_validity_calls(),
+                #  hierarchy.get_num_relaxation_calls(), hierarchy.get_num_evaluate_calls())
     # hierarchy.show()
     print "MCTS solutions: ", mcts_num_solutions,\
         "#constructions: %i, #validity: %i, #relaxations: %i, #evaluate: %i" % mcts_stats
-    print "Random solutions: ", rnd_num_solutions,\
-        "#constructions: %i, #validity: %i, #relaxations: %i, #evaluate: %i" % rnd_stats
-    IPython.embed()
+    # print "Random solutions: ", rnd_num_solutions,\
+        # "#constructions: %i, #validity: %i, #relaxations: %i, #evaluate: %i" % rnd_stats
+    # IPython.embed()
