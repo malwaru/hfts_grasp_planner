@@ -45,17 +45,36 @@ class PlanarPlacementRegion(object):
         median_point = np.percentile(np.column_stack((self.x_indices, self.y_indices)),
                                      q=50, axis=0, interpolation='nearest')
         self.contact_tf = np.array(self.base_tf)  # tf that a contact point should have
-        median_pos = median_point * cell_size
+        self.contact_xy = median_point * cell_size  # xy position of reference contact point in local frame
         # also lift it by half the cell size
         self.contact_tf[:3, 3] += np.dot(self.base_tf[:3, :3],
-                                         np.array((median_pos[0], median_pos[1], 0.5 * cell_size)))
+                                         np.array((self.contact_xy[0], self.contact_xy[1], 0.5 * cell_size)))
         # next, compute radius of encompassing circle with center in contact_tf
-        self.radius = np.max((np.linalg.norm(median_pos),  # distance to origin
-                              np.linalg.norm(median_pos - self.dimensions),  # distance to bounding box's max point
-                              np.linalg.norm(median_pos - (self.dimensions[0], 0.0)),  # distance to right bottom point
-                              np.linalg.norm(median_pos - (0.0, self.dimensions[1]))))  # distance to left top point
+        self.radius = np.max((np.linalg.norm(self.contact_xy),  # distance to origin
+                              np.linalg.norm(self.contact_xy - self.dimensions),  # distance to bounding box's max point
+                              # distance to right bottom point
+                              np.linalg.norm(self.contact_xy - (self.dimensions[0], 0.0)),
+                              np.linalg.norm(self.contact_xy - (0.0, self.dimensions[1]))))  # distance to left top point
         self.normal = np.dot(self.base_tf[:3, :3], np.array((0, 0, 1.0)))
         self._subregions = None
+        self.local_distance_field = None
+        self._compute_local_distance_field()
+
+    def _compute_local_distance_field(self):
+        workspace = np.array([0.0, 0.0, 0.0, self.dimensions[0], self.dimensions[1], self.cell_size])
+        shape = np.array([0, 0, 1])
+        shape[:2] = (self.dimensions / self.cell_size).astype(int) + 2  # add some buffer to the sides
+        shift_tf = np.eye(4)
+        shift_tf[:2, 3] = np.array((1, 1)) * self.cell_size
+        self.local_distance_field = grid_mod.VoxelGrid(workspace, cell_size=self.cell_size,
+                                                       num_cells=shape,
+                                                       base_transform=np.dot(self.base_tf, shift_tf),
+                                                       dtype=bool)
+        raw_data = self.local_distance_field.get_raw_data()
+        raw_data[:, :] = True
+        raw_data[self.x_indices + 1, self.y_indices + 1] = False
+        raw_data = scipy_morph.distance_transform_edt(raw_data, sampling=self.cell_size)
+        self.local_distance_field.set_raw_data(raw_data)
 
     def get_subregions(self):
         """

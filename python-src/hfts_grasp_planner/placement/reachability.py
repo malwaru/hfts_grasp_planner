@@ -1,12 +1,18 @@
 import rospy
-import pickle
+import time
 import numpy as np
 import so3hierarchy
 import openravepy as orpy
+from functools import partial
 from itertools import product
 import sklearn.neighbors as skn
 from hfts_grasp_planner.utils import inverse_transform, transform_pos_quats_by, get_manipulator_links,\
     get_ordered_arm_joints
+
+YUMI_SE3_WEIGHT = 0.07131
+YUMI_MAX_RADIUS = 0.07131
+YUMI_MIN_RADIUS = 0.02
+YUMI_DELTA_SQ_RADII = YUMI_MIN_RADIUS**2 - YUMI_MAX_RADIUS**2
 
 
 class ReachabilityMap(object):
@@ -80,6 +86,9 @@ class ReachabilityMap(object):
             quat_metric = skn.DistanceMetric.get_metric('pyfunc', func=so3hierarchy.quat_distance)
             configs = []
             reachable_positions = []
+            num_total_poses = len(sample_positions_per_dim)**3 * 72 * 8**so3depth
+            rospy.loginfo("Creating Simple reachability map. Going to evaluate %i poses." % num_total_poses)
+            pose_id = 0
             for rel_pos in product(sample_positions_per_dim, repeat=3):
                 # for each position create a kdtree that stores all reachable orientations
                 pos = rel_pos + base_anchor
@@ -100,10 +109,14 @@ class ReachabilityMap(object):
                     else:
                         rospy.logdebug("Could not find any ik solution for pos " +
                                        str(pos) + " and quat " + str(quat))
+                    pose_id += 1
+                    rospy.logdebug("Tested %i of %i total poses. Found %i reachable poses so far." %
+                                   (pose_id, num_total_poses, len(configs)))
                 if len(reachable_quats) > 0:
                     self._quat_balltrees.append(skn.BallTree(np.array(reachable_quats),
                                                              metric=quat_metric))  # TODO tune leaf_size?
                     reachable_positions.append(pos)
+
         if len(reachable_positions) > 0:
             positions = np.array(reachable_positions)
             self._cart_kdtree = skn.KDTree(positions)
@@ -216,3 +229,248 @@ class ReachabilityMap(object):
         colors = rel_reachable[good_reachability, np.newaxis] * reachable_col + \
             (1.0 - rel_reachable)[good_reachability, np.newaxis] * unreachable_col
         return env.plot3(positions[good_reachability], sprite_size, colors)
+
+
+def hard_coded_distance_fn(a, b):
+    """
+        SE(3) pose distance for Yumi. Hardcoding this distance function (i.e. the weight) is the
+        only way pickling ball tree seems to work.
+    """
+    return np.linalg.norm(a[:3] - b[:3]) + YUMI_SE3_WEIGHT * so3hierarchy.quat_distance(a, b)
+
+
+def yumi_distance_fn(a, b):
+    # extract quaternions
+    q_a, q_b = a[3:], b[3:]
+    # express everything in frame a
+    q_a_inv = np.array(q_a)
+    q_a_inv[1:] *= -1.0
+    q_b_in_a = orpy.quatMult(q_b, q_a_inv)
+    # rotation distance is determined by the radius of the end-effector. We approximate the end-effector by an ellipse
+    angle = 2.0 * np.arccos(np.clip(np.abs(q_b_in_a[0]), 0.0, 1.0))
+    radius = 0.0
+    if not np.isclose(angle, 0.0):
+        # compute dot product of angle between rotation axis and z axis
+        cos_alpha = q_b_in_a[3] / np.sin(angle)
+        radius = np.sqrt(YUMI_MAX_RADIUS**2 + cos_alpha**2 * YUMI_DELTA_SQ_RADII)
+    return np.linalg.norm(a[:3] - b[:3]) + radius * angle
+
+
+class SimpleReachabilityMap(object):
+    """
+        Represents what end-effector poses relative to the robot frame are reachable.
+        A SimpleReachabilityMap in contrast to a ReachabilityMap stores poses as a joint vector,
+        thus it requires a weighting factor between distance in SO(3) and distance in R^3 to compute
+        nearest neighbors.
+    """
+
+    def __init__(self, manip, ik_solver):  # , weight=None):
+        """
+            Initialize a new simple reachability map.
+            ---------
+            Arguments
+            ---------
+            manip, OpenRAVE manipulator
+            ik_solver, ik_solver.IKSolver - ik solver for the given manipulator
+            # weight (optional), float - weight factor to scale between R^3 distance and SO(3) distance
+            #     If not provided (None), the factor is set to the radius of the minimal bounding sphere of
+            #     the manipulator's gripper.
+        """
+        self._reachable_poses = None
+        self._ball_tree = None
+        self._configurations = None
+        self._manip = manip
+        self._ik_solver = ik_solver
+        self._eucl_dispersion = 0.0
+        self._so3_dispersion = 0.0
+        # if weight is None:
+        # weight = np.linalg.norm(self._manip.GetEndEffector().ComputeLocalAABB().extents())
+        self._weight = YUMI_SE3_WEIGHT
+
+    def create(self, res_metric, so3depth):
+        """
+            Create the map for the given robot manipulator.
+            If the map was already created, this is a no-op.
+            ---------
+            Arguments
+            ---------
+            res_metric, float - grid distance in metric space
+            so3depth, int - depth in so3hierarchy to sample in (0 = 72 orientations, >1 = 72 * 8^so3depth orientations)
+        """
+        if self._ball_tree is not None:
+            return
+        robot = self._manip.GetRobot()
+        assert(not robot.CheckSelfCollision())
+        with robot:
+            # save grid distances
+            self._eucl_dispersion = np.sqrt(3) * res_metric / 2.0
+            self._so3_dispersion = so3hierarchy.get_dispersion_bound(so3depth)
+            # first compute bounding box
+            base_tf = self._manip.GetBase().GetTransform()
+            inv_base_tf = inverse_transform(base_tf)
+            robot_tf_in_base = np.dot(inv_base_tf, robot.GetTransform())
+            robot.SetTransform(robot_tf_in_base)  # set base link to global origin
+            maniplinks = get_manipulator_links(self._manip)
+            arm_indices = self._manip.GetArmIndices()
+            for link in robot.GetLinks():
+                link.Enable(link in maniplinks)
+            # the axes' anchors are the best way to find the max radius
+            # the best estimate of arm length is to sum up the distances of the anchors of all the points in between the chain
+            arm_joints = get_ordered_arm_joints(robot, self._manip)
+            base_anchor = arm_joints[0].GetAnchor()
+            eetrans = self._manip.GetEndEffectorTransform()[0:3, 3]
+            arm_length = 0
+            for j in arm_joints[::-1]:
+                arm_length += np.sqrt(sum((eetrans-j.GetAnchor())**2))
+                eetrans = j.GetAnchor()
+            self._configurations = []
+            self._reachable_poses = []
+            # if maxradius is None:
+            max_radius = arm_length + res_metric * np.sqrt(3.0) * 1.05
+            # sample workspace positions for arm
+            sample_positions_per_dim = (np.linspace(-max_radius, max_radius, (int)(2*max_radius / res_metric)))
+            # run over grid positions
+            num_total_poses = len(sample_positions_per_dim)**3 * 72 * 8**so3depth
+            rospy.loginfo("Creating Simple reachability map. Going to evaluate %i poses." % num_total_poses)
+            pose_id = 0
+            for rel_pos in product(sample_positions_per_dim, repeat=3):
+                pos = rel_pos + base_anchor
+                # run over grid orientations
+                quats = (so3hierarchy.get_quaternion(key) for key in so3hierarchy.get_key_generator(so3depth))
+                # check which of these orientations we can reach for the given position
+                for quat in quats:
+                    pose = orpy.matrixFromQuat(quat)
+                    pose[:3, 3] = pos
+                    config = self._ik_solver.compute_ik(pose)
+                    if config is not None:
+                        robot.SetDOFValues(config, arm_indices)
+                        if not robot.CheckSelfCollision():
+                            self._configurations.append(config)
+                            pose_array = np.empty(7)
+                            pose_array[:3] = pos
+                            pose_array[3:] = quat
+                            self._reachable_poses.append(pose_array)
+                    else:
+                        rospy.logdebug("Could not find any ik solution for pos " +
+                                       str(pos) + " and quat " + str(quat))
+                    pose_id += 1
+                    rospy.logdebug("Tested %i of %i total poses. Found %i reachable poses so far." %
+                                   (pose_id, num_total_poses, len(self._reachable_poses)))
+        if len(self._reachable_poses) > 0:
+            self._create_ball_tree(self._reachable_poses)
+            self._configurations = np.array(self._configurations)
+            rospy.loginfo("Created simple reachability map: %i reachable poses" %
+                          (len(self._configurations)))
+        else:
+            rospy.logerr("There is not a single reachable pose for this manipulator. Something must be wrong")
+
+    def save(self, filename):
+        """
+            Save this reachability map to file.
+            ---------
+            Arguments
+            ---------
+            filename, string - path to where to load/save reachability map from
+        """
+        data_to_dump = np.array([self._manip.GetRobot().GetName(), self._manip.GetName(),
+                                 self._eucl_dispersion, self._so3_dispersion,
+                                 self._configurations, self._ball_tree], dtype=object)
+        np.save(filename, data_to_dump)
+
+    def load(self, filename):
+        """
+            Load reachability map from file.
+        """
+        start_time = time.time()
+        rname, mname, eucl_disp, so3_disp, configs, ball_tree = np.load(filename)
+        if self._manip.GetRobot().GetName() != rname:
+            rospy.logerr("Could not load reachability map from file %s because it is made for a different robot" % filename)
+            rospy.logerr("This map was created for robot %s. The file is for robot %s" %
+                         (self._manip.GetRobot().GetName(), rname))
+            return
+        if self._manip.GetName() != mname:
+            rospy.logerr("Could not load reachability map from file %s because it is made for a different manipluator" % filename)
+            rospy.logerr("This map was created for manipulator %s. The file is for manipulator %s" %
+                         (self._manip.GetName(), mname))
+            return
+        self._configurations = configs
+        self._eucl_dispersion = eucl_disp
+        self._so3_dispersion = so3_disp
+        self._weight = YUMI_SE3_WEIGHT
+        self._ball_tree = ball_tree
+        self._reachable_poses = np.array(ball_tree.data)
+        rospy.logdebug("[SimpleReachabilityMap] Loading took %fs" % (time.time() - start_time))
+
+    # def load(self, filename):
+    #     """
+    #         Load reachability map from file.
+    #     """
+    #     start_time = time.time()
+    #     rname, mname, eucl_disp, so3_disp, weight, configs, poses = np.load(filename)
+    #     rospy.logdebug("[SimpleReachabilityMap] Loading took %fs" % (time.time() - start_time))
+    #     if self._manip.GetRobot().GetName() != rname:
+    #         rospy.logerr("Could not load reachability map from file %s because it is made for a different robot" % filename)
+    #         rospy.logerr("This map was created for robot %s. The file is for robot %s" %
+    #                      (self._manip.GetRobot().GetName(), rname))
+    #         return
+    #     if self._manip.GetName() != mname:
+    #         rospy.logerr("Could not load reachability map from file %s because it is made for a different manipluator" % filename)
+    #         rospy.logerr("This map was created for manipulator %s. The file is for manipulator %s" %
+    #                      (self._manip.GetName(), mname))
+    #         return
+    #     self._configurations = configs
+    #     self._eucl_dispersion = eucl_disp
+    #     self._so3_dispersion = so3_disp
+    #     self._weight = weight
+    #     start_time = time.time()
+    #     self._create_ball_tree(poses)
+    #     rospy.logdebug("[SimpleReachabilityMap] Creating ball tree took %fs" % (time.time() - start_time))
+
+    def query(self, poses):
+        """
+            Query nearest reachable poses.
+            ---------
+            Arguments
+            ---------
+            poses, numpy array of shape (n, 7) - (x,y,z, w, i, k, j) i.e. position followed by quaternion in world frame
+            -------
+            Returns
+            -------
+            distances, numpy array of shape (n,) - distances between respective query pose and closest reachable pose
+            nearest_poses, numpy array of shape (n, 7) - the closest reachable poses
+            configs, numpy array of shape (n, 7) - arm configurations for closest reachable poses
+        """
+        robot = self._manip.GetRobot()
+        with robot:
+            # transform query poses from world frame to robot frame
+            robot_tf = robot.GetTransform()
+            inv_robot_tf = inverse_transform(robot_tf)
+            poses = transform_pos_quats_by(inv_robot_tf, poses)
+            # query for closest poses
+            distances, indices = self._ball_tree.query(poses)
+            indices = indices.reshape((indices.shape[0]))
+            distances = distances.reshape((distances.shape[0]))
+            nearest_poses = transform_pos_quats_by(robot_tf, self._reachable_poses[indices])
+            configs = self._configurations[indices]
+            return distances, nearest_poses, configs
+
+    def get_dispersion(self):
+        """
+            Return the dispersion of this reachability map.
+            The dispersion is the maximum distance any reachable pose can be away
+            from a sample stored in this map.
+            -------
+            Returns
+            -------
+            dist, float - upper bound on distance
+        """
+        return self._eucl_dispersion + self._weight * self._so3_dispersion  # TODO is this correct?
+
+    def _create_ball_tree(self, poses):
+        """
+            Create ball tree from the given list of poses.
+            Sets self._reachable_poses and self._ball_tree.
+        """
+        self._reachable_poses = np.array(poses)
+        distance_metric = skn.DistanceMetric.get_metric('pyfunc', func=yumi_distance_fn)
+        self._ball_tree = skn.BallTree(self._reachable_poses, metric=distance_metric)

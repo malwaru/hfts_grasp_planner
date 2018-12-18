@@ -19,6 +19,7 @@ import hfts_grasp_planner.placement.arpo_placement.placement_regions as plcmnt_r
 import hfts_grasp_planner.placement.arpo_placement.core as arpo_placement_mod
 import hfts_grasp_planner.placement.goal_sampler.random_sampler as rnd_sampler_mod
 import hfts_grasp_planner.placement.goal_sampler.mcts_sampler as mcts_sampler_mod
+import hfts_grasp_planner.placement.goal_sampler.mcts_visualization as mcts_visualizer_mod
 import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
 import hfts_grasp_planner.placement.reachability as rmap_mod
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
@@ -203,7 +204,7 @@ if __name__ == "__main__":
             # TODO have different grasp poses for each manipulator
             grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
             grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
-            rmap = rmap_mod.ReachabilityMap(manip, ik_solver)
+            rmap = rmap_mod.SimpleReachabilityMap(manip, ik_solver)
             try:
                 filename = problem_desc["reachability_path"] + '/' + robot.GetName() + '_' + manip.GetName() + '.npy'
                 rmap.load(filename)
@@ -245,18 +246,23 @@ if __name__ == "__main__":
             sys.exit(0)
         handles = []
         # create arpo hierarchy
-        hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, 4)
+        hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
         arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
                                                          object_data=object_data, objective_fn=None,
                                                          contact_point_distances=sufrace_distance_grid, scene_sdf=scene_sdf)
+        if args.debug:
+            mcts_visualizer = mcts_visualizer_mod.MCTSVisualizer(robot, target_object)
+        else:
+            mcts_visualizer = None
         # goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
         #                                                         manip.GetName() for manip in manips])
         goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
-                                                                manip.GetName() for manip in manips])
+                                                                manip.GetName() for manip in manips],
+                                                             debug_visualizer=mcts_visualizer)
 
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips)
         # traj, goal = plan(motion_planner, target_object, 10)
-        solutions, num_solutions = goal_sampler.sample(10, 1000)
+        # solutions, num_solutions = goal_sampler.sample(1, 1)
         # probe = env.GetKinBody("probe")
         # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])
         IPython.embed()

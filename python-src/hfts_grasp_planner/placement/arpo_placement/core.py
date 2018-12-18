@@ -1,6 +1,8 @@
 import rospy
+import scipy
 import numpy as np
 import openravepy as orpy
+from functools import partial
 import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.so2hierarchy as so2hierarchy
 import hfts_grasp_planner.placement.goal_sampler.interfaces as placement_interfaces
@@ -326,13 +328,13 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             Cache all relevant information for a particular solution.
         """
 
-        def __init__(self, key, solution, region, plcmnt_orientation, so2_interval, eef_tf):
+        def __init__(self, key, region, plcmnt_orientation, so2_interval, solution):
             self.key = key  # arpo hierarchy key
             self.solution = solution  # PlacementGoal
             self.region = region  # PlacementRegion from key
             self.plcmnt_orientation = plcmnt_orientation  # PlacementOrientation from key
             self.so2_interval = so2_interval  # SO2 interval from key
-            self.eef_tf = eef_tf  # store end-effector transform
+            self.eef_tf = None  # store end-effector transform
             self.bkinematically_reachable = None  # store whether ik solutions exist
             self.bcollision_free = None  # store whether collision-free
             self.bbetter_objective = None  # store whether it has better objective than the current best
@@ -509,7 +511,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         def check_reachability(self, cache_entry):
             """
                 Check whether the solution stored in cache entry is a kinematically reachable solution.
-                Returns True or False. TODO: implement relaxation
+                Returns True or False.
                 ---------
                 Arguments
                 ---------
@@ -554,6 +556,43 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # relate cartesian distance to the size of the placement region
             # normalize quaternion distance
             return 1.0 - 0.5 * np.clip(cdist[0] / cache_entry.region.radius, 0.0, 1.0) - 0.5 * qdist[0] / np.pi
+
+        def get_pose_reachability_fn(self, cache_entry):
+            """
+                Return a function that maps a tuple (x, y, theta) to a reachability value in R.
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                -------
+                Returns
+                -------
+                a function fn that returns a reachability value r, i.e. fn(x) = r
+                good_val, float - a value that if fn(x) <= good_val, x is very likely to be kinematically reachable
+            """
+            def reachability_fn(val, manip_data, region, po):
+                local_pose = tf_mod.rotation_matrix(val[2], [0, 0, 1])
+                local_pose[:2, 3] = val[:2]
+                obj_tf = np.dot(region.base_tf, np.dot(local_pose, po.inv_reference_tf))
+                # TODO remove
+                handle = orpy.misc.DrawAxes(manip_data.manip.GetRobot().GetEnv(), obj_tf)
+                # compute end-effector tf
+                eef_tf = np.dot(obj_tf, manip_data.grasp_tf)
+                pose = np.empty((1, 7))
+                pose[0, :3] = eef_tf[:3, 3]
+                pose[0, 3:] = orpy.quatFromRotationMatrix(eef_tf[:3, :3])
+                cart_distances, quat_distances = manip_data.reachability_map.query(pose)
+                # distances, _, _  = manip_data.reachability_map.query(pose)
+                # return distances[0]
+                print "Reachability fn:", cart_distances[0] + 0.1 * quat_distances[0]
+                return cart_distances[0] + 0.1 * quat_distances[0]
+
+            manip = cache_entry.solution.manip
+            manip_data = self._manip_data[manip.GetName()]
+            good_val = 0.5 * manip_data.reachability_map.get_dispersion()[0]
+            fn = partial(reachability_fn, manip_data=manip_data,
+                         region=cache_entry.region, po=cache_entry.plcmnt_orientation)
+            return fn, good_val
 
     # class ObjectiveImprovementConstraint(object):
     #     """
@@ -640,26 +679,27 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         arpo_info = self._hierarchy.get_arpo_information(key)
         assert(len(arpo_info) >= 3)
         manip = arpo_info[0]
+        manip_data = self._manip_data[manip.GetName()]
         region = arpo_info[1]
         po = arpo_info[2]
         so2_interval = np.array([0, 2.0 * np.pi])
         if len(arpo_info) == 5:
             region = arpo_info[3]
             so2_interval = arpo_info[4]
-        # compute object pose
-        angle = (so2_interval[1] + so2_interval[0]) / 2.0  # rotation around local z axis
-        obj_tf = np.dot(region.contact_tf, np.dot(tf_mod.rotation_matrix(angle, [0., 0., 1]), po.inv_reference_tf))
-        manip_data = self._manip_data[manip.GetName()]
-        # end-effector tf
-        eef_tf = np.dot(obj_tf, manip_data.grasp_tf)
-        config = manip_data.ik_solver.compute_ik(eef_tf)
-        # TODO optimize constraints, optimize objective, if requested
+        # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             # TODO real objective value
-            manip=manip, arm_config=config, obj_tf=obj_tf, key=len(self._solutions_cache), objective_value=0.0,
-            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
-        self._solutions_cache.append(ARPORobotBridge.SolutionCacheEntry(
-            key, new_solution, region, po, so2_interval, eef_tf))
+            manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=0.0,
+            grasp_tf=None, grasp_config=manip_data.grasp_config)
+        # create a cache entry for this solution
+        sol_cache_entry = ARPORobotBridge.SolutionCacheEntry(
+            key=key, region=region, plcmnt_orientation=po, so2_interval=so2_interval, solution=new_solution)
+        self._solutions_cache.append(sol_cache_entry)
+        # compute object and end-effector pose
+        self._compute_object_pose(sol_cache_entry, b_optimize=b_optimize_constraints)
+        # compute arm configuration
+        config = manip_data.ik_solver.compute_ik(sol_cache_entry.eef_tf)
+        # TODO optimize constraints, optimize objective, if requested
         self._call_stats[0] += 1
         return new_solution
 
@@ -711,20 +751,24 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         """
         cache_entry = self._solutions_cache[solution.key]
         assert(cache_entry.solution == solution)
-        self._object_data.kinbody.SetTransform(solution.obj_tf)  # TODO remove
-        if solution.arm_config is not None:  # TODO remove
-            robot = solution.manip.GetRobot()  # TODO remove
-            old_config = robot.GetDOFValues()  # TODO remove
-            robot.SetDOFValues(solution.arm_config, solution.manip.GetArmIndices())  # TODO remove
+        # self._object_data.kinbody.SetTransform(solution.obj_tf)  # TODO remove
+        # if solution.arm_config is not None:  # TODO remove
+        #     robot = solution.manip.GetRobot()  # TODO remove
+        #     old_config = robot.GetDOFValues()  # TODO remove
+        #     robot.SetDOFValues(solution.arm_config, solution.manip.GetArmIndices())  # TODO remove
         reachability_val = self._reachability_constraint.get_relaxation(cache_entry)
         contact_val = self._contact_constraint.get_relaxation(cache_entry)
         col_val = self._collision_constraint.get_relaxation(cache_entry)
         rospy.logdebug("Reachability value: %f, contact value: %f, collision value: %f" %
                        (reachability_val, contact_val, col_val))
-        if solution.arm_config is not None:  # TODO remove
-            robot.SetDOFValues(old_config)  # TODO remove
+        # if solution.arm_config is not None:  # TODO remove
+        #     robot.SetDOFValues(old_config)  # TODO remove
         self._call_stats[2] += 1
-        return (reachability_val + contact_val + col_val) / 3.0  # TODO could add weights here
+        relaxation_val = (reachability_val + contact_val + col_val) / 3.0  # TODO could add weights here
+        relaxation_val = relaxation_val**5
+        solution.data = {'reachability': reachability_val,
+                         "contact": contact_val, "col": col_val, "total": relaxation_val}
+        return relaxation_val  # TODO could pass this value through a non-linear function here to make the reward sharper
 
     def evaluate(self, solution):
         # TODO implement me
@@ -755,3 +799,117 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         if b_reset:
             self._call_stats[3] = 0
         return val
+
+    def optimize_constraints(self, solution):
+        """
+            Perform optimization on the constraint relaxation in order to make the given solution feasible.
+            This method runs one of scipy's optimization algorithms to locally move the
+            arm configuration in the given solution towards a feasible configuration.
+            TODO:
+            If there is no arm configuration, i.e. the object pose is not reachable, it first attempts to
+            move the object towards a feasible pose.
+        """
+        # TODO implement optimzation!
+        pass
+        # constraints = [
+        #     {
+        #         'type': 'ineq',
+        #         'fun': functools.partial(pose_wrapper_fn, self.collision_cost),
+        #     },
+        #     {
+        #         'type': 'ineq',
+        #         'fun': lambda x: x - search_space_bounds[:, 0]
+        #     },
+        #     {
+        #         'type': 'ineq',
+        #         'fun': lambda x: search_space_bounds[:, 1] - x
+        #     }
+        # ]
+        # options = {
+        #     'maxiter': self._parameters["max_iter"],
+        #     'rhobeg': self._parameters["rhobeg"],
+        #     'disp': True,
+        # }
+        # opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, self.objective_fn, multiplier=-1.0),
+        #                                      x0, method='COBYLA', constraints=constraints, options=options)
+
+    def _compute_object_pose(self, cache_entry, b_optimize):
+        """
+            Compute an object pose for the solution cache entry.
+            Optionally, run an optimization algorithm to move from the default object pose to one
+            that is reachable. If the default pose is already reachable, i.e. a kinematic solution for the grasp exists,
+            this is a no-op.
+            ---------
+            Arguments
+            ---------
+            cache_entry, SolutionCacheEntry - The following fields are required to be intialized:
+                manip, region, plcmnt_orientation, so2_interval, solution
+            ------------
+            Side effects
+            ------------
+            cache_entry.solutionobj_tf, numpy array of shape (4,4) - pose of the object is stored here
+            cache_entry.eef_tf, numpy array of shape (4, 4) - pose of the end-effector is stored here
+        """
+        manip_data = self._manip_data[cache_entry.solution.manip.GetName()]
+        center_angle = (cache_entry.so2_interval[1] + cache_entry.so2_interval[0]) / 2.0  # rotation around local z axis
+        if not b_optimize:
+            # compute default object pose
+            cache_entry.solution.obj_tf = np.dot(cache_entry.region.contact_tf, np.dot(tf_mod.rotation_matrix(
+                center_angle, [0., 0., 1]), cache_entry.plcmnt_orientation.inv_reference_tf))
+            # compute default end-effector tf
+            cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)
+        else:
+            ######### Untested code for scipy version 1.1.0  #########
+            # lower_bounds = np.empty(3)
+            # lower_bounds[:2] = 0.0
+            # lower_bounds[2] = cache_entry.so2_interval[0]
+            # upper_bounds = np.empty(3)
+            # upper_bounds[:2] = cache_entry.region.dimensions
+            # upper_bounds[2] = cache_entry.so2_interval[1]
+            # bounds_constraint = scipy.optimize.Bounds(lower_bounds, upper_bounds, True)  # bounds should be enforced!
+
+            # def region_distance(val):
+            #     return cache_entry.local_distance_field.get_cell_values_pos(val.reshape((1, 3)))
+            # in_region_constraint = scipy.optimize.NonlinearConstraint(region_distance, [0.0], [0.0])
+            # reachability_fn, threshold = self._reachability_constraint.get_pose_reachability_fn(cache_entry)
+            # start_point = np.empty(3)
+            # start_point[:2] = cache_entry.contact_xy
+            # start_point[2] = center_angle
+
+            # def termination_criteria(val, state):
+            #     return state.fun[0] <= threshold
+            # result = scipy.optimize.minimize(reachability_fn, start_point, method='trust-constr',
+            #                                  jac='2-point', bounds=bounds_constraint, constraints=in_region_constraint,
+            #                                  callback=termination_criteria)
+
+            def region_distance(val):
+                print "region_distance"
+                pos = np.array([[val[0], val[1], cache_entry.region.cell_size / 2.0]])
+                dist_val = cache_entry.region.local_distance_field.get_cell_values_pos(pos, b_global_frame=False)[0]
+                print dist_val
+                return dist_val
+
+            reachability_fn, _ = self._reachability_constraint.get_pose_reachability_fn(cache_entry)
+            constraints = [
+                {
+                    'type': 'eq',
+                    'fun': region_distance,
+                },
+            ]
+            start_point = np.empty(3)
+            start_point[:2] = cache_entry.region.contact_xy
+            start_point[2] = center_angle
+            options = {
+                'disp': True,
+            }
+            bounds = [(0.0, cache_entry.region.dimensions[0]),
+                      (0.0, cache_entry.region.dimensions[1]),
+                      (cache_entry.so2_interval[0], cache_entry.so2_interval[1])]
+            result = scipy.optimize.minimize(reachability_fn, start_point, method='SLSQP', constraints=constraints,
+                                             options=options, bounds=bounds)
+            local_pose = tf_mod.rotation_matrix(result.x[2], [0, 0, 1])
+            local_pose[:2, 3] = result.x[:2]
+            cache_entry.solution.obj_tf = np.dot(cache_entry.region.base_tf, np.dot(
+                local_pose, cache_entry.plcmnt_orientation.inv_reference_tf))
+            # compute end-effector tf
+            cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)

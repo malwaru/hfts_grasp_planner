@@ -38,7 +38,7 @@ class MCTSVisualizer(object):
                 self._prev_selected_node = (node, solution_id)
             config = node.solutions[solution_id].arm_config  # may still be None!
             rospy.logdebug("[MCTSVisualizer::_ros_callback] Got a request for node %s" % str(key))
-            # rospy.logdebug("[MCTSVisualizer::_ros_callback]  debug data: " + str(node.cost_debug_data))
+            rospy.logdebug("[MCTSVisualizer::_ros_callback: solution data: %s" % str(node.solutions[solution_id].data))
             if config is not None and self.robot is not None:
                 rospy.logdebug('[MCTSVisualizer::_ros_callback] Request to show config ' + str(config))
                 self.robot.SetActiveDOFs(node.solutions[solution_id].manip.GetArmIndices())

@@ -336,16 +336,24 @@ class VoxelGrid(object):
                 idx = idx.astype(index_type)
         return local_pos, idx
 
-    def map_to_grid_batch(self, positions, index_type=np.int):
+    def map_to_grid_batch(self, positions, index_type=np.int, b_global_frame=True):
         """
             Map the given global positions to local frame and return both the local points
             and the indices (None if out of bounds).
-            @param positions is assumed to be a numpy matrix of shape (n, 3) where n is the number of query
-                    points.
-            @param index_type - Denotes what type the returned index should be. Should either be
+            ---------
+            Arguments
+            ---------
+            positions, numpy matrix of shape (n, 3) where n is the number of query points.
+            index_type, np.dtype - Denotes what type the returned index should be. Should either be
                 np.int or np.float_. By default integer indices are returned, if np.float_ is passed
                 the returned index is a real number, which allows trilinear interpolation between grid points.
-            @return (local_positions, indices, mask) where
+                b_global_frame, bool
+            b_global_frame, bool - if True, positions are assumed to be in global frame and transformed to local
+                frame, else they are assumed to be in local frame.
+            -------
+            Returns
+            -------
+            (local_positions, indices, mask) where
                 local_positions are the transformed points in a numpy array of shape (n, 4) where n
                     is the number of query points
                 indices is a numpy array of shape (m, 3) containing indices for the m <= n valid local points,
@@ -354,7 +362,10 @@ class VoxelGrid(object):
                     bounds and indices contains an index for this position
 
         """
-        local_positions = np.dot(positions, self._inv_transform[:3, :3].transpose()) + self._inv_transform[:3, 3]
+        if b_global_frame:
+            local_positions = np.dot(positions, self._inv_transform[:3, :3].transpose()) + self._inv_transform[:3, 3]
+        else:
+            local_positions = positions
         in_bounds_lower = (local_positions[:, :3] >= self._aabb[:3]).all(axis=1)
         in_bounds_upper = (local_positions[:, :3] < self._aabb[3:]).all(axis=1)
         mask = np.logical_and(in_bounds_lower, in_bounds_upper)
@@ -467,7 +478,7 @@ class VoxelGrid(object):
             query_indices = indices.astype(int)
         return self._cells[query_indices[:, 0] + 1, query_indices[:, 1] + 1, query_indices[:, 2] + 1]
 
-    def get_cell_values_pos(self, positions):
+    def get_cell_values_pos(self, positions, b_global_frame=True):
         """
             Returns the values of the cells with the specified positions (in world frame).
             If some positions are out of bounds, None is returned for these positions.
@@ -475,9 +486,12 @@ class VoxelGrid(object):
             Arguments
             ---------
             positions, numpy array of shape (n, 3) - query positions
+            b_global_fame, bool - if True, positions are in global frame and accordingly first
+                transformed into local frame.
         """
         values = np.full((positions.shape[0],), None)
-        _, grid_indices, valid_mask = self.map_to_grid_batch(positions, index_type=np.float_)
+        _, grid_indices, valid_mask = self.map_to_grid_batch(positions, index_type=np.float_,
+                                                             b_global_frame=b_global_frame)
         if valid_mask.any():
             values[valid_mask] = self.get_cell_values(grid_indices)
         return values

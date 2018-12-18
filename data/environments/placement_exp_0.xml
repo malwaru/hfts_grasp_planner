@@ -42,7 +42,8 @@
     </KinBody>
 
     <KinBody name="crayola">
-        <Translation>-0.16 0.78 1.0</Translation>
+        <Translation>0.23 0.58 0.5</Translation>
+        <!-- <Translation>-0.16 0.78 1.0</Translation> -->
         <!-- <RotationAxis>0 0 1 20</RotationAxis> -->
         <Body type="dynamic">
             <Geom type="trimesh">

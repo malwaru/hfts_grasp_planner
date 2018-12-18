@@ -149,7 +149,7 @@ if __name__ == "__main__":
     tvals = np.array([np.dot(robot_tf[:3, :3], sdf_volume_robot[0]) + robot_tf[:3, 3],
                       np.dot(robot_tf[:3, :3], sdf_volume_robot[1]) + robot_tf[:3, 3]])
     sdf_volume = (np.min(tvals, axis=0), np.max(tvals, axis=0))
-    planner._env.SetViewer('qtcoin')
+    # planner._env.SetViewer('qtcoin')
     # reset object pose, if provided
     if 'initial_obj_pose' in problem_desc:
         tb = planner._env.GetKinBody(problem_desc['target_name'])

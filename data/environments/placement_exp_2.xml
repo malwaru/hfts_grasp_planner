@@ -53,4 +53,16 @@
             </Geom>
         </Body>
     </KinBody>
+    <KinBody name="probe">
+        <Translation>-0.96 0.78 1.0</Translation>
+        <!-- <RotationAxis>0 0 1 20</RotationAxis> -->
+        <Body type="dynamic">
+            <Geom type="sphere">
+                <radius>0.01</radius>
+                <!-- <Data>../crayola/objectModel.ply</Data> -->
+                <!-- <Render>../crayola/objectModel.ply</Render> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
 </Environment> 
