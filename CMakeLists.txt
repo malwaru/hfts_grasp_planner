@@ -134,7 +134,7 @@ include_directories(include
 )
 
 add_subdirectory(src/hfts_grasp_planner/placement/reachability)
-# add_subdirectory(src/hfts_grasp_planner/placement/pose_distance)
+add_subdirectory(src/hfts_grasp_planner/placement/pose_distance)
 add_subdirectory(src/hfts_grasp_planner/placement/objective)
 
 # # Build swig python modules

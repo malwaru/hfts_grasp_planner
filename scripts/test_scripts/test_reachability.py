@@ -38,12 +38,13 @@ if __name__ == '__main__':
     env.Load(env_file)
     urdf_file = os.path.abspath(os.path.dirname(__file__)) + '/../../models/yumi/yumi.urdf'
     robot = env.GetRobots()[0]
-    base_map_filename = os.path.abspath(os.path.dirname(__file__)) + '/../../data/c_reachability/' + robot.GetName() + '_'
+    base_map_filename = os.path.abspath(os.path.dirname(__file__)) + \
+        '/../../data/gnat_reachability/' + robot.GetName() + '_'
 
     # create_map(env, robot, 'right_arm_with_gripper', urdf_file)
     manip_name = 'left_arm_with_gripper'
     rmap_filename = base_map_filename + manip_name + '.npy'
-    create_map(env, robot, manip_name, urdf_file, rmap_filename)
+    # create_map(env, robot, manip_name, urdf_file, rmap_filename)
     left_rmap = load_map(env, robot, manip_name, urdf_file, rmap_filename)
     # right_rmap = load_map(env, robot, 'right_arm_with_gripper', urdf_file)
     manip = robot.GetManipulator(manip_name)

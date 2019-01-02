@@ -7,6 +7,7 @@ from itertools import product
 import sklearn.neighbors as skn
 import pose_distance
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
+import hfts_grasp_planner.yumi_reachability as gnat_reachability
 from hfts_grasp_planner.utils import inverse_transform, transform_pos_quats_by, get_manipulator_links,\
     get_ordered_arm_joints
 
@@ -265,7 +266,7 @@ class SimpleReachabilityMap(object):
         nearest neighbors.
     """
 
-    def __init__(self, manip, ik_solver):  # , weight=None):
+    def __init__(self, manip, ik_solver, nn_type=None):  # , weight=None):
         """
             Initialize a new simple reachability map.
             ---------
@@ -273,17 +274,23 @@ class SimpleReachabilityMap(object):
             ---------
             manip, OpenRAVE manipulator
             ik_solver, ik_solver.IKSolver - ik solver for the given manipulator
+            nn_type, string - Type for nearest neighbor data structure. May either be
+                'gnat', 'pyball', 'cball' or None in which case it is set to 'gnat'.
             # weight (optional), float - weight factor to scale between R^3 distance and SO(3) distance
             #     If not provided (None), the factor is set to the radius of the minimal bounding sphere of
             #     the manipulator's gripper.
         """
         self._reachable_poses = None
-        self._ball_tree = None
+        self._nn = None
         self._configurations = None
         self._manip = manip
         self._ik_solver = ik_solver
         self._eucl_dispersion = 0.0
         self._so3_dispersion = 0.0
+        if nn_type not in ['gnat', 'pyball', 'cball']:
+            self._nn_type = 'gnat'
+        else:
+            self._nn_type = nn_type
         # if weight is None:
         # weight = np.linalg.norm(self._manip.GetEndEffector().ComputeLocalAABB().extents())
         self._weight = YUMI_SE3_WEIGHT
@@ -298,7 +305,7 @@ class SimpleReachabilityMap(object):
             res_metric, float - grid distance in metric space
             so3depth, int - depth in so3hierarchy to sample in (0 = 72 orientations, >1 = 72 * 8^so3depth orientations)
         """
-        if self._ball_tree is not None:
+        if self._nn is not None:
             return
         robot = self._manip.GetRobot()
         assert(not robot.CheckSelfCollision())
@@ -358,7 +365,7 @@ class SimpleReachabilityMap(object):
                     rospy.logdebug("Tested %i of %i total poses. Found %i reachable poses so far." %
                                    (pose_id, num_total_poses, len(self._reachable_poses)))
         if len(self._reachable_poses) > 0:
-            self._create_ball_tree(self._reachable_poses)
+            self._create_nn(self._reachable_poses)
             self._configurations = np.array(self._configurations)
             rospy.loginfo("Created simple reachability map: %i reachable poses" %
                           (len(self._configurations)))
@@ -373,9 +380,10 @@ class SimpleReachabilityMap(object):
             ---------
             filename, string - path to where to load/save reachability map from
         """
+        dumpable_nn = self._nn if self._nn_type in ['pyball', 'cball'] else None
         data_to_dump = np.array([self._manip.GetRobot().GetName(), self._manip.GetName(),
                                  self._eucl_dispersion, self._so3_dispersion,
-                                 self._configurations, self._ball_tree], dtype=object)
+                                 self._configurations, self._reachable_poses, dumpable_nn, self._nn_type], dtype=object)
         np.save(filename, data_to_dump)
 
     def load(self, filename):
@@ -383,7 +391,7 @@ class SimpleReachabilityMap(object):
             Load reachability map from file.
         """
         start_time = time.time()
-        rname, mname, eucl_disp, so3_disp, configs, ball_tree = np.load(filename)
+        rname, mname, eucl_disp, so3_disp, configs, poses, nn, nn_type = np.load(filename)
         if self._manip.GetRobot().GetName() != rname:
             rospy.logerr("Could not load reachability map from file %s because it is made for a different robot" % filename)
             rospy.logerr("This map was created for robot %s. The file is for robot %s" %
@@ -398,8 +406,16 @@ class SimpleReachabilityMap(object):
         self._eucl_dispersion = eucl_disp
         self._so3_dispersion = so3_disp
         self._weight = YUMI_SE3_WEIGHT
-        self._ball_tree = ball_tree
-        self._reachable_poses = np.array(ball_tree.data)
+        if self._nn_type != nn_type:
+            rospy.logwarn("The reachability map that was requested to be loaded had nearest neighbor type %s, but this instance has %s" % (
+                nn_type, self._nn_type))
+            rospy.logwarn("Creating new nearest neighbor structure from loaded poses.")
+            self._create_nn(poses)
+        elif self._nn_type == 'gnat':
+            self._create_nn(poses)
+        else:
+            self._reachable_poses = poses
+            self._nn = nn
         rospy.logdebug("[SimpleReachabilityMap] Loading took %fs" % (time.time() - start_time))
 
     # def load(self, filename):
@@ -449,12 +465,12 @@ class SimpleReachabilityMap(object):
             inv_robot_tf = inverse_transform(robot_tf)
             poses = transform_pos_quats_by(inv_robot_tf, poses)
             # query for closest poses
-            distances, indices = self._ball_tree.query(poses)
+            distances, indices = self._nn.query(poses)
             indices = indices.reshape((indices.shape[0]))
             distances = distances.reshape((distances.shape[0]))
             nearest_poses = transform_pos_quats_by(robot_tf, self._reachable_poses[indices])
             configs = self._configurations[indices]
-            print 'Query took ', time.time() - start_time
+            rospy.logdebug('Reachability query took %fs' % (time.time() - start_time))
             return distances, nearest_poses, configs
 
     def get_dispersion(self):
@@ -469,11 +485,17 @@ class SimpleReachabilityMap(object):
         """
         return self._eucl_dispersion + self._weight * self._so3_dispersion  # TODO is this correct?
 
-    def _create_ball_tree(self, poses):
+    def _create_nn(self, poses):
         """
             Create ball tree from the given list of poses.
-            Sets self._reachable_poses and self._ball_tree.
+            Sets self._reachable_poses and self._nn.
         """
         self._reachable_poses = np.array(poses)
-        distance_metric = skn.DistanceMetric.get_metric('pyfunc', func=pose_distance.get_distance_fn())
-        self._ball_tree = skn.BallTree(self._reachable_poses, metric=distance_metric)
+        if self._nn_type == 'cball':
+            distance_metric = skn.DistanceMetric.get_metric('pyfunc', func=pose_distance.get_distance_fn())
+            self._nn = skn.BallTree(self._reachable_poses, metric=distance_metric)
+        elif self._nn_type == 'pyball':
+            distance_metric = skn.DistanceMetric.get_metric('pyfunc', func=yumi_distance_fn)
+            self._nn = skn.BallTree(self._reachable_poses, metric=distance_metric)
+        else:
+            self._nn = gnat_reachability.YumiReachabilityMap(self._reachable_poses)
