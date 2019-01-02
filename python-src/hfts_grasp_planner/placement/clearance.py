@@ -4,6 +4,7 @@ import scipy.ndimage.morphology
 import hfts_grasp_planner.sdf.occupancy as occupancy
 import hfts_grasp_planner.sdf.grid as grid_module
 import hfts_grasp_planner.sdf.core as sdf_core
+import hfts_grasp_planner.clearance_utils as clearance_utils
 
 """
     This module provides all functionality related to clearance maps.
@@ -16,42 +17,83 @@ import hfts_grasp_planner.sdf.core as sdf_core
 """
 
 
-def compute_clearance_map(occ_grid, sdf_grid=None):
+def compute_clearance_map(occ_grid):
     """
         Compute a clearance map from the given voxel grid.
         ---------
         Arguments
         ---------
         occ_grid, VoxelGrid - representing occupancy grid of the environment. The cell type must be bool!
-        sdf_grid, VoxelGrid (optional) - signed distance field along x,y,z computed from occ_grid
-            If not provided, this function computes this field.
         -------
         Returns
         -------
         clearance_map, VoxelGrid - grid representing the clearance map
     """
-    if sdf_grid is None:
-        sdf_grid = sdf_core.SDFBuilder.compute_sdf(occ_grid)
-    # next, compute sdf for each slice
     clearance_map = grid_module.VoxelGrid(np.array(occ_grid.get_workspace()),
                                           num_cells=np.array(occ_grid.get_num_cells()),
                                           cell_size=occ_grid.get_cell_size())
-    occ_transposed = occ_grid.get_raw_data().transpose()  # need to transpose for distance_transform
     clrm_data = clearance_map.get_raw_data()
-    clrm_data_t = clrm_data.transpose()
-    sdf_data_t = sdf_grid.get_raw_data().transpose()
-    max_distance = np.min(np.array(occ_transposed[0].shape) * occ_grid.get_cell_size()) / 2.0  # TODO what to set here?
-    # run over each layer
-    for idx in xrange(occ_transposed.shape[0]):
-        if np.any(occ_transposed[idx]):
-            inv_occ_layer = np.invert(occ_transposed[idx])
-            xy_distance_field = scipy.ndimage.morphology.distance_transform_edt(
-                inv_occ_layer, sampling=sdf_grid.get_cell_size())
-        else:
-            xy_distance_field = np.full(occ_transposed[idx].shape, max_distance)
-        clrm_data_t[idx] = xy_distance_field + sdf_data_t[idx]
+    occ_data = occ_grid.get_raw_data()
+    assert(occ_data.dtype == bool)
+    inv_occ_data = np.invert(occ_data)
+    adj_mask = np.ones((3, 3, 3), dtype=bool)
+    adj_mask[:, :, 2] = 0  # only propagate distances downwards and to the sides
+    an_arr = np.empty_like(clrm_data)
+    clearance_utils.compute_df(inv_occ_data, adj_mask, an_arr)
+    clrm_data = an_arr * occ_grid.get_cell_size()
     clearance_map.set_raw_data(clrm_data)
+    max_distance = np.min(np.array(occ_data.shape[:2]) * occ_grid.get_cell_size()) / 2.0  # TODO what to set here?
+    clrm_data[clrm_data == np.inf] = max_distance
     return clearance_map
+
+#     # run over each layer
+#     for idx in xrange(occ_transposed.shape[0]):
+#         if np.any(occ_transposed[idx]):
+#             inv_occ_layer = np.invert(occ_transposed[idx])
+#             xy_distance_field = scipy.ndimage.morphology.distance_transform_edt(
+#                 inv_occ_layer, sampling=sdf_grid.get_cell_size())
+#         else:
+#             xy_distance_field = np.full(occ_transposed[idx].shape, max_distance)
+#         clrm_data_t[idx] = xy_distance_field + sdf_data_t[idx]
+#     clearance_map.set_raw_data(clrm_data)
+#     return clearance_map
+
+# def compute_clearance_map(occ_grid, sdf_grid=None):
+#     """
+#         Compute a clearance map from the given voxel grid.
+#         ---------
+#         Arguments
+#         ---------
+#         occ_grid, VoxelGrid - representing occupancy grid of the environment. The cell type must be bool!
+#         sdf_grid, VoxelGrid (optional) - signed distance field along x,y,z computed from occ_grid
+#             If not provided, this function computes this field.
+#         -------
+#         Returns
+#         -------
+#         clearance_map, VoxelGrid - grid representing the clearance map
+#     """
+#     if sdf_grid is None:
+#         sdf_grid = sdf_core.SDFBuilder.compute_sdf(occ_grid)
+#     # next, compute sdf for each slice
+#     clearance_map = grid_module.VoxelGrid(np.array(occ_grid.get_workspace()),
+#                                           num_cells=np.array(occ_grid.get_num_cells()),
+#                                           cell_size=occ_grid.get_cell_size())
+#     occ_transposed = occ_grid.get_raw_data().transpose()  # need to transpose for distance_transform
+#     clrm_data = clearance_map.get_raw_data()
+#     clrm_data_t = clrm_data.transpose()
+#     sdf_data_t = sdf_grid.get_raw_data().transpose()
+#     max_distance = np.min(np.array(occ_transposed[0].shape) * occ_grid.get_cell_size()) / 2.0  # TODO what to set here?
+#     # run over each layer
+#     for idx in xrange(occ_transposed.shape[0]):
+#         if np.any(occ_transposed[idx]):
+#             inv_occ_layer = np.invert(occ_transposed[idx])
+#             xy_distance_field = scipy.ndimage.morphology.distance_transform_edt(
+#                 inv_occ_layer, sampling=sdf_grid.get_cell_size())
+#         else:
+#             xy_distance_field = np.full(occ_transposed[idx].shape, max_distance)
+#         clrm_data_t[idx] = xy_distance_field + sdf_data_t[idx]
+#     clearance_map.set_raw_data(clrm_data)
+#     return clearance_map
 
 
 if __name__ == "__main__":
@@ -59,11 +101,12 @@ if __name__ == "__main__":
     import IPython
     import mayavi.mlab
     base_path = os.path.dirname(__file__) + '/../../../'
-    sdf_file = base_path + 'data/sdfs/placement_exp_0_low_res'
-    sdf = sdf_core.SDF.load(sdf_file)
+    # sdf_file = base_path + 'data/sdfs/placement_exp_0_low_res'
+    # sdf = sdf_core.SDF.load(sdf_file)
     occ_file = base_path + 'data/occupancy_grids/placement_exp_0_low_res'
     occ = grid_module.VoxelGrid.load(occ_file)
-    clearance_map = compute_clearance_map(occ, sdf.get_grid())
+    # clearance_map = compute_clearance_map(occ, sdf.get_grid())
+    clearance_map = compute_clearance_map(occ)
     # grid = sdf._grid
     # grid = sdf._grid.get_subset(np.array((0, 0, 0)), np.array((1, 1.5, 1)))
     # cell_gen = grid.get_index_generator()
