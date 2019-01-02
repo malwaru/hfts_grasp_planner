@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   trajectory_msgs
   sensor_msgs
   message_generation
+  cmake_modules
 )
 
 # find_package(SWIG REQUIRED)
@@ -114,9 +115,9 @@ generate_dynamic_reconfigure_options(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
+ INCLUDE_DIRS include
 #  LIBRARIES hfts_grasp_planner
-#  CATKIN_DEPENDS roscpp rospy std_msgs
+ CATKIN_DEPENDS roscpp rospy std_msgs
 #  DEPENDS system_lib
 )
 
@@ -127,10 +128,14 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 # include_directories(include)
-include_directories(
+include_directories(include
   ${catkin_INCLUDE_DIRS}
   # ${PYTHON_INCLUDE_PATH}
 )
+
+add_subdirectory(src/hfts_grasp_planner/placement/reachability)
+# add_subdirectory(src/hfts_grasp_planner/placement/pose_distance)
+add_subdirectory(src/hfts_grasp_planner/placement/objective)
 
 # # Build swig python modules
 # set(CMAKE_SWIG_FLAGS "")
@@ -140,15 +145,15 @@ include_directories(
 
 # set_property(SOURCE ${PLCMNT_STABILITY_INTERFACE} PROPERTY CPLUSPLUS ON)
 # set_property(SOURCE ${PLCMNT_STABILITY_INTERFACE} PROPERTY CMAKE_SWIG_FLAGS "-includeall")
-# swig_add_library(placement_stability 
-#   # TYPE MODULE 
-#   LANGUAGE python 
+# swig_add_library(placement_stability
+#   # TYPE MODULE
+#   LANGUAGE python
 #   # OUTPUT_DIR ${CATKIN_DEVEL_PREFIX}/${CATKIN_PACKAGE_PYTHON_DESTINATION}
 #   SOURCES ${PLCMNT_STABILITY_INTERFACE} ${PLCMNT_STABILITY_SRC})
 # swig_link_libraries(placement_stability ${PYTHON_LIBRARIES})
 # # This makes sure the built library can be found by the python wrapper. This is properly not the best way of doing this
 # set_property(TARGET ${SWIG_MODULE_placement_stability_REAL_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY ${CATKIN_DEVEL_PREFIX}/${CATKIN_PACKAGE_PYTHON_DESTINATION})
-# set_target_properties(placement_stability 
+# set_target_properties(placement_stability
 #   PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CATKIN_PACKAGE_PYTHON_DESTINATION})
 
 ## Declare a C++ library

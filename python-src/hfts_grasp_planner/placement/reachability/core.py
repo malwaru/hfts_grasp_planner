@@ -1,11 +1,12 @@
 import rospy
 import time
 import numpy as np
-import so3hierarchy
 import openravepy as orpy
 from functools import partial
 from itertools import product
 import sklearn.neighbors as skn
+import pose_distance
+import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 from hfts_grasp_planner.utils import inverse_transform, transform_pos_quats_by, get_manipulator_links,\
     get_ordered_arm_joints
 
@@ -19,7 +20,7 @@ class ReachabilityMap(object):
     """
         Represents what end-effector poses relative to the robot
         frame are reachable.
-        TODO: Because sklearn data structures do not allow to save any data anotations, this 
+        TODO: Because sklearn data structures do not allow to save any data anotations, this
         TODO: class currently does not save arm configurations. (too much book keeping)
     """
 
@@ -211,7 +212,7 @@ class ReachabilityMap(object):
             -------
             Returns
             -------
-            eucl_dist, float - upper bound for end-effector position distance 
+            eucl_dist, float - upper bound for end-effector position distance
             so3_dist, float - upper bound for end-effector orientation distance
         """
         return self._eucl_dispersion, self._so3_dispersion
@@ -252,7 +253,7 @@ def yumi_distance_fn(a, b):
     if not np.isclose(angle, 0.0):
         # compute dot product of angle between rotation axis and z axis
         cos_alpha = q_b_in_a[3] / np.sin(angle)
-        radius = np.sqrt(YUMI_MAX_RADIUS**2 + cos_alpha**2 * YUMI_DELTA_SQ_RADII)
+        radius = np.sqrt(max(YUMI_MAX_RADIUS**2 + cos_alpha**2 * YUMI_DELTA_SQ_RADII, 0.0))
     return np.linalg.norm(a[:3] - b[:3]) + radius * angle
 
 
@@ -440,6 +441,7 @@ class SimpleReachabilityMap(object):
             nearest_poses, numpy array of shape (n, 7) - the closest reachable poses
             configs, numpy array of shape (n, 7) - arm configurations for closest reachable poses
         """
+        start_time = time.time()
         robot = self._manip.GetRobot()
         with robot:
             # transform query poses from world frame to robot frame
@@ -452,6 +454,7 @@ class SimpleReachabilityMap(object):
             distances = distances.reshape((distances.shape[0]))
             nearest_poses = transform_pos_quats_by(robot_tf, self._reachable_poses[indices])
             configs = self._configurations[indices]
+            print 'Query took ', time.time() - start_time
             return distances, nearest_poses, configs
 
     def get_dispersion(self):
@@ -472,5 +475,5 @@ class SimpleReachabilityMap(object):
             Sets self._reachable_poses and self._ball_tree.
         """
         self._reachable_poses = np.array(poses)
-        distance_metric = skn.DistanceMetric.get_metric('pyfunc', func=yumi_distance_fn)
+        distance_metric = skn.DistanceMetric.get_metric('pyfunc', func=pose_distance.get_distance_fn())
         self._ball_tree = skn.BallTree(self._reachable_poses, metric=distance_metric)
