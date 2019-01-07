@@ -8,6 +8,7 @@ import openravepy as orpy
 import skimage.measure as skm
 import hfts_grasp_planner.sdf.grid as grid_mod
 import scipy.ndimage.morphology as scipy_morph
+import hfts_grasp_planner.external.transformations as tf_mod
 
 
 class PlanarPlacementRegion(object):
@@ -36,8 +37,9 @@ class PlanarPlacementRegion(object):
         shift_tf = np.eye(4)
         shift_tf[:2, 3] = np.array((xshift, yshift)) * cell_size
         self.base_tf = np.dot(self.base_tf, shift_tf)
-        # width and depth in local frame
-        self.dimensions = cell_size * (np.max((self.x_indices, self.y_indices), axis=1) + 1)
+        # dimensions in local frame
+        self.dimensions = np.array([0, 0, cell_size])
+        self.dimensions[:2] = cell_size * (np.max((self.x_indices, self.y_indices), axis=1) + 1)
         assert(self.x_indices.shape[0] >= 1)
         assert(self.x_indices.shape[0] == self.y_indices.shape[0])
         self.cell_size = cell_size
@@ -49,32 +51,36 @@ class PlanarPlacementRegion(object):
         # also lift it by half the cell size
         self.contact_tf[:3, 3] += np.dot(self.base_tf[:3, :3],
                                          np.array((self.contact_xy[0], self.contact_xy[1], 0.5 * cell_size)))
+        # center of bounding box
+        self.center_tf = np.array(self.base_tf)
+        self.center_tf[:3, 3] += np.dot(self.base_tf[:3, :3], self.dimensions / 2.0)
         # next, compute radius of encompassing circle with center in contact_tf
         self.radius = np.max((np.linalg.norm(self.contact_xy),  # distance to origin
-                              np.linalg.norm(self.contact_xy - self.dimensions),  # distance to bounding box's max point
+                              # distance to bounding box's max point
+                              np.linalg.norm(self.contact_xy - self.dimensions[:2]),
                               # distance to right bottom point
                               np.linalg.norm(self.contact_xy - (self.dimensions[0], 0.0)),
                               np.linalg.norm(self.contact_xy - (0.0, self.dimensions[1]))))  # distance to left top point
         self.normal = np.dot(self.base_tf[:3, :3], np.array((0, 0, 1.0)))
         self._subregions = None
-        self.local_distance_field = None
-        self._compute_local_distance_field()
+        self.aabb_distance_field = None
+        self._compute_aabb_distance_field()
 
-    def _compute_local_distance_field(self):
-        workspace = np.array([0.0, 0.0, 0.0, self.dimensions[0], self.dimensions[1], self.cell_size])
+    def _compute_aabb_distance_field(self):
+        workspace = np.array([0.0, 0.0, 0.0, self.dimensions[0], self.dimensions[1], self.dimensions[2]])
         shape = np.array([0, 0, 1])
-        shape[:2] = (self.dimensions / self.cell_size).astype(int) + 2  # add some buffer to the sides
+        shape[:2] = (self.dimensions[:2] / self.cell_size).astype(int) + 2  # add some buffer to the sides
         shift_tf = np.eye(4)
         shift_tf[:2, 3] = np.array((1, 1)) * self.cell_size
-        self.local_distance_field = grid_mod.VoxelGrid(workspace, cell_size=self.cell_size,
-                                                       num_cells=shape,
-                                                       base_transform=np.dot(self.base_tf, shift_tf),
-                                                       dtype=bool)
-        raw_data = self.local_distance_field.get_raw_data()
+        self.aabb_distance_field = grid_mod.VoxelGrid(workspace, cell_size=self.cell_size,
+                                                      num_cells=shape,
+                                                      base_transform=np.dot(self.base_tf, shift_tf),
+                                                      dtype=bool)
+        raw_data = self.aabb_distance_field.get_raw_data()
         raw_data[:, :] = True
         raw_data[self.x_indices + 1, self.y_indices + 1] = False
         raw_data = scipy_morph.distance_transform_edt(raw_data, sampling=self.cell_size)
-        self.local_distance_field.set_raw_data(raw_data)
+        self.aabb_distance_field.set_raw_data(raw_data)
 
     def get_subregions(self):
         """
@@ -319,6 +325,7 @@ class PlanarRegionExtractor(object):
         # TODO should the subregions be constructed such that they have equal size?
         # construct subregions
         regions = []
+        grid_tf = grid.get_transform()
         for xi in xrange(num_regions[0]):
             for yi in xrange(num_regions[1]):
                 # compute base index of subregion
@@ -335,7 +342,7 @@ class PlanarRegionExtractor(object):
                     rel_tf[:3, 3] = grid.get_cell_position(
                         (base_region_idx[0], base_region_idx[1], layer), b_center=False, b_global_frame=False)
                     # compute tf for min cell of this region in world frame
-                    region_tf = np.dot(grid.get_transform(), rel_tf)
+                    region_tf = np.dot(grid_tf, rel_tf)
                     # create plcmnt region
                     new_region = PlanarPlacementRegion(
                         sxx - base_region_idx[0], syy - base_region_idx[1], region_tf, grid.get_cell_size())

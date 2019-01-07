@@ -1,11 +1,7 @@
 #include <cmath>
 #include <hfts_grasp_planner/placement/reachability/reachability.h>
-#include <iostream>
 
 namespace py = pybind11;
-// void hello_world() {
-//     std::cout << "Hello World!" << std::endl;
-// }
 
 #define DELTA_EPSILON 0.00001
 #define YUMI_SE3_WEIGHT 0.07131
@@ -55,7 +51,6 @@ double eef_pose_distance_fn(const EndEffectorPose& a, const EndEffectorPose& b)
 
 YumiReachabilityMap::YumiReachabilityMap(py::array_t<double, py::array::c_style | py::array::forcecast>& data)
 {
-    std::cout << "Constructor call" << std::endl;
     if (data.ndim() != 2) {
         throw std::runtime_error("Input array data must have dimension 2");
     }

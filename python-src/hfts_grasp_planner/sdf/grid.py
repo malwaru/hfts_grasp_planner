@@ -223,6 +223,24 @@ class VoxelGrid(object):
         """
         return self._aabb
 
+    def get_aabb(self, bWorld=False):
+        """
+            Return axis aligned bounding box.
+            ---------
+            Arguments
+            ---------
+            bWorld, bool - if True return it in world frame, else in local frame.
+            -------
+            Returns
+            -------
+            np.array of shape (6,) where aabb[:3] is the min point and aabb[3:] the max point
+        """
+        if bWorld:
+            global_aabb = np.dot(self._transform[:3, :3], self._aabb.reshape(
+                (2, 3)).transpose()).transpose() + self._transform[:3, 3]
+            return global_aabb.reshape((6,))
+        return np.array(self._aabb)
+
     def get_type(self):
         """
             Return the type of cell values.
@@ -688,13 +706,6 @@ class VoxelGrid(object):
         if max_idx is None:
             max_idx = self._num_cells
         return np.min(self._cells[min_idx[0] + 1:max_idx[0] + 1, min_idx[1] + 1:max_idx[1] + 1, min_idx[2] + 1:max_idx[2] + 1])
-
-    def get_aabb(self):
-        """
-            Returns the local axis aligned bounding box of this grid.
-            This is essentially the bounding box passed to the constructor.
-        """
-        return np.array(self._aabb)
 
     def set_transform(self, transform):
         """

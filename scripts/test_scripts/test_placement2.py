@@ -190,6 +190,9 @@ if __name__ == "__main__":
         gpu_kit = plcmnt_regions_mod.PlanarRegionExtractor()
         surface_grid, labels, num_regions, regions = gpu_kit.extract_planar_regions(
             occ_target_volume, max_region_size=0.2)
+        if num_regions == 0:
+            print "No placement regions found"
+            sys.exit(0)
         obj_radius = np.linalg.norm(target_object.ComputeAABB().extents())
         sufrace_distance_grid = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid,
                                                                                                         2.0 * obj_radius)
@@ -227,11 +230,19 @@ if __name__ == "__main__":
             robot_octree = robot_sdf_module.RobotOccupancyOctree(
                 problem_desc['parameters']['occ_tree_cell_size'], robot, link_names)
             robot_octree.save(problem_desc['robot_occtree'])
-        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_octree, manip_data)
+        urdf_content = None
+        with open(problem_desc['urdf_file'], 'r') as urdf_file:
+            urdf_content = urdf_file.read()
+        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_octree, manip_data, urdf_content)
         # create object data
         obj_octree = kinbody_sdf_module.OccupancyOctree(
             problem_desc['parameters']['occ_tree_cell_size'], target_object.GetLinks()[0])
         object_data = arpo_placement_mod.ARPORobotBridge.ObjectData(target_object, obj_octree)
+        # create arpo hierarchy
+        hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
+        arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
+                                                         object_data=object_data, objective_fn=None,
+                                                         contact_point_distances=sufrace_distance_grid, scene_sdf=scene_sdf)
         # visualize placement regions
         env.SetViewer('qtcoin')  # WARNING: IK solvers also need to be created before setting the viewer
         handles = []
@@ -239,17 +250,9 @@ if __name__ == "__main__":
         # handles = visualize_occupancy_grid(env, surface_grid, color=np.array([1.0, 0.0, 0.0, 0.2]))
         handles.extend(plcmnt_regions_mod.visualize_plcmnt_regions(
             env, regions, height=occ_target_volume.get_cell_size(), level=1))
-        print "Check the placement regions!"
-        IPython.embed()
-        if num_regions == 0:
-            print "No placement regions found"
-            sys.exit(0)
-        handles = []
-        # create arpo hierarchy
-        hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
-        arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
-                                                         object_data=object_data, objective_fn=None,
-                                                         contact_point_distances=sufrace_distance_grid, scene_sdf=scene_sdf)
+        # print "Check the placement regions!"
+        # IPython.embed()
+        # handles = []
         if args.debug:
             mcts_visualizer = mcts_visualizer_mod.MCTSVisualizer(robot, target_object)
         else:

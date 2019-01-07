@@ -5,6 +5,7 @@ import numpy as np
 import openravepy as orpy
 import trac_ik_python.trac_ik as trac_ik
 import hfts_grasp_planner.utils as utils
+import hfts_grasp_planner.urdf_loader as urdf_utils_mod
 
 
 class IKSolver(object):
@@ -14,19 +15,24 @@ class IKSolver(object):
         trac_ik is used to solve ik queries.
     """
 
-    def __init__(self, manipulator, urdf_file_name=None):
+    def __init__(self, manipulator, urdf_file_name=None, urdf_content=None, timeout=0.005):
         """
             Create a new IKSolver.
             NOTE: This function does not attempt to create a new IKFast model, it only tries to load one.
             If you want to try to create a model, call try_gen_ik_fast().
+            NOTE: You can create an IK solver for a tooltip pose relative to the manipulator's end-effector
+            by setting the local tool transform. Once created, this IKSolver will not update the transform.
+            Hence, if you change the local transform on the manipulator subsequent to calling this constructor,
+            this will have no effect on this IKSolver. (TODO does this also hold for IKFast?)
             ---------
             Arguments
             ---------
             manipulator, OpenRAVE manipulator to solve IK for
             urdf_file_name, string (optional) - filename of urdf description file of the robot. If provided and there is no
                 IKFast model available for the robot, this is used to load trac_ik.
+            urdf_content, string (optional) - alternatively provide the urdf content (not the filename)
+            timeout, float (optional) - timeout in seconds for trac-ik
         """
-        self._urdf_file_name = urdf_file_name
         self._manip = manipulator
         self._robot = self._manip.GetRobot()
         self._env = self._robot.GetEnv()
@@ -39,13 +45,24 @@ class IKSolver(object):
         self._lower_limits, self._upper_limits = self._robot.GetDOFLimits(self._arm_indices)
         if not self._or_arm_ik.load():
             self._or_arm_ik = None
-        if urdf_file_name is not None and self._or_arm_ik is None:
-            urdf_content = None
-            with open(urdf_file_name, 'r') as file:
-                urdf_content = file.read()
+        if (urdf_file_name is not None or urdf_content is not None) and self._or_arm_ik is None:
+            if urdf_content is None:
+                if urdf_file_name is None:
+                    raise ValueError("Either urdf_file_name or urdf_content must be provided when using trac_ik.")
+                with open(urdf_file_name, 'r') as file:
+                    urdf_content = file.read()
+            tooltip_name = self._manip.GetEndEffector().GetName()
+            local_tool_tf = self._manip.GetLocalToolTransform()
+            # check whether we have customized tooltip point, if yes, update urdf
+            if not np.allclose(local_tool_tf, np.eye(4)):
+                tooltip_name = '_custom_tool_tip_pose_'
+                urdf_content = urdf_utils_mod.add_grasped_obj(
+                    urdf_content, self._manip.GetEndEffector().GetName(), tooltip_name, local_tool_tf)
+            # create trac_ik solver
             self._trac_ik_solver = trac_ik.IK(str(self._manip.GetBase().GetName()),
-                                              str(self._manip.GetEndEffector().GetName()),
-                                              urdf_string=urdf_content)
+                                              str(tooltip_name),
+                                              urdf_string=urdf_content,
+                                              timeout=timeout)
             self._trac_ik_solver.set_joint_limits(self._lower_limits, self._upper_limits)
         self._parameters = {  # TODO make this settable?
             'num_trials': 10,
@@ -68,7 +85,7 @@ class IKSolver(object):
                     self._or_arm_ik = None
             return False
 
-    def compute_ik(self, pose, seed=None):
+    def compute_ik(self, pose, seed=None, **kwargs):
         """
             Compute an inverse kinematics solution for the given pose.
             This function does not check for collisions and the returned solution is only guaranteed to be within joint limits.
@@ -77,6 +94,8 @@ class IKSolver(object):
             ---------
             pose, numpy array of shape (4, 4) - end-effector transformation matrix
             seed, numpy array of shape (q,) - initial arm configuration to search from (q is the #DOFs of the arm)
+            further key word arguments:
+                tolerances for ik solver (in target pose frame): bx, by, bz, brx, bry, brz - defaults to small values (only supported with trac_ik)
             -------
             Returns
             -------
@@ -84,6 +103,8 @@ class IKSolver(object):
         """
         with self._robot:
             if self._or_arm_ik:
+                if kwargs is not None:
+                    rospy.logwarn('IkSolver: Tolerances are only suppported when using trac_ik')
                 if seed is not None:
                     self._robot.SetDOFValues(seed, dofindices=self._arm_indices)
                 return self._manip.FindIKSolution(pose, orpy.IkFilterOptions.IgnoreCustomFilters)
@@ -100,7 +121,8 @@ class IKSolver(object):
                                                   y=pose_in_base[1, 3],
                                                   z=pose_in_base[2, 3],
                                                   rx=quat[1], ry=quat[2],
-                                                  rz=quat[3], rw=quat[0])
+                                                  rz=quat[3], rw=quat[0],
+                                                  **kwargs)
                 if sol is not None:
                     sol = np.array(sol)
                     in_limits = np.logical_and.reduce(np.logical_and(
@@ -113,7 +135,7 @@ class IKSolver(object):
             else:
                 raise RuntimeError("Neither IKFast nor TracIK is available. Can not solve IK queries!")
 
-    def compute_collision_free_ik(self, pose, seed=None):
+    def compute_collision_free_ik(self, pose, seed=None, **kwargs):
         """
             Compute a collision-free inverse kinematics solution for the given pose.
             ---------
@@ -121,6 +143,8 @@ class IKSolver(object):
             ---------
             pose, numpy array of shape (4, 4) - end-effector transformation matrix
             seed, numpy array of shape (q,) - initial arm configuration to search from (q is the #DOFs of the arm)
+            further key word arguments:
+                tolerances for ik solver (in target pose frame): bx, by, bz, brx, bry, brz - defaults to small values (only supported with trac_ik)
             -------
             Returns
             -------
@@ -129,6 +153,8 @@ class IKSolver(object):
         """
         with self._robot:
             if self._or_arm_ik:
+                if kwargs is not None:
+                    rospy.logwarn('IkSolver: Tolerances are only suppported when using trac_ik')
                 if seed is not None:
                     self._robot.SetDOFValues(seed, dofindices=self._arm_indices)
                 sol = self._manip.FindIKSolution(pose, orpy.IkFilterOptions.CheckEnvCollisions)
@@ -149,7 +175,8 @@ class IKSolver(object):
                                                       y=pose_in_base[1, 3],
                                                       z=pose_in_base[2, 3],
                                                       rx=quat[1], ry=quat[2],
-                                                      rz=quat[3], rw=quat[0])
+                                                      rz=quat[3], rw=quat[0],
+                                                      **tol)
                     if sol is not None:
                         np_sol = np.array(sol)
                         in_limits = np.logical_and.reduce(np.logical_and(

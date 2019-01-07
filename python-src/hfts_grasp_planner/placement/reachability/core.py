@@ -266,14 +266,13 @@ class SimpleReachabilityMap(object):
         nearest neighbors.
     """
 
-    def __init__(self, manip, ik_solver, nn_type=None):  # , weight=None):
+    def __init__(self, manip, nn_type=None):  # , weight=None):
         """
             Initialize a new simple reachability map.
             ---------
             Arguments
             ---------
             manip, OpenRAVE manipulator
-            ik_solver, ik_solver.IKSolver - ik solver for the given manipulator
             nn_type, string - Type for nearest neighbor data structure. May either be
                 'gnat', 'pyball', 'cball' or None in which case it is set to 'gnat'.
             # weight (optional), float - weight factor to scale between R^3 distance and SO(3) distance
@@ -284,7 +283,6 @@ class SimpleReachabilityMap(object):
         self._nn = None
         self._configurations = None
         self._manip = manip
-        self._ik_solver = ik_solver
         self._eucl_dispersion = 0.0
         self._so3_dispersion = 0.0
         if nn_type not in ['gnat', 'pyball', 'cball']:
@@ -304,6 +302,7 @@ class SimpleReachabilityMap(object):
             ---------
             res_metric, float - grid distance in metric space
             so3depth, int - depth in so3hierarchy to sample in (0 = 72 orientations, >1 = 72 * 8^so3depth orientations)
+            ik_solver, ik_solver.IKSolver - ik solver for the given manipulator
         """
         if self._nn is not None:
             return
@@ -349,7 +348,7 @@ class SimpleReachabilityMap(object):
                 for quat in quats:
                     pose = orpy.matrixFromQuat(quat)
                     pose[:3, 3] = pos
-                    config = self._ik_solver.compute_ik(pose)
+                    config = ik_solver.compute_ik(pose)
                     if config is not None:
                         robot.SetDOFValues(config, arm_indices)
                         if not robot.CheckSelfCollision():
