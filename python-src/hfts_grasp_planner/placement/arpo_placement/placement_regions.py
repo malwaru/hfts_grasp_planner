@@ -67,14 +67,13 @@ class PlanarPlacementRegion(object):
         self._compute_aabb_distance_field()
 
     def _compute_aabb_distance_field(self):
-        workspace = np.array([0.0, 0.0, 0.0, self.dimensions[0], self.dimensions[1], self.dimensions[2]])
+        workspace = np.array([-self.cell_size, -self.cell_size, 0.0, self.dimensions[0] + self.cell_size,
+                              self.dimensions[1] + self.cell_size, self.dimensions[2]])
         shape = np.array([0, 0, 1])
         shape[:2] = (self.dimensions[:2] / self.cell_size).astype(int) + 2  # add some buffer to the sides
-        shift_tf = np.eye(4)
-        shift_tf[:2, 3] = np.array((1, 1)) * self.cell_size
         self.aabb_distance_field = grid_mod.VoxelGrid(workspace, cell_size=self.cell_size,
                                                       num_cells=shape,
-                                                      base_transform=np.dot(self.base_tf, shift_tf),
+                                                      base_transform=self.base_tf,
                                                       dtype=bool)
         raw_data = self.aabb_distance_field.get_raw_data()
         raw_data[:, :] = True

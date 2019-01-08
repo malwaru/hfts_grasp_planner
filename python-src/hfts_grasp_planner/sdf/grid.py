@@ -78,7 +78,7 @@ class VoxelGrid(object):
                                     ([x, y, z], [wx, wy, wz]), where x,y,z are the position of the center
                                     and wx, wy, wz are the dimensions of the box
             @param cell_size - cell size of the voxel grid (in meters)
-            @param base_transform - if not None, any query point is transformed by base_transform
+            @param base_transform (optional) - transformation matrix from workspace frame to some world frame (default identity)
             b_additional_data - if True, each voxel can be associated with additional data of object type
             num_cells - if provided, the number of cells is not computed from the workspace aabb, but instead
                 set to the given one. The actual workspace this grid covers spans then from the min position in

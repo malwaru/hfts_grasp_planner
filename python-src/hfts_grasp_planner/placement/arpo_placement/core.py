@@ -902,9 +902,9 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 self._robot_data.robot.SetDOFValues(arm_config, manip_data.manip.GetArmIndices())
                 cache_entry.eef_tf = manip_data.manip.GetEndEffectorTransform()
                 cache_entry.solution.obj_tf = np.dot(cache_entry.eef_tf, manip_data.inv_grasp_tf)
-            rospy.logdebug("IK-Trac found an intial ik-solution for placement region.")
+            rospy.logdebug("Trac-IK found an intial ik-solution for placement region.")
         else:
-            rospy.logdebug("IK-Trac FAILED to compute initial solution. Setting default object tf.")
+            rospy.logdebug("Trac-IK FAILED to compute initial solution. Setting default object tf.")
             self._compute_object_pose(cache_entry)
         # TODO further optimize configuration
 
