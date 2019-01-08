@@ -340,6 +340,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             self.inv_grasp_tf = utils.inverse_transform(self.grasp_tf)
             self.reachability_map = reachability_map
             self.ik_solver = ik_solver
+            self.lower_limits, self.upper_limits = self.manip.GetRobot().GetDOFLimits(manip.GetArmIndices())
 
     class SolutionCacheEntry(object):
         """
@@ -365,11 +366,12 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             be in contact with a support surface, i.e. within a placement region.
         """
 
-        def __init__(self, contact_point_distances):
+        def __init__(self, global_region_info):
             """
                 Create a new instance of contact constraint.
             """
-            self._contact_point_distances = contact_point_distances
+            self._contact_point_distances = global_region_info[0]
+            self._contact_point_gradients = global_region_info[1]
 
         def check_contacts(self, cache_entry):
             """
@@ -424,14 +426,17 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 return 0.0  # contact points are out of range, that means it's definitely a bad placement
             # TODO this may still fail if placement planes are not perfect planes...
             # TODO I.e. the height variance is larger than the cell size
-            # assert((values != float('inf')).all())
-            if not (values != float('inf')).all():
-                print "ERROROROROROROROROROROR"
-                import IPython
-                IPython.embed()
+            assert((values != float('inf')).all())
             # get max distance. Clip it because the signed distance field isn't perfectly accurate
             max_distance = np.clip(np.max(values), 0.0, po.max_contact_pair_distance)
             return 1.0 - max_distance / po.max_contact_pair_distance
+
+        def compute_cart_gradient(self, ref_pose):
+            """
+                Return the gradient w.r.t x, y, ez of distance to contacts.
+            """
+            # TODO implement me
+            return np.zeros(3)
 
     class CollisionConstraint(object):
         """
@@ -665,9 +670,107 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
     #         """
     #         # TODO requires known objective values so far
     #         pass
+    class JacobianOptimizer(object):
+        """
+            Optimization algorithm that follows the gradient of all contraints to locally search for
+            feasible solutions.
+        """
+
+        def __init__(self, contact_constraint, collision_constraint, objective_constraint, robot_data):
+            """
+                Create a new JacobianOptimizer.
+                ---------
+                Arguments
+                ---------
+                contact_constraint, ContactConstraint
+                collision_constraint, CollisionConstraint
+                objective_constraint, ObjectiveConstraint TODO
+            """
+            self.contact_constraint = contact_constraint
+            self.collision_constraint = collision_constraint
+            self.objective_constraint = objective_constraint
+            self.robot_data = robot_data
+            self.manip_data = robot_data.manip_data
+            self.epsilon = 0.001
+            self.robot = robot_data.robot
+
+        def optimize(self, cache_entry):
+            """
+                Attempt to make the arm configuration in cache_entry to feasible.
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                ------------
+                Side effects
+                ------------
+                cache_entry.solution.obj_tf, numpy array of shape (4, 4) - pose of the object is stored here
+                cache_entry.eef_tf, numpy array of shape (4, 4) - pose of the end-effector is stored here
+                cache_entry.solution.arm_config, numpy array of shape (n,) - arm configuration (n DOFs)
+            """
+            rospy.logdebug("Running JacobianOptimizer to make solution feasible")
+            manip_data = self.manip_data[cache_entry.solution.manip.GetName()]
+            lower, upper = manip_data.lower_limits, manip_data.upper_limits
+            manip = manip_data.manip
+            with self.robot:
+                reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+                manip.SetLocalToolTransform(reference_pose)
+                self.robot.SetActiveDOFs(manip.GetArmIndices())
+                # init jacobian descent
+                q_current = cache_entry.solution.arm_config
+                q_best = q_current
+                # compute jacobian
+                q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                # iterate as long as the gradient is not zero and we are not beyond limits
+                while np.linalg.norm(q_grad) > self.epsilon and b_in_limits and q_grad is not None:
+                    q_current -= q_grad
+                    b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                    if b_in_limits:
+                        # save q_current and compute next jacobian + gradient
+                        q_best = q_current
+                        q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                    else:
+                        rospy.logdebug("Jacobian descent as led to joint limit violation. Aborting")
+                rospy.logdebug("Jacobian descent finished")
+                cache_entry.solution.arm_config = q_best
+
+        def _compute_gradient(self, cache_entry, q_current, manip_data):
+            """
+                Compute gradient for the current configuration.
+            """
+            manip = manip_data.manip
+            jacobian = np.empty((6, manip.GetArmDOF()))
+            with self.robot:
+                # compute jacobian
+                self.robot.SetActiveDOFValues(q_current)
+                jacobian[:3] = manip.CalculateJacobian()
+                jacobian[3:] = manip.CalculateAngularVelocityJacobian()
+                # compute pseudo inverse
+                inv_jac = np.linalg.pinv(jacobian)
+                # TODO check for singularity in x, y, ez?
+                # Compute gradient w.r.t. constraints
+                # get pose of placement reference point
+                ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
+                # 1. Region constraint - reference point needs to be within the selected placement region
+                region = cache_entry.region
+                b_valid, region_pos_grad = region.aabb_dist_gradient_field.get_interpolated_vectors(
+                    ref_pose[:3, 3].reshape((1, 3)))
+                if not b_valid[0]:
+                    rospy.logdebug("Jacobian descent failed. It went out of the placement region's aabb.")
+                    return None
+                cart_grad_r = np.array([region_pos_grad[0, 0], region_pos_grad[0, 1], 0.0])
+                # TODO check whether theta is out of range, and return None in that case
+                # 2. Stability - all contact points need to be in a placement region (any)
+                cart_grad_c = self.contact_constraint.compute_cart_gradient(ref_pose)
+                cart_grad = cart_grad_r + cart_grad_c
+                # Translate cart_grad to q_grad using javobian inverse
+                qgrad = np.matmul(inv_jac, np.array([cart_grad[0], cart_grad[1], 0.0, 0.0, 0.0, cart_grad[2]]))
+                # TODO compute gradient based on collisions
+                return qgrad
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
-                 objective_fn, contact_point_distances, scene_sdf):
+                 objective_fn, global_region_info, scene_sdf):
         """
             Create a new ARPORobotBridge
             ---------
@@ -677,15 +780,15 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             robot_data, RobotData - struct that stores robot information including ManipulatorData for each manipulator
             object_data, ObjectData - struct that stores object information
             objective_fn, ??? - TODO
-            contact_point_distances, VoxelGrid with float values - stores for the scene distances to where
-                contact points may be located
+            global_region_info, (VoxelGrid, VectorGrid) - stores for the full planning scene distances to where
+                contact points may be located, as well as gradients
         """
         self._hierarchy = arpo_hierarchy
         self._robot_data = robot_data
         self._manip_data = robot_data.manip_data  # shortcut to manipulator data
         self._objective_fn = objective_fn
         self._object_data = object_data
-        self._contact_constraint = ARPORobotBridge.ContactConstraint(contact_point_distances)
+        self._contact_constraint = ARPORobotBridge.ContactConstraint(global_region_info)
         self._collision_constraint = ARPORobotBridge.CollisionConstraint(object_data, robot_data, scene_sdf)
         self._reachability_constraint = ARPORobotBridge.ReachabilityConstraint(robot_data, True)
         # self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint() # TODO move this into goal sampler
@@ -693,6 +796,8 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         self._call_stats = np.array([0, 0, 0, 0])  # num sol constructions, is_valid, get_relaxation, evaluate
         self._plcmnt_ik_solvers = {}  # maps (manip_id, placement_orientation_id) to a trac_ik solver
         self._init_ik_solvers()
+        self._jacobian_optimizer = ARPORobotBridge.JacobianOptimizer(self._contact_constraint, self._collision_constraint,
+                                                                     None, self._robot_data)  # TODO objective constraint?
 
     def construct_solution(self, key, b_optimize_constraints=False, b_optimize_objective=False):
         """
@@ -898,15 +1003,16 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                                                  bz=position_extents[2]/4.0, brz=angle_range / 2.0)
         if arm_config is not None:
             cache_entry.solution.arm_config = arm_config
+            rospy.logdebug("Trac-IK found an intial ik-solution for placement region.")
+            self._jacobian_optimizer.optimize(cache_entry)
+            # compute object_pose and end-effector transform TODO: do we need this here after the jacobian optimizer finished?
             with self._robot_data.robot:
-                self._robot_data.robot.SetDOFValues(arm_config, manip_data.manip.GetArmIndices())
+                self._robot_data.robot.SetDOFValues(cache_entry.solution.arm_config, manip_data.manip.GetArmIndices())
                 cache_entry.eef_tf = manip_data.manip.GetEndEffectorTransform()
                 cache_entry.solution.obj_tf = np.dot(cache_entry.eef_tf, manip_data.inv_grasp_tf)
-            rospy.logdebug("Trac-IK found an intial ik-solution for placement region.")
         else:
             rospy.logdebug("Trac-IK FAILED to compute initial solution. Setting default object tf.")
             self._compute_object_pose(cache_entry)
-        # TODO further optimize configuration
 
     def _get_plcmnt_ik_solver(self, cache_entry):
         """

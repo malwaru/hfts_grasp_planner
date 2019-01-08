@@ -194,8 +194,7 @@ if __name__ == "__main__":
             print "No placement regions found"
             sys.exit(0)
         obj_radius = np.linalg.norm(target_object.ComputeAABB().extents())
-        sufrace_distance_grid = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid,
-                                                                                                        2.0 * obj_radius)
+        global_region_info = plcmnt_regions_mod.PlanarRegionExtractor.compute_surface_distance_field(surface_grid, 2.0 * obj_radius)
         # prepare robot data
         robot = env.GetRobot(problem_desc['robot_name'])
         # extract manipulators
@@ -242,7 +241,7 @@ if __name__ == "__main__":
         hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
         arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
                                                          object_data=object_data, objective_fn=None,
-                                                         contact_point_distances=sufrace_distance_grid, scene_sdf=scene_sdf)
+                                                         global_region_info=global_region_info, scene_sdf=scene_sdf)
         # visualize placement regions
         env.SetViewer('qtcoin')  # WARNING: IK solvers also need to be created before setting the viewer
         handles = []

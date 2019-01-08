@@ -734,99 +734,183 @@ class VoxelGrid(object):
         return self._additional_data is not None
 
 
-# class SliceGrid(object):
-#     """
-#         This class represents a grid made of x-y slices with distinct z coordinates, i.e.
-#         a sparse grid along the z coordinate.
-#     """
+class VectorGrid(object):
+    """
+        A VectorGrid is somehow similar to a VoxelGrid, except that it stores a 3D vector for each cell.
+        It also supports trilinear interpolation. The interface is significantly slimmer though.
+        You can directly access the underlying numpy array of shape (3, nx, ny, nz) through
+        grid.vectors. To read vectors with interpolated values, call get_interpolated_vectors(..).
+    """
 
-#     def __init__(self, cell_size, base_transform=None):
-#         """
-#             Create a new SliceGrid.
-#             ---------
-#             Arguments
-#             ---------
-#             cell_size, float - size of cells
-#             base_transform - if not None, any query point is transformed by base_transform
-#         """
-#         self._slices = {}
-#         self._cell_size = cell_size
-#         if base_transform is None:
-#             base_transform = np.eye(4)
-#         self._base_transform = base_transform
+    def __init__(self, workspace, cell_size=0.02, base_transform=None, num_cells=None, b_in_slices=False):
+        """
+            Create a new VectorGrid covering the given workspace.
+            ---------
+            Arguments
+            ---------
+            workspace, np.array of shape (6,) - (minx, miny, minz, maxx, maxy, maxz)
+            cell_size, float - size of a single voxel
+            base_transform, np.array of shape (4, 4) - transformation matrix from workspace
+                frame to some global frame
+            num_cells, tuple of length 3 - number of cells. If provided, the actual workspace is computed
+                as (workspace[:3], workspace[3:] + num_cells * cell_size)
+            b_in_slices, bool - if True, this grid stores a stack of 2D vector fields, else 3D Vectors
+        """
+        self._aabb = np.array(workspace)
+        if base_transform is None:
+            self._transform = np.eye(4)
+        else:
+            self._transform = np.array(base_transform)
+        self._inv_transform = inverse_transform(self._transform)
+        if num_cells is not None:
+            self._num_cells = num_cells
+            self._aabb[3:] = self._aabb[:3] + self._num_cells * cell_size
+        else:
+            self._num_cells = np.ceil((self._aabb[3:] - self._aabb[:3]) / cell_size).astype(int)
+        if b_in_slices:
+            self._vec_dim = 2
+        else:
+            self._vec_dim = 3
+        shape = (self._vec_dim, self._num_cells[0], self._num_cells[1], self._num_cells[2])
+        self.vectors = np.zeros(shape)
+        self._cell_size = cell_size
 
-#     def add_slice(self, slice_arr, z):
-#         """
-#             Add a new slice to this grid.
-#             ---------
-#             Arguments
-#             ---------
-#             slice, np.array - array representing new slice
-#             z, float - lower z coordinate in local grid frame
-#         """
-#         z_index = z / self._cell_size
-#         self._slices[z_index] = slice_arr
+    def get_interpolated_vectors(self, positions, b_world_frame=True):
+        """
+            Return interpolated vectors for the given positions.
+            ---------
+            Arguments
+            ---------
+            positions, numpy array of shape (n, 3) - query positions
+            b_world_frame, bool - if True, positions are mapped to local frame first
+            -------
+            Returns
+            -------
+            valid_flags, np.array of shape (n,) of type bool - element i is True if position[i]
+                lies within the workspace of this grid, else False
+            vectors, np.array of shape (m, v) - interpolated vectors for the m<=n positions that
+                lie inside this grid's workspace. v is either 3 (b_sliced=False) or 2 (b_sliced=True).
+        """
+        if b_world_frame:
+            # map to local frame (recall that self._transform[:3, :3] = self._inv_transform[:3, :3].transpose())
+            positions = np.dot(positions, self._transform[:3, :3]) + self._inv_transform[:3, 3]
+        lower_bound_ok = np.logical_and.reduce(positions >= self._aabb[:3], axis=1)
+        upper_bound_ok = np.logical_and.reduce(positions < self._aabb[3:], axis=1)
+        valid_flags = np.logical_and(lower_bound_ok, upper_bound_ok)
+        return_values = np.empty((0, self._vec_dim))
+        if valid_flags.any():
+            grid_indices = (positions[valid_flags] - self._aabb[:3]) / self._cell_size
+            return_values = np.empty((self._vec_dim, grid_indices.shape[0]))
+            # - 0.5 for center of cells
+            tindices = grid_indices.transpose() + 0.5
+            return_values[0] = ndimage.map_coordinates(self.vectors[0], tindices, order=1)
+            return_values[1] = ndimage.map_coordinates(self.vectors[1], tindices, order=1)
+            if self._vec_dim == 3:
+                return_values[2] = ndimage.map_coordinates(self.vectors[2], tindices, order=1)
+        if not np.isclose(self._transform[:3, :3], np.eye(3)).all():
+            rotated_values = np.empty_like(return_values)
+            rotated_values[0] = self._transform[0, 0] * return_values[0] + self._transform[0, 1] * return_values[1]
+            rotated_values[1] = self._transform[1, 0] * return_values[0] + self._transform[1, 1] * return_values[1]
+            if self._vec_dim == 3:
+                rotated_values[0] += self._transform[0, 2] * return_values[2]
+                rotated_values[1] += self._transform[1, 2] * return_values[2]
+                rotated_values[2] = self._transform[2, 0] * return_values[0] + self._transform[2, 1] * return_values[1] + \
+                    self._transform[2, 2] * return_values[2]
+            return_values = rotated_values
+        return valid_flags, return_values.transpose()
 
-#     def get_values(self, positions, binterpolate=True):
-#         """
-#             Query the slice grid for values corresponding with the given positions.
-#             ---------
-#             Arguments
-#             ---------
-#             position, np.array of shape (n, 3) - query position
-#             binterpolate, bool - If True, performs bilinear interpolation for positions within a slice if the type
-#                 allows it
-#             -------
-#             Returns
-#             -------
-#             values, np.array of shape (n,) - values. The type of the returned values depends on the type of the slices.
-#                 If any position falls outside the x,y range of a slice, or not into a slice w.r.t. to its z position,
-#                 None is returned for that position.
-#         """
-#         # allocate response array
-#         responses = np.empty((positions.shape[0],), dtype=object)
-#         # transform positions to base frame
-#         local_points = np.dot(positions, self._base_transform[:3, :3].transpose()) + self._base_transform[:3, 3]
-#         # compute what indices they would have in a 3d grid
-#         grid_indices = local_points / self._cell_size
-#         # now compute z indices, i.e. indices for slices
-#         z_values = np.floor(grid_indices[:, 2])
-#         unique_z_values = np.unique(z_values)  # unique indices for slices
-#         # run over each z index
-#         for z in unique_z_values:
-#             # get the indices of query positions that share the same z index
-#             query_idx_with_z = z_values == z
-#             # check whether we have a slice for that z index
-#             if z in self._slices:
-#                 # if we have a slice, check which x,y indices are within range or the slice
-#                 slice_arr = self._slices[z]
-#                 xy_indices = grid_indices[query_idx_with_z, [0, 1]]
-#                 # these indices have to larger than 0 and smaller than the number of cells
-#                 query_idx_valid_xy = np.logical_and(xy_indices[:, [0, 1]] > 0, xy_indices[:, [0, 1]] < slice_arr.shape)
-#                 responses[query_idx_with_z, np.logical_not(query_idx_valid_xy)] = None
-#                 if not binterpolate:
-#                     values = slice_arr[xy_indices[query_idx_valid_xy].astype(int)]
-#                 else:
-#                     values = ndimage.map_coordinates(
-#                         slice_arr, xy_indices[query_idx_valid_xy].transpose() + 0.5, order=1)
-#                 responses[query_idx_with_z, query_idx_valid_xy] = values
-#             else:
-#                 # save None for those queries
-#                 responses[query_idx_with_z] = None
+    # class SliceGrid(object):
+    #     """
+    #         This class represents a grid made of x-y slices with distinct z coordinates, i.e.
+    #         a sparse grid along the z coordinate.
+    #     """
 
+    #     def __init__(self, cell_size, base_transform=None):
+    #         """
+    #             Create a new SliceGrid.
+    #             ---------
+    #             Arguments
+    #             ---------
+    #             cell_size, float - size of cells
+    #             base_transform - if not None, any query point is transformed by base_transform
+    #         """
+    #         self._slices = {}
+    #         self._cell_size = cell_size
+    #         if base_transform is None:
+    #             base_transform = np.eye(4)
+    #         self._base_transform = base_transform
 
-#     def test_interpolation():
-#         grid = VoxelGrid.load(os.path.dirname(__file__) + '/../../../data/sdfs/placement_exp_0.sdf.static.sdf.grid')
-#         query_indices = np.random.rand(100000, 3)
-#         query_indices = query_indices * np.array(grid.get_num_cells())
-#         values_a = grid.get_interpolated_values(query_indices)
-#         values_b = grid.get_interpolated_values2(query_indices)
-#         errors = np.abs(values_a - values_b)
-#         bad_ones = np.where(errors > 0.1)
-#         print grid.get_num_cells()
-#         print bad_ones[0].shape
-#         print query_indices[bad_ones[0]]
-#         print np.min(errors), np.max(errors)
-#         assert(np.allclose(values_a, values_b))
-#         print "Passed!"
-# test_interpolation()
+    #     def add_slice(self, slice_arr, z):
+    #         """
+    #             Add a new slice to this grid.
+    #             ---------
+    #             Arguments
+    #             ---------
+    #             slice, np.array - array representing new slice
+    #             z, float - lower z coordinate in local grid frame
+    #         """
+    #         z_index = z / self._cell_size
+    #         self._slices[z_index] = slice_arr
+
+    #     def get_values(self, positions, binterpolate=True):
+    #         """
+    #             Query the slice grid for values corresponding with the given positions.
+    #             ---------
+    #             Arguments
+    #             ---------
+    #             position, np.array of shape (n, 3) - query position
+    #             binterpolate, bool - If True, performs bilinear interpolation for positions within a slice if the type
+    #                 allows it
+    #             -------
+    #             Returns
+    #             -------
+    #             values, np.array of shape (n,) - values. The type of the returned values depends on the type of the slices.
+    #                 If any position falls outside the x,y range of a slice, or not into a slice w.r.t. to its z position,
+    #                 None is returned for that position.
+    #         """
+    #         # allocate response array
+    #         responses = np.empty((positions.shape[0],), dtype=object)
+    #         # transform positions to base frame
+    #         local_points = np.dot(positions, self._base_transform[:3, :3].transpose()) + self._base_transform[:3, 3]
+    #         # compute what indices they would have in a 3d grid
+    #         grid_indices = local_points / self._cell_size
+    #         # now compute z indices, i.e. indices for slices
+    #         z_values = np.floor(grid_indices[:, 2])
+    #         unique_z_values = np.unique(z_values)  # unique indices for slices
+    #         # run over each z index
+    #         for z in unique_z_values:
+    #             # get the indices of query positions that share the same z index
+    #             query_idx_with_z = z_values == z
+    #             # check whether we have a slice for that z index
+    #             if z in self._slices:
+    #                 # if we have a slice, check which x,y indices are within range or the slice
+    #                 slice_arr = self._slices[z]
+    #                 xy_indices = grid_indices[query_idx_with_z, [0, 1]]
+    #                 # these indices have to larger than 0 and smaller than the number of cells
+    #                 query_idx_valid_xy = np.logical_and(xy_indices[:, [0, 1]] > 0, xy_indices[:, [0, 1]] < slice_arr.shape)
+    #                 responses[query_idx_with_z, np.logical_not(query_idx_valid_xy)] = None
+    #                 if not binterpolate:
+    #                     values = slice_arr[xy_indices[query_idx_valid_xy].astype(int)]
+    #                 else:
+    #                     values = ndimage.map_coordinates(
+    #                         slice_arr, xy_indices[query_idx_valid_xy].transpose() + 0.5, order=1)
+    #                 responses[query_idx_with_z, query_idx_valid_xy] = values
+    #             else:
+    #                 # save None for those queries
+    #                 responses[query_idx_with_z] = None
+
+    #     def test_interpolation():
+    #         grid = VoxelGrid.load(os.path.dirname(__file__) + '/../../../data/sdfs/placement_exp_0.sdf.static.sdf.grid')
+    #         query_indices = np.random.rand(100000, 3)
+    #         query_indices = query_indices * np.array(grid.get_num_cells())
+    #         values_a = grid.get_interpolated_values(query_indices)
+    #         values_b = grid.get_interpolated_values2(query_indices)
+    #         errors = np.abs(values_a - values_b)
+    #         bad_ones = np.where(errors > 0.1)
+    #         print grid.get_num_cells()
+    #         print bad_ones[0].shape
+    #         print query_indices[bad_ones[0]]
+    #         print np.min(errors), np.max(errors)
+    #         assert(np.allclose(values_a, values_b))
+    #         print "Passed!"
+    # test_interpolation()
