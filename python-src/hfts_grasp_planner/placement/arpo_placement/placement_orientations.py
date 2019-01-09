@@ -111,6 +111,10 @@ class PlacementOrientation(object):
         self.inv_reference_tf = utils.inverse_transform(self.reference_tf)
         self.projected_com = projected_com
         self.max_contact_pair_distance = np.max(np.linalg.norm(placement_face[2:] - placement_face[1], axis=1))
+        # local_placement_face is the placement face w.r.t. to the reference_tf
+        # rotate (note that self.reference[:3, :3] == self.inv_reference_tf.T())
+        self.local_placement_face = np.matmul(self.placement_face, self.reference_tf[:3, :3])
+        self.local_placement_face[1:] += self.inv_reference_tf[:3, 3]  # shift positions
 
 
 def is_stable_placement_plane(plane, com, min_com_distance=0.0):

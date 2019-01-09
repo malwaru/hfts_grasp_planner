@@ -426,17 +426,63 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 return 0.0  # contact points are out of range, that means it's definitely a bad placement
             # TODO this may still fail if placement planes are not perfect planes...
             # TODO I.e. the height variance is larger than the cell size
-            assert((values != float('inf')).all())
+            # assert((values != float('inf')).all())
+            if (values == float('inf')).any():
+                rospy.logerr("Invalid object pose detected - DEBUG!")
+                import IPython
+                IPython.embed()
             # get max distance. Clip it because the signed distance field isn't perfectly accurate
             max_distance = np.clip(np.max(values), 0.0, po.max_contact_pair_distance)
             return 1.0 - max_distance / po.max_contact_pair_distance
 
-        def compute_cart_gradient(self, ref_pose):
+        def compute_cart_gradient(self, cache_entry, ref_pose):
             """
                 Return the gradient w.r.t x, y, ez of distance to contacts.
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                ref_pose, np.array of shape (4, 4) - pose of reference contact point
+                TODO: this function assumes that the placement plane frame and the world frame are aligned
+                -------
+                Returns
+                -------
+                gradient, np.array of shape (3,) - gradient of contact constraint w.r.t. x, y, ez
             """
-            # TODO implement me
-            return np.zeros(3)
+            # first extract contact points in local and global frame
+            # exclude reference point itself
+            local_contact_points = cache_entry.plcmnt_orientation.local_placement_face[2:]
+            global_contact_points = np.matmul(local_contact_points, ref_pose[:3, :3].transpose()) + ref_pose[:3, 3]
+            # retrieve gradients w.r.t. x, y at contact points
+            values = self._contact_point_distances.get_cell_values_pos(global_contact_points)
+            valid_flags, cart_gradients = self._contact_point_gradients.get_interpolated_vectors(global_contact_points)
+            if not valid_flags.all():
+                rospy.logerr(
+                    "Extracting contact constraint gradients failed. This should not happen!" +
+                    "The gradient field is too small or sth else is wrong. Try debugging:")
+                import IPython
+                IPython.embed()
+                return np.zeros(3)
+            # next, we need to compute the gradient w.r.t. theta
+            # compute transform from region base frame to current pose of reference point
+            tf_r_p = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
+            # TODO the following assumes that ez == theta, i.e. placement region and world frame are aligned
+            # a position in global_contact_points is computed as base_tf * tf_r_p * local_position
+            # thus if we rotate around the reference position tf_r_p[:3, 3] (i.e. change theta),
+            # the position changes. Assuming that base_tf's z axis is aligned with the world frame,
+            # we can compute the gradient w.r.t to theta/ez as base_tf * dR/dtheta * gradient_x,y
+            # compute dR/dtheta, since the rotation is only a rotation around the z axis, we can simply construct
+            # the derivative by swapping the x and y column
+            tf_r_p[:, [1, 0]] = tf_r_p[:, [0, 1]]
+            # transformation matrix for gradient w.r.t ez
+            dtf = np.matmul(cache_entry.region.base_tf, tf_r_p)
+            dcontact_dtheta = np.matmul(local_contact_points, dtf[:3, :3].transpose())  # dworld_contact_points / dtheta
+            grad = np.empty(3)
+            grad[:2] = np.sum(cart_gradients, axis=0)  # x, y part of gradient
+            # theta part = sum(<dcontact_dtheta[i], cart_gradients[i]>) with cart_gradient[i] = dd(c)/dx, dy
+            # TODO drops z coordinate because we assume that frames are aligned
+            grad[2] = np.sum(dcontact_dtheta[:, :2] * cart_gradients)
+            return grad / local_contact_points.shape[0]  # the cost is average distance
 
     class CollisionConstraint(object):
         """
@@ -691,7 +737,8 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             self.objective_constraint = objective_constraint
             self.robot_data = robot_data
             self.manip_data = robot_data.manip_data
-            self.epsilon = 0.001
+            self.epsilon = 0.01  # minimal magnitude of cspace gradient
+            self.step_size = 0.01  # multiplier for update step
             self.robot = robot_data.robot
 
         def optimize(self, cache_entry):
@@ -712,28 +759,33 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             manip_data = self.manip_data[cache_entry.solution.manip.GetName()]
             lower, upper = manip_data.lower_limits, manip_data.upper_limits
             manip = manip_data.manip
-            with self.robot:
-                reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
-                manip.SetLocalToolTransform(reference_pose)
-                self.robot.SetActiveDOFs(manip.GetArmIndices())
-                # init jacobian descent
-                q_current = cache_entry.solution.arm_config
-                q_best = q_current
-                # compute jacobian
-                q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+            # with self.robot:
+            reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+            manip.SetLocalToolTransform(reference_pose)
+            self.robot.SetActiveDOFs(manip.GetArmIndices())
+            # init jacobian descent
+            q_current = cache_entry.solution.arm_config
+            q_best = np.array(q_current)
+            # compute jacobian
+            q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+            grad_norm = np.linalg.norm(q_grad)
+            b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+            # iterate as long as the gradient is not zero and we are not beyond limits
+            while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+                rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
+                               (str(q_current), str(q_grad), grad_norm))
+                q_current -= self.step_size * q_grad / grad_norm  # TODO remove all motion in z?
                 b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                # iterate as long as the gradient is not zero and we are not beyond limits
-                while np.linalg.norm(q_grad) > self.epsilon and b_in_limits and q_grad is not None:
-                    q_current -= q_grad
-                    b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                    if b_in_limits:
-                        # save q_current and compute next jacobian + gradient
-                        q_best = q_current
-                        q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                    else:
-                        rospy.logdebug("Jacobian descent as led to joint limit violation. Aborting")
-                rospy.logdebug("Jacobian descent finished")
-                cache_entry.solution.arm_config = q_best
+                if b_in_limits:
+                    # save q_current and compute next jacobian + gradient
+                    q_best[:] = q_current
+                    q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                    grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
+                else:
+                    rospy.logdebug("Jacobian descent has led to joint limit violation. Aborting")
+            rospy.logdebug("Jacobian descent finished")
+            cache_entry.solution.arm_config = q_best
+            manip.SetLocalToolTransform(np.eye(4))
 
         def _compute_gradient(self, cache_entry, q_current, manip_data):
             """
@@ -741,33 +793,41 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             """
             manip = manip_data.manip
             jacobian = np.empty((6, manip.GetArmDOF()))
-            with self.robot:
-                # compute jacobian
-                self.robot.SetActiveDOFValues(q_current)
-                jacobian[:3] = manip.CalculateJacobian()
-                jacobian[3:] = manip.CalculateAngularVelocityJacobian()
-                # compute pseudo inverse
-                inv_jac = np.linalg.pinv(jacobian)
-                # TODO check for singularity in x, y, ez?
-                # Compute gradient w.r.t. constraints
-                # get pose of placement reference point
-                ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
-                # 1. Region constraint - reference point needs to be within the selected placement region
-                region = cache_entry.region
-                b_valid, region_pos_grad = region.aabb_dist_gradient_field.get_interpolated_vectors(
-                    ref_pose[:3, 3].reshape((1, 3)))
-                if not b_valid[0]:
-                    rospy.logdebug("Jacobian descent failed. It went out of the placement region's aabb.")
-                    return None
-                cart_grad_r = np.array([region_pos_grad[0, 0], region_pos_grad[0, 1], 0.0])
-                # TODO check whether theta is out of range, and return None in that case
-                # 2. Stability - all contact points need to be in a placement region (any)
-                cart_grad_c = self.contact_constraint.compute_cart_gradient(ref_pose)
-                cart_grad = cart_grad_r + cart_grad_c
-                # Translate cart_grad to q_grad using javobian inverse
-                qgrad = np.matmul(inv_jac, np.array([cart_grad[0], cart_grad[1], 0.0, 0.0, 0.0, cart_grad[2]]))
-                # TODO compute gradient based on collisions
-                return qgrad
+            # with self.robot:
+            # compute jacobian
+            self.robot.SetActiveDOFValues(q_current)
+            # TODO delete
+            crayola = self.robot.GetEnv().GetKinBody("crayola")
+            crayola.SetTransform(
+                np.matmul(cache_entry.solution.manip.GetEndEffector().GetTransform(), manip_data.inv_grasp_tf))
+            # TODO until here
+            jacobian[:3] = manip.CalculateJacobian()
+            jacobian[3:] = manip.CalculateAngularVelocityJacobian()
+            # compute pseudo inverse
+            inv_jac = np.linalg.pinv(jacobian)
+            # TODO check for singularity in x, y, ez?
+            # Compute gradient w.r.t. constraints
+            # get pose of placement reference point
+            ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
+            # 1. Region constraint - reference point needs to be within the selected placement region
+            region = cache_entry.region
+            b_valid, region_pos_grad = region.aabb_dist_gradient_field.get_interpolated_vectors(
+                ref_pose[:3, 3].reshape((1, 3)))
+            value = region.aabb_distance_field.get_cell_values(ref_pose[:3, 3].reshape((1, 3)))
+            if not b_valid[0]:
+                rospy.logdebug("Jacobian descent failed. It went out of the placement region's aabb.")
+                return None
+            cart_grad_r = np.array([region_pos_grad[0, 0], region_pos_grad[0, 1], 0.0])
+            rospy.logdebug("In-region constraint gradient is %s" % str(cart_grad_r))
+            # TODO check whether theta is out of range, and return None in that case
+            # 2. Stability - all contact points need to be in a placement region (any)
+            cart_grad_c = self.contact_constraint.compute_cart_gradient(cache_entry, ref_pose)
+            rospy.logdebug("Contact constraint gradient is %s" % str(cart_grad_c))
+            cart_grad = cart_grad_r + cart_grad_c
+            # Translate cart_grad to q_grad using javobian inverse
+            qgrad = np.matmul(inv_jac, np.array([cart_grad[0], cart_grad[1], 0.0, 0.0, 0.0, cart_grad[2]]))
+            # TODO compute gradient based on collisions
+            return qgrad
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
                  objective_fn, global_region_info, scene_sdf):
