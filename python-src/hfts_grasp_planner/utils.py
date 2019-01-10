@@ -391,6 +391,28 @@ def transform_pos_quats_by(tf, poses):
     return resulting_poses
 
 
+def compute_pseudo_inverse_rank(matrix):
+    """
+        Compute the pseudo inverse of the given matrix and the matrix's rank.
+        ---------
+        Arguments
+        ---------
+        matrix, np array
+        -------
+        Returns
+        -------
+        psueudo_inv, np.array 
+        rank, int
+    """
+    u, s, v = np.linalg.svd(matrix)
+    # numpy is doing this in its pinv
+    sp = np.zeros((matrix.shape[1], matrix.shape[0]))
+    greater_zero = np.where(s > np.finfo(float).eps * max(matrix.shape) * np.max(s))[0]
+    sp[greater_zero, greater_zero] = 1.0 / s[greater_zero]
+    inv_jac = np.matmul(v.transpose(), np.matmul(sp, u.transpose()))
+    return inv_jac, greater_zero.shape[0]
+
+
 def is_dynamic_body(body):
     """
         Return whether the given body is dynamic or static by checking its links.

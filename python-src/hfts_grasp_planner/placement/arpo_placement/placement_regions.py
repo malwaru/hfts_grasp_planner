@@ -24,7 +24,7 @@ class PlanarPlacementRegion(object):
             Arguments
             ---------
             x_indices, numpy array of int - x positions of cells
-            y_indices, numpy array of int - y positiong of cells
+            y_indices, numpy array of int - y positions of cells
             tf, numpy array of shape (4, 4) - transformation matrix describing the pose of front left cell
             cell_size, float - dimension of cells
         """
@@ -85,7 +85,7 @@ class PlanarPlacementRegion(object):
                                                             num_cells=shape,
                                                             base_transform=self.base_tf,
                                                             b_in_slices=True)
-        grad_y, grad_x = np.gradient(raw_data.reshape(shape[:2]), self.cell_size)
+        grad_x, grad_y = np.gradient(raw_data.reshape(shape[:2]), self.cell_size)
         self.aabb_dist_gradient_field.vectors[0] = grad_x.reshape(shape)
         self.aabb_dist_gradient_field.vectors[1] = grad_y.reshape(shape)
 
@@ -139,11 +139,13 @@ class PlanarPlacementRegion(object):
             If this region has no subregions, return self.
         """
         regions = self.get_subregions()
-        if len(regions) == 0 or len(key) == 0:
+        if len(regions) == 0:
             return self
         if type(key) == int:
             return regions[key]
         assert(type(key) == tuple)
+        if len(key) == 0:
+            return self
         return regions[key[0]].get_subregion(key[1:])
 
     def has_subregions(self):
@@ -468,7 +470,7 @@ if __name__ == "__main__":
         else:
             import matplotlib.pyplot as plt
             grad_x, grad_y = region.aabb_dist_gradient_field.vectors
-            plt.quiver(grad_x.reshape(grad_x.shape[:2]), grad_y.reshape(grad_y.shape[:2]))
+            plt.quiver(grad_x.reshape(grad_x.shape[:2]).transpose(), grad_y.reshape(grad_y.shape[:2]).transpose())
             plt.show()
             # grad_z = np.zeros_like(grad_x)
             # src = mayavi.mlab.pipeline.vector_field(grad_x, grad_y, grad_z)
@@ -521,7 +523,7 @@ if __name__ == "__main__":
     # for rid, region in enumerate(regions):
     # print "Showing region ", rid
     # show_local_sdf(region, "gradients")
-    show_local_sdf(regions[6], "gradients")
+    show_local_sdf(regions[0], "gradients")
     # print "found %i regions" % len(regions)
     # env.SetViewer('qtcoin')
     # handles = []

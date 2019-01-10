@@ -631,8 +631,8 @@ class VoxelGrid(object):
         if data.shape != tuple(self._num_cells):
             raise ValueError("The shape of the provided data differs from this grid's shape." +
                              " Input shape is %s, required shape %s" % (str(data.shape), str(self._num_cells)))
-        self._cells[1:-1, 1:-1, 1:-1] = data
         self._cells = self._cells.astype(data.dtype)
+        self._cells[1:-1, 1:-1, 1:-1] = data
         self._fill_border_cells()
 
     def get_cell_size(self):
@@ -775,6 +775,24 @@ class VectorGrid(object):
         self.vectors = np.zeros(shape)
         self._cell_size = cell_size
 
+    def get_aabb(self, bWorld=False):
+        """
+            Return axis aligned bounding box.
+            ---------
+            Arguments
+            ---------
+            bWorld, bool - if True return it in world frame, else in local frame.
+            -------
+            Returns
+            -------
+            np.array of shape (6,) where aabb[:3] is the min point and aabb[3:] the max point
+        """
+        if bWorld:
+            global_aabb = np.dot(self._transform[:3, :3], self._aabb.reshape(
+                (2, 3)).transpose()).transpose() + self._transform[:3, 3]
+            return global_aabb.reshape((6,))
+        return np.array(self._aabb)
+
     def get_interpolated_vectors(self, positions, b_world_frame=True):
         """
             Return interpolated vectors for the given positions.
@@ -797,7 +815,7 @@ class VectorGrid(object):
         lower_bound_ok = np.logical_and.reduce(positions >= self._aabb[:3], axis=1)
         upper_bound_ok = np.logical_and.reduce(positions < self._aabb[3:], axis=1)
         valid_flags = np.logical_and(lower_bound_ok, upper_bound_ok)
-        return_values = np.empty((0, self._vec_dim))
+        return_values = np.empty((self._vec_dim, 0))
         if valid_flags.any():
             grid_indices = (positions[valid_flags] - self._aabb[:3]) / self._cell_size
             return_values = np.empty((self._vec_dim, grid_indices.shape[0]))
@@ -806,7 +824,7 @@ class VectorGrid(object):
             return_values[0] = ndimage.map_coordinates(self.vectors[0], tindices, order=1, mode='nearest')
             return_values[1] = ndimage.map_coordinates(self.vectors[1], tindices, order=1, mode='nearest')
             if self._vec_dim == 3:
-                return_values[2] = ndimage.map_coordinates(self.vectors[2], tindices, order=1)
+                return_values[2] = ndimage.map_coordinates(self.vectors[2], tindices, order=1, mode='nearest')
         if not np.isclose(self._transform[:3, :3], np.eye(3)).all():
             rotated_values = np.empty_like(return_values)
             rotated_values[0] = self._transform[0, 0] * return_values[0] + self._transform[0, 1] * return_values[1]
