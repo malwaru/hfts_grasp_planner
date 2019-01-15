@@ -514,6 +514,52 @@ class VoxelGrid(object):
             values[valid_mask] = self.get_cell_values(grid_indices)
         return values
 
+    def get_cell_gradients_pos(self, positions, b_global_frame=True):
+        """
+            Return the values as well as their gradients at the given positions.
+            NOTE: This function throws a ValueError if the stored data type is not float.
+            ---------
+            Arguments
+            ---------
+            positions, np array of shape (n, 3) - query positions
+            b_global_frame, bool - if True, positions are expected to be in world frame, else local.
+            -------
+            Returns
+            -------
+            valid_flags, np array of shape (n, 3) - bool array storing whether ith position was within bounds
+            values, np array of shape (m,) - values associated with m <= n valid positions
+            gradients, np.array of shape (m, 3) - gradients of values associated with m <= n valid positions
+        """
+        if self._cells.dtype != np.float_:
+            raise ValueError("Can not compute gradients for anything else than floats")
+        num_points = positions.shape[0]
+        valid_masks = np.empty((7, num_points), dtype=bool)
+        grid_indices = np.zeros((7, num_points, 3))
+        delta = self._cell_size / 4.0
+        delta_x = np.array([delta, 0.0, 0.0])
+        delta_y = np.array([0.0, delta, 0.0])
+        delta_z = np.array([0.0, 0.0, delta])
+        deltas = np.array([np.zeros(3), delta_x, -delta_x, delta_y, -delta_y, delta_z, -delta_z])
+        for i in xrange(7):
+            _, tgrid_indices, valid_masks[i] = self.map_to_grid_batch(positions + deltas[i], index_type=np.float_,
+                                                                      b_global_frame=b_global_frame)
+            grid_indices[i, valid_masks[i]] = tgrid_indices
+
+        valid_mask = np.logical_and.reduce(valid_masks, axis=0)
+        num_valid = np.sum(valid_mask)
+        if num_valid:
+            # if we have valid points, retrieve their values
+            valid_indices = grid_indices[:, valid_mask]
+            values = self.get_cell_values(valid_indices.reshape((7 * num_valid, 3)))
+            values = values.reshape((7, num_valid))
+            gradients = np.empty((num_valid, 3))
+            gradients[:, 0] = (values[1, :] - values[2, :]) / (2.0 * delta)
+            gradients[:, 1] = (values[3, :] - values[4, :]) / (2.0 * delta)
+            gradients[:, 2] = (values[5, :] - values[6, :]) / (2.0 * delta)
+            return valid_mask, values[0], gradients
+        else:
+            return valid_mask, np.empty((0,)), np.empty((0, 3))
+
     def get_additional_data(self, idx):
         """
             Return additional data for the given cell, if it exists.
@@ -792,6 +838,37 @@ class VectorGrid(object):
                 (2, 3)).transpose()).transpose() + self._transform[:3, 3]
             return global_aabb.reshape((6,))
         return np.array(self._aabb)
+
+    def save(self, filename):
+        """
+            Save this voxel grid to file.
+            ---------
+            Arguments
+            ---------
+            filename, string - path to file
+        """
+        # first and last element per dimension are dummy elements
+        data_to_save = np.array([self.vectors, self._transform, self._aabb, self._cell_size, self._vec_dim])
+        np.save(filename, data_to_save)
+
+    @staticmethod
+    def load(file_name, b_restore_transform=True):
+        """
+            Load a grid from the given file.
+            - :file_name: - as the name suggests
+            - :b_restore_transform: (optional) - If true, the transform is loaded as well, else identity transform is set
+        """
+        if not os.path.exists(file_name):
+            raise IOError("Could not find file %s to load vector grid from." % file_name)
+        grid_data = np.load(file_name)
+        grid = VectorGrid(grid_data[2])
+        grid.vectors = grid_data[0]
+        grid._cell_size = grid_data[3]
+        grid._transform = grid_data[1]
+        grid._inv_transform = inverse_transform(grid._transform)
+        grid._vec_dim = grid_data[4]
+        grid._num_cells = np.ceil((grid._aabb[3:] - grid._aabb[:3]) / grid._cell_size).astype(int)
+        return grid
 
     def get_interpolated_vectors(self, positions, b_world_frame=True):
         """

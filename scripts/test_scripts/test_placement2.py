@@ -6,6 +6,7 @@ import rospy
 import time
 import argparse
 import numpy as np
+import cProfile
 import openravepy as orpy
 # import hfts_grasp_planner.placement
 from hfts_grasp_planner.utils import is_dynamic_body, inverse_transform, get_manipulator_links
@@ -53,7 +54,7 @@ def resolve_paths(problem_desc, yaml_file):
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
     for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file',
-                'robot_occtree', 'reachability_path']:
+                'robot_occtree', 'robot_occgrid', 'reachability_path']:
         if key in problem_desc:
             problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
@@ -222,21 +223,31 @@ if __name__ == "__main__":
         # build robot_octree
         try:
             now = time.time()
-            robot_octree = robot_sdf_module.RobotOccupancyOctree.load(base_file_name=problem_desc['robot_occtree'],
-                                                                      robot=robot, link_names=link_names)
-            rospy.logdebug("Loading robot octree took %fs" % (time.time() - now))
+            # robot_octree = robot_sdf_module.RobotOccupancyOctree.load(base_file_name=problem_desc['robot_occtree'],
+            #                                                           robot=robot, link_names=link_names)
+            # rospy.logdebug("Loading robot octree took %fs" % (time.time() - now))
+            robot_occgrid = robot_sdf_module.RobotOccupancyGrid.load(base_file_name=problem_desc['robot_occgrid'],
+                                                                     robot=robot, link_names=link_names)
+            rospy.logdebug("Loading robot occgrid took %fs" % (time.time() - now))
         except IOError:
-            robot_octree = robot_sdf_module.RobotOccupancyOctree(
-                problem_desc['parameters']['occ_tree_cell_size'], robot, link_names)
-            robot_octree.save(problem_desc['robot_occtree'])
+            # robot_octree = robot_sdf_module.RobotOccupancyOctree(
+            #     problem_desc['parameters']['occ_tree_cell_size'], robot, link_names)
+            # robot_octree.save(problem_desc['robot_occtree'])
+            now = time.time()
+            robot_occgrid = robot_sdf_module.RobotOccupancyGrid(problem_desc['parameters']['occ_tree_cell_size'],
+                                                                robot=robot, link_names=link_names)
+            robot_occgrid.save(problem_desc['robot_occgrid'])
+            rospy.logdebug("Creating robot occgrid took %fs" % (time.time() - now))
         urdf_content = None
         with open(problem_desc['urdf_file'], 'r') as urdf_file:
             urdf_content = urdf_file.read()
-        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_octree, manip_data, urdf_content)
+        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_occgrid, manip_data, urdf_content)
         # create object data
-        obj_octree = kinbody_sdf_module.OccupancyOctree(
-            problem_desc['parameters']['occ_tree_cell_size'], target_object.GetLinks()[0])
-        object_data = arpo_placement_mod.ARPORobotBridge.ObjectData(target_object, obj_octree)
+        # obj_octree = kinbody_sdf_module.OccupancyOctree(
+        #     problem_desc['parameters']['occ_tree_cell_size'], target_object.GetLinks()[0])
+        obj_occgrid = kinbody_sdf_module.RigidBodyOccupancyGrid(problem_desc['parameters']['occ_tree_cell_size'],
+                                                                target_object.GetLinks()[0])
+        object_data = arpo_placement_mod.ARPORobotBridge.ObjectData(target_object, obj_occgrid)
         # create arpo hierarchy
         hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
         arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
@@ -248,7 +259,7 @@ if __name__ == "__main__":
         # handles.append(draw_volume(env, placement_volume))
         # handles = visualize_occupancy_grid(env, surface_grid, color=np.array([1.0, 0.0, 0.0, 0.2]))
         handles.extend(plcmnt_regions_mod.visualize_plcmnt_regions(
-            env, regions, height=occ_target_volume.get_cell_size(), level=1))
+            env, regions, height=occ_target_volume.get_cell_size(), level=2))
         # print "Check the placement regions!"
         # IPython.embed()
         # handles = []
@@ -267,6 +278,9 @@ if __name__ == "__main__":
         # solutions, num_solutions = goal_sampler.sample(1, 1)
         # probe = env.GetKinBody("probe")
         # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])
+        # rospy.loginfo("Starting cProfile")
+        # cProfile.run("goal_sampler.sample(2, 10)", '/tmp/cprofile_placement')
+        # rospy.loginfo("cProfile complete")
         IPython.embed()
     finally:
         orpy.RaveDestroy()

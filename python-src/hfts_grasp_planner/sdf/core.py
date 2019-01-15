@@ -14,7 +14,7 @@ import numpy as np
 import openravepy as orpy
 from itertools import izip, product
 import scipy.ndimage.morphology
-from hfts_grasp_planner.sdf.grid import VoxelGrid
+from hfts_grasp_planner.sdf.grid import VoxelGrid, VectorGrid
 from hfts_grasp_planner.sdf.occupancy import OccupancyGridBuilder
 from hfts_grasp_planner.sdf.visualization import ORVoxelGridVisualization
 # from mayavi import mlab
@@ -113,6 +113,26 @@ class SDF(object):
         else:
             distances = map(self._get_heuristic_distance_local, local_points[:, :3])
         return distances
+
+    def get_distances_grad(self, positions):
+        """
+            Return the shortest distance to obstacles at the given points as well as the gradients.
+            This method interpolates distances between grid points.
+            TODO: If any query position is out of bounds, it currently throws an exception.
+            ---------
+            Arguments
+            ---------
+            positions, a numpy array of shape (n, 3) - n query positions in global frame
+            -------
+            Returns
+            -------
+            values, np array of shape (n,) - distances at the query positions
+            gradients, np array of shape (n, 3) - gradients at the query positions
+        """
+        valid_mask, values, gradients = self._grid.get_cell_gradients_pos(positions)
+        if np.sum(valid_mask) < values.shape[0]:
+            raise NotImplementedError("Dealing with positions that are out of bounds is not implemented yet")
+        return values, gradients
 
     def get_direction(self, point):
         """
@@ -232,6 +252,26 @@ class SDFBuilder(object):
         """
         self._cell_size = cell_size
         self._occupancy_builder = OccupancyGridBuilder(env, cell_size)
+
+    @staticmethod
+    def compute_gradient_field(sdf):
+        """
+            Compute the gradient field of the given sdf.
+            ---------
+            Arguments
+            ---------
+            sdf, SDF to compute gradients for
+            -------
+            Returns
+            -------
+            gradf, VectorGrid
+        """
+        cell_size = sdf._grid.get_cell_size()
+        raw_data = sdf._grid.get_raw_data()
+        vector_field = VectorGrid(sdf._grid.get_aabb(), cell_size=cell_size,
+                                  base_transform=sdf._grid.get_transform(), num_cells=np.array(raw_data.shape))
+        vector_field.vectors[0], vector_field.vectors[1], vector_field.vectors[2] = np.gradient(raw_data, cell_size)
+        return vector_field
 
     @staticmethod
     def compute_sdf(grid, b_compute_dirs=False):
@@ -479,6 +519,36 @@ class SceneSDF(object):
         if self._static_sdf is not None:
             min_distances = np.minimum(min_distances, self._static_sdf.get_distances(positions))
         return min_distances
+
+    def get_distances_grad(self, positions):
+        """
+            Returns the signed distance from the given position to the closest obstacle surface
+            as well as the gradient of that distance.
+            TODO: raises NotImplementedError if any position is out of bounds - this also holds for movables!
+            ---------
+            Arguments
+            ---------
+            positions, np array of shape (n, 3) - n query positions
+            -------
+            Returns
+            -------
+            distances, np array of shape (n,) - distances
+            gradients, np.array of shape (n, 3) - gradients
+        """
+        min_distances = np.full(positions.shape[0], float('inf'))
+        gradients = np.zeros((positions.shape[0], 3))
+        for (body, body_sdf) in self._body_sdfs.itervalues():
+            body_sdf.set_transform(body.GetTransform())
+            distances, bgradients = body_sdf.get_distances_grad(positions)
+            selection_mask = distances < min_distances
+            gradients[selection_mask] = bgradients[selection_mask]
+            min_distances = np.min((distances, min_distances), axis=0)
+        if self._static_sdf is not None:
+            distances, sgradients = self._static_sdf.get_distances_grad(positions)
+            selection_mask = distances < min_distances
+            gradients[selection_mask] = sgradients[selection_mask]
+            min_distances = np.min((distances, min_distances), axis=0)
+        return min_distances, gradients
 
     def get_direction(self, position):
         """

@@ -43,11 +43,13 @@ class RobotOccupancyGrid(object):
             link_names = all_link_names
         links = [robot.GetLink(name) for name in link_names]
         if occupancy_grids is None:
-            self._occupancy_grids = RigidBodyOccupancyGrid.create_occupancy_grids(cell_size, links)
+            grid_list = RigidBodyOccupancyGrid.create_occupancy_grids(cell_size, links)
         else:
-            self._occupancy_grids = occupancy_grids
-        self._total_volume = sum([grid.get_volume() for grid in self._occupancy_grids])
-        self._total_num_occupied_cells = sum([grid.get_num_occupied_cells() for grid in self._occupancy_grids])
+            grid_list = occupancy_grids
+        self._occupancy_grids = {grid.get_link().GetName(): grid for grid in grid_list}
+        self._total_volume = sum([grid.get_volume() for grid in self._occupancy_grids.itervalues()])
+        self._total_num_occupied_cells = sum([grid.get_num_occupied_cells()
+                                              for grid in self._occupancy_grids.itervalues()])
 
     @staticmethod
     def load(base_file_name, robot, link_names=None):
@@ -86,7 +88,7 @@ class RobotOccupancyGrid(object):
         for link_name, grid in self._occupancy_grids.iteritems():
             grid.save(base_file_name + '.' + link_name)
 
-    def compute_intersection(self, robot_pose, robot_config, scene_sdf):
+    def compute_intersection(self, robot_pose, robot_config, scene_sdf, links=None):
         """
             Computes the intersection between the occupancy grids of the robot's links
             and the geometry in the scene described by the provided scene sdf.
@@ -96,6 +98,8 @@ class RobotOccupancyGrid(object):
             robot_pose, numpy array of shape (4, 4) - pose of the robot
             robot_config, numpy array of shape (q,) - configuration of active DOFs
             scene_sdf, signed distance field
+            links (optional), list of OpenRAVE links - if provided, limits intersection computation
+                to the given links
             -------
             Returns
             -------
@@ -104,13 +108,64 @@ class RobotOccupancyGrid(object):
                 rv is this volume relative to the robot's total volume, i.e. in range [0, 1]
         """
         with self._robot:
+            if links is None:
+                grids = self._occupancy_grids.values()
+            else:
+                grids = [self._occupancy_grids[link.GetName()]
+                         for link in links if link.GetName() in self._occupancy_grids]
             self._robot.SetTransform(robot_pose)
             self._robot.SetActiveDOFValues(robot_config)
             v = 0.0
-            for grid in self._occupancy_grids:
-                _, _, lv, = grid.intersect(scene_sdf)
+            for grid in grids:
+                _, _, lv, = grid.compute_intersection(scene_sdf)
                 v += lv
             return v, v / self._total_volume
+
+    def compute_penetration_cost(self, scene_sdf, robot_config, b_compute_gradient=False, robot_pose=None, links=None):
+        """
+            Compute CHOMP's penetration cost for the robot.
+            ---------
+            Arguments
+            ---------
+            scene_sdf, SceneSDF - scene sdf to retrieve distances from
+            robot_config, np array of shape (q,) - configuration of active DOFs
+            b_compute_gradients(optional), bool - if True, also compute gradient of the cost w.r.t. active DOFs
+            robot_pose(optional), np array of shape (4, 4) - robot pose (default current)
+            links (optional), list of OpenRAVE links - if provided, limits computation to the given links
+            -------
+            Returns
+            -------
+            penetration_cost, float - penetration cost of the robot (in range [0, inf))
+            gradient(optional), np array of shape (q,) - If requested, gradient w.r.t active DOFs
+        """
+        with self._robot:
+            if robot_pose is not None:
+                self._robot.SetTransform(robot_pose)
+            self._robot.SetActiveDOFValues(robot_config)
+            if links is None:
+                grids = self._occupancy_grids.values()
+            else:
+                grids = [self._occupancy_grids[link.GetName()]
+                         for link in links if link.GetName() in self._occupancy_grids]
+            if b_compute_gradient:
+                total_value = 0.0
+                gradient = np.zeros(self._robot.GetActiveDOF())
+                for grid in grids:
+                    link_id = grid.get_link().GetIndex()
+                    values, cart_gradients, lposs = grid.compute_obstacle_cost(
+                        scene_sdf, bgradients=b_compute_gradient)
+                    total_value += np.sum(values)
+                    for cart_grad, lpos in izip(cart_gradients, lposs):
+                        jacobian = self._robot.CalculateActiveJacobian(link_id, lpos)
+                        gradient += np.matmul(cart_grad, jacobian)  # it's jacobian.T * cart_grad
+                return total_value, gradient
+            else:
+                total_value = 0.0
+                for grid in grids:
+                    link_id = grid.get_link().GetIndex()
+                    values = grid.compute_obstacle_cost(scene_sdf, bgradients=b_compute_gradient)
+                    total_value += np.sum(values)
+                return total_value
 
     def get_robot(self):
         """

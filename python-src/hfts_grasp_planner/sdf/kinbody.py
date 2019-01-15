@@ -477,6 +477,7 @@ class RigidBodyOccupancyGrid(object):
             self._grid = construct_grid([link], cell_size)[0]
         else:
             self._grid = grid
+            cell_size = grid.get_cell_size()
         cells = self._grid.get_raw_data()
         xx, yy, zz = np.nonzero(cells)
         indices_mat = np.column_stack((xx, yy, zz))
@@ -525,7 +526,7 @@ class RigidBodyOccupancyGrid(object):
             return np.count_nonzero(comp(field.get_cell_values(indices), val))
         return 0
 
-    def intersect(self, scene_sdf, tf=None):
+    def compute_intersection(self, scene_sdf, tf=None):
         """
             Return how many cells of this occupancy grid correspond to positions
             with negative or zero distance in the given scene_sdf.
@@ -549,6 +550,58 @@ class RigidBodyOccupancyGrid(object):
         num_intersecting_cells = np.sum(distances <= 0.0)
         return num_intersecting_cells, float(num_intersecting_cells) / self._num_occupied_cells, num_intersecting_cells * self._cell_volume
 
+    def compute_obstacle_cost(self, scene_sdf, tf=None, bgradients=False, eps=None):
+        """
+            Compute obstacle penetration cost from CHOMP paper C(x) = sum_i(c(x_i)) where x_i are the voxel positions
+            and:
+                    -d(x) + eps / 2             if d(x) < 0.0
+            c(x) =  1/(2eps)(d(x) - eps)^2      if 0 <= d(x) <= eps
+                    0                           else
+            with d(x) being the minimal distance to an obstacle (i.e. what is given by scene_sdf)
+            ---------
+            Arguments
+            ---------
+            scene_sdf, SceneSDF - to retrieve d(x)
+            tf(optional), np array of shape (4, 4) - link pose, if not provided use link's current pose
+            bgradients(optional), bool - if true, also return gradients of c(x_i) w.r.t x_i (one for each voxel)
+            eps(optional), float - eps in above formula = minimal distance a collision-free link should have.
+                If not provided cell size of underlying occupancy grid is used.
+            -------
+            Returns
+            -------
+            value, float - intersection cost
+            gradients(optional), numpy array of shape (n, 3) - gradients dc(x_i)/dx_i if bgradients is True
+            local_positions(optional), np array of shape (n, 3) - positions of voxel positions in link frame if bgradients is True
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        if eps is None:
+            eps = self._grid.get_cell_size()
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        if bgradients:
+            distances, dist_gradients = scene_sdf.get_distances_grad(query_pos)
+        else:
+            distances = scene_sdf.get_distances(query_pos)
+        return_values = np.empty_like(distances)
+        # compute array access masks to distuingish between cases
+        negative_mask = distances < 0.0
+        buffer_mask = np.logical_and(distances < eps, np.logical_not(negative_mask))
+        negative_ind = np.nonzero(negative_mask)[0]
+        buffer_ind = np.nonzero(buffer_mask)[0]
+        positive_ind = np.nonzero(distances > eps)[0]
+        # compute the actual funciton
+        return_values[negative_ind] = - distances[negative_ind] + eps / 2.0
+        return_values[buffer_ind] = 1.0 / (2.0 * eps) * np.square((distances[buffer_ind] - eps))
+        return_values[positive_ind] = 0.0
+        # optionally compute gradients
+        if bgradients:
+            gradients = np.empty_like(dist_gradients)
+            gradients[negative_ind] = -dist_gradients[negative_ind]
+            gradients[buffer_ind] = (dist_gradients[buffer_ind].T * (distances[buffer_ind] - eps) * 1.0/eps).T
+            gradients[positive_ind] = 0.0
+            return return_values, gradients, self._locc_positions
+        return return_values
+
     def get_link(self):
         """
             Return the link this grid represents.
@@ -566,6 +619,12 @@ class RigidBodyOccupancyGrid(object):
             Return the number of cells in the underlying grid that are occupied.
         """
         return self._num_occupied_cells
+
+    def get_cell_size(self):
+        """
+            Return cell size of underlying grid.
+        """
+        return self._grid.get_cell_size()
 
     def save(self, filename):
         """
@@ -704,7 +763,7 @@ if __name__ == '__main__':
         scene_sdf = sdf_core.SceneSDF(env, [], [\'Yumi\', \'crayola\']);\
         scene_sdf.load(base_path + \'data/sdfs/placement_exp_0.sdf\');\
         """
-        run_code = """occupancy_grid.intersect(scene_sdf);"""
+        run_code = """occupancy_grid.compute_intersection(scene_sdf);"""
         import timeit
         num_runs = 10000
         total = timeit.timeit(run_code, setup=setup_code, number=num_runs)
