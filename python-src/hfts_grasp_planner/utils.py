@@ -542,6 +542,23 @@ def get_ordered_arm_joints(robot, manip):
     return [j for j in robot.GetDependencyOrderedJoints() if j.GetJointIndex() in manip.GetArmIndices()]
 
 
+def normalize_radian(val):
+    """
+        Move val into range [0, 2pi].
+        ---------
+        Arguments
+        ---------
+        val, float - angle in radians
+        -------
+        Returns
+        -------
+        val', float - angle moved into interval [0, 2pi]
+    """
+    num_intervals = np.floor(val / (2.0 * np.pi))
+    val -= num_intervals * 2.0 * np.pi
+    return val
+
+
 def dist_in_range(d, r):
     if d < r[0]:
         return r[0] - d
