@@ -42,7 +42,7 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 key = child_key
                 child_key = self._hierarchy.get_random_child_key(key)
             assert(key is not None)
-            solution = self._solution_constructor.construct_solution(key, True, True)
+            solution = self._solution_constructor.construct_solution(key, True, False)
             if self._validator.is_valid(solution):
                 solution.objective_value = self._objective.evaluate(solution)
                 solutions[solution.manip.GetName()].append(solution)

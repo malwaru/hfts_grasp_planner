@@ -623,6 +623,48 @@ def generate_wrench_cone(contact, normal, mu, center, face_n):
     return wrenches
 
 
+def chomps_distance(distances, eps, dist_gradients=None):
+    """
+        Return chomps smooth distance function, that is:
+                 -d(x) + eps / 2             if d(x) < 0.0
+        ds(x) =  1/(2eps)(d(x) - eps)^2      if 0 <= d(x) <= eps
+                 0                           else
+        Optionally, also provide gradients of this function.
+        ---------
+        Arguments
+        ---------
+        distances, float np.array of shape (n,) - input distances d(x)
+        eps, float - epsilon as defined above
+        gradients (optional), float np.array of shape (n, 3) - dd(x)/dx derivatives of distances
+        -------
+        Returns
+        -------
+        ds, float np.array of shape (n,) - smoothed distances computed as above
+        gradients (optional), float np.array of shape (n, 3) - if gradients are provided,
+            these are the gradients of ds(x)
+    """
+    # TODO let user specify two eps1, eps2, where eps1 defines "0.0" and eps2 is eps
+    return_values = np.empty_like(distances)
+    # compute array access masks to distuingish between cases
+    negative_mask = distances < 0.0
+    buffer_mask = np.logical_and(distances <= eps, np.logical_not(negative_mask))
+    negative_ind = np.nonzero(negative_mask)[0]
+    buffer_ind = np.nonzero(buffer_mask)[0]
+    positive_ind = np.nonzero(distances > eps)[0]
+    # compute the actual funciton
+    return_values[negative_ind] = - distances[negative_ind] + eps / 2.0
+    return_values[buffer_ind] = 1.0 / (2.0 * eps) * np.square((distances[buffer_ind] - eps))
+    return_values[positive_ind] = 0.0
+    # optionally compute gradients
+    if dist_gradients is not None:
+        gradients = np.empty_like(dist_gradients)
+        gradients[negative_ind] = -dist_gradients[negative_ind]
+        gradients[buffer_ind] = (dist_gradients[buffer_ind].T * (distances[buffer_ind] - eps) * 1.0/eps).T
+        gradients[positive_ind] = 0.0
+        return return_values, gradients
+    return return_values
+
+
 def compute_grasp_stability(grasp_contacts, mu, com=None, face_n=8):
     """ Computes Canny's grasp quality metric for the given n contacts.
         :param grasp_contacts - An nx6 matrix where each row is a contact position and normal

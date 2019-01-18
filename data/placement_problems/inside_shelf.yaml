@@ -4,7 +4,9 @@ gripper_file: ../../models/yumi/yumi_gripper_l.robot.xml
 sdf_file: ../sdfs/placement_exp_0.sdf
 occ_file: ../occupancy_grids/placement_exp_0
 robot_occtree: ../robot_occtrees/Yumi
-reachability_path: ../simple_reachability/
+robot_occgrid: ../robot_occgrids/Yumi
+reachability_path: ../gnat_reachability/
+robot_ball_desc: ../../models/yumi/ball_description.yaml
 data_path: ../
 urdf_path: object/
 robot_name: Yumi

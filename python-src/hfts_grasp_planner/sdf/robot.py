@@ -5,6 +5,7 @@
 import yaml
 import rospy
 import numpy as np
+import hfts_grasp_planner.utils as utils
 from itertools import izip
 from hfts_grasp_planner.sdf.core import SceneSDF
 from hfts_grasp_planner.sdf.kinbody import OccupancyOctree, RigidBodyOccupancyGrid
@@ -418,7 +419,7 @@ class GrabbingRobotOccupancyTree(RobotOccupancyOctree):
         return pdist, vdir, ppos, link_name
 
 
-class RobotSDF(object):
+class RobotBallApproximation(object):
     """
         This class provides signed distance information for a robot.
         It utilizes a set of balls to approximate a robot and provides access functions
@@ -428,95 +429,164 @@ class RobotSDF(object):
         containing the definition of the approximating balls.
     """
 
-    def __init__(self, robot, scene_sdf=None):
+    def __init__(self, robot, desc_file):
         """
             Creates a new RobotSDF.
-            NOTE: Before you can use this object, you need to provide it with a ball approximation.
-            @param robot - OpenRAVE robot this sdf should operate on
-            @param scene_sdf (optional) - A SceneSDF for the given environment. If not provided,
-                            at construction, it must be provided by calling set_sdf(..) before this
-                            class can be used.
+            ---------
+            Arguments
+            ---------
+            robot - OpenRAVE robot this ball approximation approximates
+            desc_file - robot ball decription file
         """
         self._robot = robot
-        if scene_sdf is not None and not isinstance(scene_sdf, SceneSDF):
-            raise TypeError("The provided sdf object must be a SceneSDF")
-        self._sdf = scene_sdf
         self._handles = []  # list of openrave handles for visualization
-        # ball_positoins stores one large matrix of shape (n, 4), where n is the number of balls we have
-        # in each row we have the homogeneous coordinates of on ball center w.r.t its link's frame
-        self._ball_positions = None
-        self._query_positions = None
-        # ball_radii stores the radii for all balls
-        self._ball_radii = None
-        # saves the indices of links for which we have balls
-        self._link_indices = None
-        # saves tuples (num_balls, index_offset) for each link_idx in self._link_indices
-        # index_offset refers to the row in self._ball_positions and ball_radii in which the first ball
-        # for link i is stored. num_balls is the number of balls for this link
-        self._ball_indices = None
+        self._balls = {}  # dictionary that maps each link name to an array balls
+        self._load_approximation(desc_file)
+        self._links = [self._robot.GetLink(lname) for lname in self._balls.keys()]
 
-    def load_approximation(self, filename):
+    def _load_approximation(self, filename):
         """
             Loads a ball approximation for the robot from the given file.
         """
-        self._ball_positions = []
-        self._ball_radii = []
-        self._link_indices = []
-        link_descs = None
         with open(filename, 'r') as in_file:
             link_descs = yaml.load(in_file)
-        # first we need to know how many balls we have
-        num_balls = 0
-        for ball_descs in link_descs.itervalues():
-            num_balls += len(ball_descs)
-        # now we can create our data structures
-        self._ball_positions = np.ones((num_balls, 4))
-        self._query_positions = np.ones((num_balls, 3))
-        self._ball_radii = np.zeros(num_balls)
-        self._ball_indices = []
-        index_offset = 0
-        # run over all links
-        links = self._robot.GetLinks()
-        for link_idx in range(len(links)):  # we need the index
-            link_name = links[link_idx].GetName()
-            if link_name in link_descs:  # if we have some balls for this link
-                ball_descs = link_descs[link_name]
-                num_balls_link = len(ball_descs)
-                index_offset_link = index_offset
-                # save this link
-                self._link_indices.append(link_idx)
-                # save the offset and number of balls
-                self._ball_indices.append((num_balls_link, index_offset_link))
-                # save all balls
-                for ball_idx in range(num_balls_link):
-                    self._ball_positions[index_offset_link + ball_idx, :3] = np.array(ball_descs[ball_idx][:3])
-                    self._ball_radii[index_offset_link + ball_idx] = ball_descs[ball_idx][3]
-                index_offset += num_balls_link
-            else:
-                # for links that don't have any balls we need to store None so we can index ball_indices easily
-                self._ball_indices.append(None)
+        for lname, ball_list in link_descs.iteritems():
+            self._balls[lname] = np.array(ball_list)
 
-    def set_sdf(self, sdf):
-        """
-            Sets the scene sdf to use.
-            - :sdf: must be of type SceneSDF
-        """
-        if not isinstance(sdf, SceneSDF):
-            raise TypeError("The provided sdf object must be a SceneSDF")
-        self._sdf = sdf
+        # self._ball_positions = []
+        # self._ball_radii = []
+        # self._link_indices = []
+        # link_descs = None
+        # with open(filename, 'r') as in_file:
+        #     link_descs = yaml.load(in_file)
+        # # first we need to know how many balls we have
+        # num_balls = 0
+        # for ball_descs in link_descs.itervalues():
+        #     num_balls += len(ball_descs)
+        # # now we can create our data structures
+        # self._ball_positions = np.ones((num_balls, 4))
+        # self._query_positions = np.ones((num_balls, 3))
+        # self._ball_radii = np.zeros(num_balls)
+        # self._ball_indices = []
+        # index_offset = 0
+        # # run over all links
+        # links = self._robot.GetLinks()
+        # for link_idx in range(len(links)):  # we need the index
+        #     link_name = links[link_idx].GetName()
+        #     if link_name in link_descs:  # if we have some balls for this link
+        #         ball_descs = link_descs[link_name]
+        #         num_balls_link = len(ball_descs)
+        #         index_offset_link = index_offset
+        #         # save this link
+        #         self._link_indices.append(link_idx)
+        #         # save the offset and number of balls
+        #         self._ball_indices.append((num_balls_link, index_offset_link))
+        #         # save all balls
+        #         for ball_idx in range(num_balls_link):
+        #             self._ball_positions[index_offset_link + ball_idx, :3] = np.array(ball_descs[ball_idx][:3])
+        #             self._ball_radii[index_offset_link + ball_idx] = ball_descs[ball_idx][3]
+        #         index_offset += num_balls_link
+        #     else:
+        #         # for links that don't have any balls we need to store None so we can index ball_indices easily
+        #         self._ball_indices.append(None)
 
-    def get_distances(self):
+    # def get_distances(self):
+    #     """
+    #         Returns the distances of all balls to the respective closest obstacle.
+    #     """
+    #     if self._ball_positions is None or self._sdf is None:
+    #         return None
+    #     link_tfs = self._robot.GetLinkTransformations()
+    #     for link_idx in self._link_indices:
+    #         nb, off = self._ball_indices[link_idx]  # number of balls, offset
+    #         ltf = link_tfs[link_idx]
+    #         self._query_positions[off:off +
+    #                               nb] = np.dot(self._ball_positions[off: off + nb, : 3], ltf[:3, :3].transpose()) + ltf[:3, 3]
+    #     return self._sdf.get_distances(self._query_positions) - self._ball_radii
+
+    # def get_distances2(self, links=None, breturn_gradients=False):
+    #     """
+    #         Returns the distances of all balls to the respective closest obstacle.
+    #         NOTE: Throws a ValueError if not intialized.
+    #         ---------
+    #         Arguments
+    #         ---------
+    #         links (optional), list of OpenRAVE Links - if provided, limit distance retrieval to the specified
+    #             links
+    #         breturn_gradients (optional), bool - if True, also return gradients at query points
+    #         --------
+    #         Additional requirements:
+    #             Assumes that the OpenRAVE robot passed on construction is set to the desired configuration before.
+    #         -------
+    #         Returns
+    #         -------
+    #         distances, float np.array of shape (n,) - n number of balls that approximate the given links
+    #         gradients, np array of shape (n, 3) - distance gradients at the ball centers
+    #     """
+    #     if self._ball_positions is None:
+    #         raise ValueError("Ball approximation of robot not loaded. Can not compute distances.")
+    #     if self._sdf is None:
+    #         raise ValueError("No sdf set. Can not retrieve distances.")
+    #     link_tfs = np.array(self._robot.GetLinkTransformations())
+    #     # limit computation to given links
+    #     if links is not None:
+    #         link_idx = np.array([link.GetIndex() for link in links], dtype=int)
+    #         link_tfs = link_tfs[link_idx]
+    #     else:
+    #         link_idx = self._link_indices
+    #     # retrieve distances
+    #     nbs, offsets = self._ball_indices[link_idx]
+    #     total_num_balls = np.sum(nbs)
+    #     query_positions = np.empty((total_num_balls, 3))
+    #     ball_radii = np.empty(total_num_balls)
+    #     query_off = 0
+    #     for lid, ltf in link_idx, link_tfs:
+    #         local_positions = self._ball_positions[offsets[lid]:offsets[lid] + nbs[lid], : 3]
+    #         query_positions[query_off:query_off + nbs[lid]] = np.dot(local_positions, ltf[:3, :3].T) + ltf[:3, 3]
+    #         ball_radii[query_off: query_off + nbs[lid]] = self._ball_radii[offsets[lid]:offsets[lid] + nbs[lid]]
+    #         query_off += nbs[lid]
+    #     if breturn_gradients:
+    #         distances, grad = self._sdf.get_distances_grad(query_positions)
+    #         distances -= ball_radii
+    #         return distances, grad
+    #     return self._sdf.get_distances(local_positions) - ball_radii
+
+    def compute_penetration_cost(self, scene_sdf, links, eps=0.005):
         """
-            Returns the distances of all balls to the respective closest obstacle.
+            Compute CHOMP's penetration cost for the robot.
+            Assumes active DOFs are set.
+            ---------
+            Arguments
+            ---------
+            scene_sdf, SceneSDF - signed distance field of the scene to retrieve distances from
+            links (optional), list of OpenRAVE Links - if provided, limit distance retrieval to the specified
+                links
+            eps, float - tolerance
+            -------
+            Returns
+            -------
+            penetration cost, float 
+            gradient, np.array of shape (q,) - gradient of penetration cost
         """
-        if self._ball_positions is None or self._sdf is None:
-            return None
-        link_tfs = self._robot.GetLinkTransformations()
-        for link_idx in self._link_indices:
-            nb, off = self._ball_indices[link_idx]  # number of balls, offset
-            self._query_positions[off:off +
-                                  nb] = np.dot(self._ball_positions[off: off + nb, : 3], link_tfs[link_idx].transpose())
-        return self._sdf.get_distances(self._query_positions) - self._ball_radii
+        if links is None:
+            ball_links = self._links
+        else:
+            ball_links = [link for link in links if link.GetName() in self._balls]
+        total_value = 0.0
+        gradient = np.zeros(self._robot.GetActiveDOF())
+        for link in ball_links:
+            ball_info = self._balls[link.GetName()]
+            ltf = link.GetTransform()
+            local_query_positions = ball_info[:, :3]
+            global_query_positions = np.matmul(local_query_positions, ltf[:3, :3].T) + ltf[:3, 3]
+            distances, cart_grad = scene_sdf.get_distances_grad(global_query_positions)
+            smooth_dists, smooth_gradients = utils.chomps_distance(distances - ball_info[:, 3], eps, cart_grad)
+            total_value += np.sum(smooth_dists)
+            for sgradient, lpos in izip(smooth_gradients, local_query_positions):
+                jacobian = self._robot.CalculateActiveJacobian(link.GetIndex(), lpos)
+                gradient += np.matmul(sgradient, jacobian)  # it's jacobian.T * cart_grad
+        # TODO normalize? by number of balls?
+        return total_value, gradient
 
     def visualize_balls(self):
         """
@@ -524,17 +594,14 @@ class RobotSDF(object):
             in OpenRAVE.
         """
         self.hide_balls()
-        if self._ball_positions is None:
-            return
         env = self._robot.GetEnv()
-        link_tfs = self._robot.GetLinkTransformations()
         color = np.array((1, 0, 0, 0.6))
-        for link_idx in self._link_indices:
-            (nb, off) = self._ball_indices[link_idx]  # number of balls, offest
-            positions = np.dot(self._ball_positions[off: off + nb], link_tfs[link_idx].transpose())
-            for ball_idx in range(nb):
-                handle = env.plot3(positions[ball_idx, : 3], self._ball_radii[off + ball_idx],
-                                   color, 1)
+        for link in self._links:
+            ball_info = self._balls[link.GetName()]
+            ltf = link.GetTransform()
+            positions = np.dot(ball_info[:, :3], ltf[:3, :3].T) + ltf[:3, 3]
+            for b in range(ball_info.shape[0]):
+                handle = env.plot3(positions[b], ball_info[b, 3], color, 1)
                 self._handles.append(handle)
 
     def hide_balls(self):

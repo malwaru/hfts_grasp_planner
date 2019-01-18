@@ -1,3 +1,4 @@
+import rospy
 import numpy as np
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
@@ -93,11 +94,13 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         num_found_solutions = 0
         # store solutions for each manipulator separately
         solutions = {manip_name: [] for manip_name in self._manip_names}
-        for _ in xrange(max_attempts):
+        for i in xrange(max_attempts):
             # stop if we have sufficient solutions
             if num_found_solutions == num_solutions:
                 break
             num_found_solutions += self._run_mcts(solutions)
+        rospy.logdebug("Goal sampling finished. Found %i/%i solutions within %i attempts" %
+                       (num_found_solutions, num_solutions, i + 1))
         return solutions, num_found_solutions
 
     def set_reached_goals(self, goals):

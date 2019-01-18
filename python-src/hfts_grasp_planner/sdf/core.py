@@ -114,25 +114,32 @@ class SDF(object):
             distances = map(self._get_heuristic_distance_local, local_points[:, :3])
         return distances
 
-    def get_distances_grad(self, positions):
+    def get_distances_grad(self, positions, b_values=True):
         """
-            Return the shortest distance to obstacles at the given points as well as the gradients.
+            Return distance gradients and optionally shortest distance to obstacles at the given points.
             This method interpolates distances between grid points.
             TODO: If any query position is out of bounds, it currently throws an exception.
             ---------
             Arguments
             ---------
             positions, a numpy array of shape (n, 3) - n query positions in global frame
+            b_values(optional), bool - If True, also return distances, else only gradients
             -------
             Returns
             -------
-            values, np array of shape (n,) - distances at the query positions
+            values(optional), np array of shape (n,) - distances at the query positions if b_values == True
             gradients, np array of shape (n, 3) - gradients at the query positions
         """
-        valid_mask, values, gradients = self._grid.get_cell_gradients_pos(positions)
-        if np.sum(valid_mask) < values.shape[0]:
+        result = self._grid.get_cell_gradients_pos(positions, b_return_values=b_values)
+        if b_values:
+            valid_mask, values, gradients = result
+        else:
+            valid_mask, gradients = result
+        if np.sum(valid_mask) < gradients.shape[0]:
             raise NotImplementedError("Dealing with positions that are out of bounds is not implemented yet")
-        return values, gradients
+        if b_values:
+            return values, gradients
+        return gradients
 
     def get_direction(self, point):
         """

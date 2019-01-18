@@ -54,7 +54,7 @@ def resolve_paths(problem_desc, yaml_file):
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
     for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file',
-                'robot_occtree', 'robot_occgrid', 'reachability_path']:
+                'robot_occtree', 'robot_occgrid', 'reachability_path', 'robot_ball_desc']:
         if key in problem_desc:
             problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
@@ -220,6 +220,7 @@ if __name__ == "__main__":
             # remove base link - it does not move so
             manip_links.remove(manip.GetBase().GetName())
             link_names.extend(manip_links)
+        robot_ball_approx = robot_sdf_module.RobotBallApproximation(robot, problem_desc['robot_ball_desc'])
         # build robot_octree
         try:
             now = time.time()
@@ -241,7 +242,7 @@ if __name__ == "__main__":
         urdf_content = None
         with open(problem_desc['urdf_file'], 'r') as urdf_file:
             urdf_content = urdf_file.read()
-        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_occgrid, manip_data, urdf_content)
+        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_occgrid, manip_data, urdf_content, robot_ball_approx)
         # create object data
         # obj_octree = kinbody_sdf_module.OccupancyOctree(
         #     problem_desc['parameters']['occ_tree_cell_size'], target_object.GetLinks()[0])

@@ -12,6 +12,7 @@ import openravepy as orpy
 import hfts_grasp_planner.sdf.core as sdf_core
 import hfts_grasp_planner.sdf.occupancy as occupancy_mod
 import hfts_grasp_planner.sdf.grid as grid_mod
+import hfts_grasp_planner.utils as utils
 
 
 def construct_grid(links, cell_size):
@@ -580,27 +581,12 @@ class RigidBodyOccupancyGrid(object):
         query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
         if bgradients:
             distances, dist_gradients = scene_sdf.get_distances_grad(query_pos)
+            return_values, gradients = utils.chomps_distance(distances, eps, dist_gradients)
+            return return_values, gradients, self._locc_positions
         else:
             distances = scene_sdf.get_distances(query_pos)
-        return_values = np.empty_like(distances)
-        # compute array access masks to distuingish between cases
-        negative_mask = distances < 0.0
-        buffer_mask = np.logical_and(distances < eps, np.logical_not(negative_mask))
-        negative_ind = np.nonzero(negative_mask)[0]
-        buffer_ind = np.nonzero(buffer_mask)[0]
-        positive_ind = np.nonzero(distances > eps)[0]
-        # compute the actual funciton
-        return_values[negative_ind] = - distances[negative_ind] + eps / 2.0
-        return_values[buffer_ind] = 1.0 / (2.0 * eps) * np.square((distances[buffer_ind] - eps))
-        return_values[positive_ind] = 0.0
-        # optionally compute gradients
-        if bgradients:
-            gradients = np.empty_like(dist_gradients)
-            gradients[negative_ind] = -dist_gradients[negative_ind]
-            gradients[buffer_ind] = (dist_gradients[buffer_ind].T * (distances[buffer_ind] - eps) * 1.0/eps).T
-            gradients[positive_ind] = 0.0
-            return return_values, gradients, self._locc_positions
-        return return_values
+            return_values = utils.chomps_distance(distances, eps)
+            return return_values
 
     def get_link(self):
         """

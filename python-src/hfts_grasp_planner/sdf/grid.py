@@ -514,33 +514,38 @@ class VoxelGrid(object):
             values[valid_mask] = self.get_cell_values(grid_indices)
         return values
 
-    def get_cell_gradients_pos(self, positions, b_global_frame=True):
+    def get_cell_gradients_pos(self, positions, b_global_frame=True, b_return_values=True):
         """
-            Return the values as well as their gradients at the given positions.
+            Return the gradients and optionally the values at the given positions
             NOTE: This function throws a ValueError if the stored data type is not float.
             ---------
             Arguments
             ---------
             positions, np array of shape (n, 3) - query positions
             b_global_frame, bool - if True, positions are expected to be in world frame, else local.
+            b_return_values, bool - if True, also return values, else only gradients
             -------
             Returns
             -------
             valid_flags, np array of shape (n, 3) - bool array storing whether ith position was within bounds
-            values, np array of shape (m,) - values associated with m <= n valid positions
+            values(optional), np array of shape (m,) - values associated with m <= n valid positions if b_return_values == True
             gradients, np.array of shape (m, 3) - gradients of values associated with m <= n valid positions
         """
         if self._cells.dtype != np.float_:
             raise ValueError("Can not compute gradients for anything else than floats")
         num_points = positions.shape[0]
-        valid_masks = np.empty((7, num_points), dtype=bool)
-        grid_indices = np.zeros((7, num_points, 3))
+        query_width = 7 if b_return_values else 6
+        valid_masks = np.empty((query_width, num_points), dtype=bool)
+        grid_indices = np.zeros((query_width, num_points, 3))
         delta = self._cell_size / 4.0
         delta_x = np.array([delta, 0.0, 0.0])
         delta_y = np.array([0.0, delta, 0.0])
         delta_z = np.array([0.0, 0.0, delta])
-        deltas = np.array([np.zeros(3), delta_x, -delta_x, delta_y, -delta_y, delta_z, -delta_z])
-        for i in xrange(7):
+        if b_return_values:
+            deltas = np.array([delta_x, -delta_x, delta_y, -delta_y, delta_z, -delta_z, np.zeros(3)])
+        else:
+            deltas = np.array([delta_x, -delta_x, delta_y, -delta_y, delta_z, -delta_z])
+        for i in xrange(query_width):
             _, tgrid_indices, valid_masks[i] = self.map_to_grid_batch(positions + deltas[i], index_type=np.float_,
                                                                       b_global_frame=b_global_frame)
             grid_indices[i, valid_masks[i]] = tgrid_indices
@@ -550,15 +555,19 @@ class VoxelGrid(object):
         if num_valid:
             # if we have valid points, retrieve their values
             valid_indices = grid_indices[:, valid_mask]
-            values = self.get_cell_values(valid_indices.reshape((7 * num_valid, 3)))
-            values = values.reshape((7, num_valid))
+            values = self.get_cell_values(valid_indices.reshape((query_width * num_valid, 3)))
+            values = values.reshape((query_width, num_valid))
             gradients = np.empty((num_valid, 3))
-            gradients[:, 0] = (values[1, :] - values[2, :]) / (2.0 * delta)
-            gradients[:, 1] = (values[3, :] - values[4, :]) / (2.0 * delta)
-            gradients[:, 2] = (values[5, :] - values[6, :]) / (2.0 * delta)
-            return valid_mask, values[0], gradients
+            gradients[:, 0] = (values[0, :] - values[1, :]) / (2.0 * delta)
+            gradients[:, 1] = (values[2, :] - values[3, :]) / (2.0 * delta)
+            gradients[:, 2] = (values[4, :] - values[5, :]) / (2.0 * delta)
+            if b_return_values:
+                return valid_mask, values[6], gradients
+            return valid_mask, gradients
         else:
-            return valid_mask, np.empty((0,)), np.empty((0, 3))
+            if b_return_values:
+                return valid_mask, np.empty((0,)), np.empty((0, 3))
+            return valid_mask, np.empty((0, 3))
 
     def get_additional_data(self, idx):
         """
