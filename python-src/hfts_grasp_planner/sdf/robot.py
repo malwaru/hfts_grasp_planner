@@ -574,18 +574,24 @@ class RobotBallApproximation(object):
             ball_links = [link for link in links if link.GetName() in self._balls]
         total_value = 0.0
         gradient = np.zeros(self._robot.GetActiveDOF())
+        num_colliding_balls = 0
         for link in ball_links:
             ball_info = self._balls[link.GetName()]
             ltf = link.GetTransform()
             local_query_positions = ball_info[:, :3]
             global_query_positions = np.matmul(local_query_positions, ltf[:3, :3].T) + ltf[:3, 3]
             distances, cart_grad = scene_sdf.get_distances_grad(global_query_positions)
-            smooth_dists, smooth_gradients = utils.chomps_distance(distances - ball_info[:, 3], eps, cart_grad)
-            total_value += np.sum(smooth_dists)
-            for sgradient, lpos in izip(smooth_gradients, local_query_positions):
+            distances -= ball_info[:, 3]
+            smooth_dists, smooth_gradients = utils.chomps_distance(distances, eps, cart_grad)
+            # non-zero gradients
+            non_zero_idx = np.nonzero(smooth_gradients)[0]  # rows with non zero gradients
+            total_value += np.sum(smooth_dists[non_zero_idx])
+            for sgradient, lpos in izip(smooth_gradients[non_zero_idx], local_query_positions[non_zero_idx]):
                 jacobian = self._robot.CalculateActiveJacobian(link.GetIndex(), lpos)
                 gradient += np.matmul(sgradient, jacobian)  # it's jacobian.T * cart_grad
-        # TODO normalize? by number of balls?
+            num_colliding_balls += non_zero_idx.shape[0]
+        total_value /= num_colliding_balls
+        gradient /= num_colliding_balls
         return total_value, gradient
 
     def visualize_balls(self):

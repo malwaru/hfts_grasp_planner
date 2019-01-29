@@ -474,14 +474,14 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             _, cart_gradients = utils.chomps_distance(-values + self.eps, self.eps, -cart_gradients[:, :2])
             # next, we need to compute the gradient w.r.t. theta
             # filter zero gradients
-            non_zero_idx = np.nonzero(cart_gradients)[0]
+            non_zero_idx = np.nonzero(cart_gradients)[0]  # rows with non zero gradients
             non_zero_grads, non_zero_pos = cart_gradients[non_zero_idx], local_contact_points[non_zero_idx]
             if non_zero_grads.shape[0] == 0:
                 return np.zeros(3)
             # get object state
             x, y, theta = cache_entry.region_state
             # compute gradient w.r.t to state
-            r = np.array([[-np.sin(theta), np.cos(theta)], [-np.cos(theta), np.sin(theta)]])
+            r = np.array([[-np.sin(theta), np.cos(theta)], [-np.cos(theta), -np.sin(theta)]])
             dxi_dtheta = np.matmul(non_zero_pos[:, :2], r)
             lcart_grads = np.empty((non_zero_grads.shape[0], 3))
             lcart_grads[:, :2] = non_zero_grads[:, :2]
@@ -635,7 +635,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # get object state
             x, y, theta = cache_entry.region_state
             # compute gradient w.r.t to state
-            r = np.array([[-np.sin(theta), np.cos(theta)], [-np.cos(theta), np.sin(theta)]])
+            r = np.array([[-np.sin(theta), np.cos(theta)], [-np.cos(theta), -np.sin(theta)]])
             dxi_dtheta = np.matmul(non_zero_pos[:, :2], r)
             lcart_grads = np.empty((non_zero_grads.shape[0], 3))
             lcart_grads[:, :2] = non_zero_grads[:, :2]
@@ -874,6 +874,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             self.epsilon = 0.01  # minimal magnitude of cspace gradient
             self.step_size = 0.01  # multiplier for update step
             self.max_iterations = 100  # maximal number of iterations
+            self.damping_matrix = np.diag([0.9, 0.9, 1.0, 1.0, 1.0, 0.9])  # damping matrix for nullspace projection
             self.robot = robot_data.robot
 
         def optimize(self, cache_entry):
@@ -1007,9 +1008,12 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # sub_jacobian = np.array([jacobian[0], jacobian[1], jacobian[5]])
             # qgrad = np.matmul(cart_grad, sub_jacobian)
             # ------ 5. Collision constraint - arm must not be in collision
-            # col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
-            # col_grad = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
-            # qgrad += col_grad
+            col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
+            col_grad = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac,
+                                                                     np.matmul(self.damping_matrix, jacobian))), qgrad)
+            col_cart = np.matmul(np.matmul(self.damping_matrix, jacobian), col_grad)
+            rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
+            qgrad += col_grad
             # remove any motion that changes the base orientation/z height of the object
             jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
             qgrad = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
