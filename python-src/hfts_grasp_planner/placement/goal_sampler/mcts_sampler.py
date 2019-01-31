@@ -49,7 +49,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 self.parent.update_rec(obj_value, base_reward)
 
     def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, c=1.0, objective_weight=1.0/3.0,
-                 debug_visualizer=None):
+                 debug_visualizer=None, b_use_relaxation=True):
         """
             Create new MCTS Sampler.
             ---------
@@ -63,6 +63,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             c, float - exploration parameter
             objective_weight, float - parameter to weight objective constraint relaxation w.r.t to other constraints
             debug_visualizer(optional), mcts_visualization.MCTSVisualizer - visualizer for MCTS hierarchy
+            b_use_relaxation, bool - if True, uses relaxation function of solution_constructor to rate within-tree samples
         """
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
@@ -74,6 +75,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._debug_visualizer = debug_visualizer
         self._root_node = MCTSPlacementSampler.MCTSNode((), None)
         self._root_node.child_gen = self._hierarchy.get_child_key_gen(self._root_node.key)
+        self._use_relaxation = b_use_relaxation
         if self._debug_visualizer:
             self._debug_visualizer.add_node(self._root_node)
 
@@ -280,7 +282,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # TODO what about optimization flags?
         new_solution = self._solution_constructor.construct_solution(node.key, True, True)
         b_is_valid = self._validator.is_valid(new_solution)
-        if not b_is_valid and not self._hierarchy.is_leaf(node.key):
+        if not b_is_valid and not self._hierarchy.is_leaf(node.key) and self._use_relaxation:
             base_reward = self._validator.get_constraint_relaxation(new_solution)
         else:
             base_reward = 1.0 if b_is_valid else 0.0  # leaves do not get a relaxation reward
