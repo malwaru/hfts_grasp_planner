@@ -565,7 +565,7 @@ class RobotBallApproximation(object):
             -------
             Returns
             -------
-            penetration cost, float 
+            penetration cost, float
             gradient, np.array of shape (q,) - gradient of penetration cost
         """
         if links is None:
@@ -575,6 +575,7 @@ class RobotBallApproximation(object):
         total_value = 0.0
         gradient = np.zeros(self._robot.GetActiveDOF())
         num_colliding_balls = 0
+        # gradient_handles = []
         for link in ball_links:
             ball_info = self._balls[link.GetName()]
             ltf = link.GetTransform()
@@ -584,14 +585,25 @@ class RobotBallApproximation(object):
             distances -= ball_info[:, 3]
             smooth_dists, smooth_gradients = utils.chomps_distance(distances, eps, cart_grad)
             # non-zero gradients
-            non_zero_idx = np.nonzero(smooth_gradients)[0]  # rows with non zero gradients
+            non_zero_idx = np.unique(np.nonzero(smooth_gradients)[0])  # rows with non zero gradients
             total_value += np.sum(smooth_dists[non_zero_idx])
-            for sgradient, lpos in izip(smooth_gradients[non_zero_idx], local_query_positions[non_zero_idx]):
-                jacobian = self._robot.CalculateActiveJacobian(link.GetIndex(), lpos)
-                gradient += np.matmul(sgradient, jacobian)  # it's jacobian.T * cart_grad
             num_colliding_balls += non_zero_idx.shape[0]
-        total_value /= num_colliding_balls
-        gradient /= num_colliding_balls
+            for sgradient, pos in izip(smooth_gradients[non_zero_idx], global_query_positions[non_zero_idx]):
+                jacobian = self._robot.CalculateActiveJacobian(link.GetIndex(), pos)
+                inv_jac, rank = utils.compute_pseudo_inverse_rank(jacobian)
+                if rank < 3:
+                    num_colliding_balls -= 1
+                    continue
+                gradient += np.matmul(inv_jac, sgradient)  # it's jacobian.T * cart_grad
+                # gradient += np.matmul(sgradient, jacobian)  # it's jacobian.T * cart_grad
+                # ppos = ltf[:3, 3] + np.dot(ltf[:3, :3], lpos)
+                # gradient_handles.append(self._robot.GetEnv().drawarrow(pos, pos + 0.1 * sgradient, 0.005))
+        if num_colliding_balls > 0:
+            total_value /= num_colliding_balls
+            gradient /= num_colliding_balls
+            self.visualize_balls()
+        else:
+            self.hide_balls()
         return total_value, gradient
 
     def visualize_balls(self):

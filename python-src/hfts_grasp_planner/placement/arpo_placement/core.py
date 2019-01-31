@@ -435,9 +435,14 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # TODO I.e. the height variance is larger than the cell size
             # assert((values != float('inf')).all())
             if (values == float('inf')).any():
-                rospy.logerr("Invalid object pose detected - DEBUG!")
-                import IPython
-                IPython.embed()
+                rospy.logwarn("[ContactConstraint] Invalid object pose detected - Projecting to reference point!")
+                contact_points[:, 2] = cache_entry.region_pose[2, 3]
+                values = self._contact_point_distances.get_cell_values_pos(contact_points)
+                assert((values != None).all())
+                if (values == float('inf')).any():
+                    rospy.logerr("[ContactConstraint] 'inf' values encountered after projection! DEBUG!")
+                    import IPython
+                    IPython.embed()
             # get max distance. Clip it because the signed distance field isn't perfectly accurate
             max_distance = np.clip(np.max(values), 0.0, po.max_contact_pair_distance)
             return 1.0 - max_distance / po.max_contact_pair_distance
@@ -474,7 +479,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             _, cart_gradients = utils.chomps_distance(-values + self.eps, self.eps, -cart_gradients[:, :2])
             # next, we need to compute the gradient w.r.t. theta
             # filter zero gradients
-            non_zero_idx = np.nonzero(cart_gradients)[0]  # rows with non zero gradients
+            non_zero_idx = np.unique(np.nonzero(cart_gradients)[0])  # rows with non zero gradients
             non_zero_grads, non_zero_pos = cart_gradients[non_zero_idx], local_contact_points[non_zero_idx]
             if non_zero_grads.shape[0] == 0:
                 return np.zeros(3)
@@ -628,7 +633,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             to_ref_pose = cache_entry.plcmnt_orientation.inv_reference_tf
             loc_positions = np.dot(loc_positions, to_ref_pose[:3, :3].T) + to_ref_pose[:3, 3]
             # filter zero gradients
-            non_zero_idx = np.nonzero(cart_grads[:, :2])[0]
+            non_zero_idx = np.unique(np.nonzero(cart_grads[:, :2])[0])
             non_zero_grads, non_zero_pos = cart_grads[non_zero_idx], loc_positions[non_zero_idx]
             if non_zero_grads.shape[0] == 0:
                 return np.zeros(3)
@@ -667,7 +672,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             to_ref_pose = cache_entry.plcmnt_orientation.inv_reference_tf
             loc_positions = np.dot(loc_positions, to_ref_pose[:3, :3].T) + to_ref_pose[:3, 3]
             # eef_index = manip.GetEndEffector().GetIndex()
-            non_zero_idx = np.nonzero(cart_grads[:2])[0]
+            non_zero_idx = np.unique(np.nonzero(cart_grads[:2])[0])
             non_zero_grads, non_zero_pos = cart_grads[non_zero_idx], loc_positions[non_zero_idx]
             trimmed_jac = np.array([cache_entry.jacobian[0], cache_entry.jacobian[1], cache_entry.jacobian[2]])
             r = np.array(cache_entry.relative_tf[:2, :2])
@@ -874,7 +879,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             self.epsilon = 0.01  # minimal magnitude of cspace gradient
             self.step_size = 0.01  # multiplier for update step
             self.max_iterations = 100  # maximal number of iterations
-            self.damping_matrix = np.diag([0.9, 0.9, 1.0, 1.0, 1.0, 0.9])  # damping matrix for nullspace projection
+            self.damping_matrix = np.diag([0.9, 0.9, 1.0, 1.0, 1.0, 0.8])  # damping matrix for nullspace projection
             self.robot = robot_data.robot
 
         def optimize(self, cache_entry):
@@ -920,6 +925,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                 q_current -= self.step_size * q_grad / grad_norm
                 b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
                 if b_in_limits:
+                    # TODO save best based on error function values
                     # save q_current and compute next jacobian + gradient
                     q_best[:] = q_current
                     q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
@@ -934,6 +940,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             cache_entry.solution.arm_config = q_best
             manip.SetLocalToolTransform(np.eye(4))
             self.robot.SetActiveDOFValues(q_original)  # TODO remove
+            self.robot_data.ball_approx.hide_balls()  # TODO remove
 
         def _compute_gradient(self, cache_entry, q_current, manip_data):
             """
@@ -1009,14 +1016,14 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # qgrad = np.matmul(cart_grad, sub_jacobian)
             # ------ 5. Collision constraint - arm must not be in collision
             col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
-            col_grad = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac,
-                                                                     np.matmul(self.damping_matrix, jacobian))), qgrad)
-            col_cart = np.matmul(np.matmul(self.damping_matrix, jacobian), col_grad)
-            rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
+            col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
+                                     np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
+            # col_cart = np.matmul(jacobian, col_grad)
+            # rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
             qgrad += col_grad
             # remove any motion that changes the base orientation/z height of the object
             jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
-            qgrad = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
+            qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
             return qgrad
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
