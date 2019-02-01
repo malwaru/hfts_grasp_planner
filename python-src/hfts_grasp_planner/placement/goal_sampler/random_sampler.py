@@ -1,4 +1,5 @@
 import rospy
+import numpy as np
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
     This module contains the definition of a naive placement goal sampler - purely random sampler.
@@ -7,14 +8,16 @@ import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 
 
 class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
-    def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names):
+    def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, b_optimize_constraints):
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
         self._validator = validator
         self._objective = objective
         self._manip_names = manip_names
+        self._best_reached_goal = None
+        self._boptimize_constraints = b_optimize_constraints
 
-    def sample(self, num_solutions, max_attempts):
+    def sample(self, num_solutions, max_attempts, b_improve_objective=True):
         """
             Sample new solutions.
             ---------
@@ -22,12 +25,16 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             ---------
             num_solutions, int - number of new solutions to sample
             max_attempts, int - maximal number of attempts (iterations or sth similar)
+            b_improve_objective, bool - if True, requires samples to achieve better objective than
+                all reached goals so far
             -------
             Returns
             -------
             a dict of PlacementGoals
             num_found_sol, int - The number of found solutions.
         """
+        if b_improve_objective and self._best_reached_goal is not None:
+            self._validator.set_minimal_objective(self._best_reached_goal.objective_value)
         num_found_solutions = 0
         # store solutions for each manipulator separately
         solutions = {manip_name: [] for manip_name in self._manip_names}
@@ -42,8 +49,8 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 key = child_key
                 child_key = self._hierarchy.get_random_child_key(key)
             assert(key is not None)
-            solution = self._solution_constructor.construct_solution(key, True, False)
-            if self._validator.is_valid(solution):
+            solution = self._solution_constructor.construct_solution(key, self._boptimize_constraints)
+            if self._validator.is_valid(solution, b_improve_objective):
                 solution.objective_value = self._objective.evaluate(solution)
                 solutions[solution.manip.GetName()].append(solution)
                 num_found_solutions += 1
@@ -59,8 +66,17 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             ---------
             goals, list of PlacementGoals
         """
-        # Nothing to do here
-        pass
+        if self._best_reached_goal is not None:
+            ovals = np.empty(len(goals) + 1)
+            ovals[0] = self._best_reached_goal.objective_value
+            ovals[1:] = [g.objective_value for g in goals]
+            best_idx = np.argmax(ovals)
+            if best_idx != 0:
+                self._best_reached_goal = goals[best_idx - 1]
+        else:
+            ovals = np.array([g.objective_value for g in goals])
+            best_idx = np.argmax(ovals)
+            self._best_reached_goal = goals[best_idx]
 
     def set_reached_configurations(self, manip, configs):
         """

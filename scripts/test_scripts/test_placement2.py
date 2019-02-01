@@ -23,6 +23,7 @@ import hfts_grasp_planner.placement.goal_sampler.mcts_sampler as mcts_sampler_mo
 import hfts_grasp_planner.placement.goal_sampler.mcts_visualization as mcts_visualizer_mod
 import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
 import hfts_grasp_planner.placement.reachability as rmap_mod
+import hfts_grasp_planner.placement.clearance as clearance_mod
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
 
 
@@ -249,11 +250,17 @@ if __name__ == "__main__":
         obj_occgrid = kinbody_sdf_module.RigidBodyOccupancyGrid(problem_desc['parameters']['occ_tree_cell_size'],
                                                                 target_object.GetLinks()[0])
         object_data = arpo_placement_mod.ARPORobotBridge.ObjectData(target_object, obj_occgrid)
+        # create objective function
+        now = time.time()
+        obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
+                                                  b_max=problem_desc['maximize_clearance'])
+        rospy.logdebug("Creation of objective function took %fs" % (time.time() - now))
         # create arpo hierarchy
         hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
         arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
-                                                         object_data=object_data, objective_fn=None,
-                                                         global_region_info=global_region_info, scene_sdf=scene_sdf)
+                                                         object_data=object_data, objective_fn=obj_fn,
+                                                         global_region_info=global_region_info, scene_sdf=scene_sdf,
+                                                         parameters=problem_desc['parameters'])
         # visualize placement regions
         env.SetViewer('qtcoin')  # WARNING: IK solvers also need to be created before setting the viewer
         handles = []
@@ -272,7 +279,8 @@ if __name__ == "__main__":
         #                                                         manip.GetName() for manip in manips])
         goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                 manip.GetName() for manip in manips],
-                                                             debug_visualizer=mcts_visualizer)
+                                                             debug_visualizer=mcts_visualizer, 
+                                                             b_use_relaxation=problem_desc['parameters']['use_relaxations'])
 
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips)
         # traj, goal = plan(motion_planner, target_object, 10)

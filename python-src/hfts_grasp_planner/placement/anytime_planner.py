@@ -215,7 +215,7 @@ class AnyTimePlacementPlanner:
             connected_goals = []  # store goals that we manage to connect to in this iteration
             # TODO we may have some goals left from a previous iteration, what about those?
             rospy.logdebug("Sampling %i new goals" % num_goal_samples)
-            new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter)
+            new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter, True)
             rospy.logdebug("Got %i valid new goals" % num_new_goals)
             # TODO we could/should plan motions for each manipulator in parallel. For now, instead, plan
             # TODO for one at a time
@@ -234,7 +234,7 @@ class AnyTimePlacementPlanner:
                             reached_goal = remaining_goals[goal_id]
                             # by invariant a newly reached goal should always have better objective
                             assert(best_solution is None or
-                                   best_solution[1].objective_value > reached_goal.objective_value)
+                                   best_solution[1].objective_value < reached_goal.objective_value)
                             best_solution = (traj, reached_goal)
                             rospy.logdebug("Found new solution - it has objective value %f" %
                                            best_solution[1].objective_value)
@@ -279,7 +279,7 @@ class AnyTimePlacementPlanner:
                            for manip_name, goals in new_goals.iteritems() if len(goals) > 0]
         # sort based on average score
         goal_candidates.sort(key=lambda x: x[1])
-        return goal_candidates
+        return goal_candidates.reverse()
 
     def _filter_goals(self, goals, best_solution):
         """
@@ -296,7 +296,7 @@ class AnyTimePlacementPlanner:
         """
         if best_solution is None:
             return goals
-        return filter(lambda x: x.objective_value < best_solution[1].objective_value, goals)
+        return [x for x in goals if x.objetive_value > best_solution[1].objective_value]
 
     def set_parameters(self, **kwargs):
         """

@@ -76,10 +76,11 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._root_node = MCTSPlacementSampler.MCTSNode((), None)
         self._root_node.child_gen = self._hierarchy.get_child_key_gen(self._root_node.key)
         self._use_relaxation = b_use_relaxation
+        self._best_reached_goal = None
         if self._debug_visualizer:
             self._debug_visualizer.add_node(self._root_node)
 
-    def sample(self, num_solutions, max_attempts):
+    def sample(self, num_solutions, max_attempts, b_improve_objective=True):
         """
             Sample new solutions.
             ---------
@@ -87,12 +88,16 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             ---------
             num_solutions, int - number of new solutions to sample
             max_attempts, int - maximal number of attempts (iterations or sth similar)
+            b_improve_objective, bool - if True, requires samples to achieve better objective than
+                all reached goals so far
             -------
             Returns
             -------
             a dict of PlacementGoals
             num_found_sol, int - The number of found solutions.
         """
+        if b_improve_objective and self._best_reached_goal is not None:
+            self._validator.set_minimal_objective(self._best_reached_goal.objective_value)
         num_found_solutions = 0
         # store solutions for each manipulator separately
         solutions = {manip_name: [] for manip_name in self._manip_names}
@@ -100,7 +105,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             # stop if we have sufficient solutions
             if num_found_solutions == num_solutions:
                 break
-            num_found_solutions += self._run_mcts(solutions)
+            num_found_solutions += self._run_mcts(solutions, b_improve_objective)
         rospy.logdebug("Goal sampling finished. Found %i/%i solutions within %i attempts" %
                        (num_found_solutions, num_solutions, i + 1))
         return solutions, num_found_solutions
@@ -113,8 +118,17 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             ---------
             goals, list of PlacementGoals
         """
-        # TODO
-        pass
+        if self._best_reached_goal is not None:
+            ovals = np.empty(len(goals) + 1)
+            ovals[0] = self._best_reached_goal.objective_value
+            ovals[1:] = [g.objective_value for g in goals]
+            best_idx = np.argmax(ovals)
+            if best_idx != 0:
+                self._best_reached_goal = goals[best_idx - 1]
+        else:
+            ovals = np.array([g.objective_value for g in goals])
+            best_idx = np.argmax(ovals)
+            self._best_reached_goal = goals[best_idx]
 
     def set_reached_configurations(self, manip, configs):
         """
@@ -266,13 +280,14 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # node.child_gen = None
         return new_node
 
-    def _sample(self, node):
+    def _sample(self, node, b_impr_obj):
         """
             Sample a new solution from the given node.
             ---------
             Arguments
             ---------
             node, MCTSNode - node to compute new solution on
+            b_impr_obj, bool - whether objective needs to be improved
             -------
             Returns
             -------
@@ -280,8 +295,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         """
         assert(self._solution_constructor.can_construct_solution(node.key))
         # TODO what about optimization flags?
-        new_solution = self._solution_constructor.construct_solution(node.key, True, True)
-        b_is_valid = self._validator.is_valid(new_solution)
+        new_solution = self._solution_constructor.construct_solution(node.key, True)
+        b_is_valid = self._validator.is_valid(new_solution, b_impr_obj)
         if not b_is_valid and not self._hierarchy.is_leaf(node.key) and self._use_relaxation:
             base_reward = self._validator.get_constraint_relaxation(new_solution)
         else:
@@ -296,7 +311,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             return new_solution
         return None
 
-    def _run_mcts(self, solutions):
+    def _run_mcts(self, solutions, b_impr_obj):
         """
             # TODO
         """
@@ -324,7 +339,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 current_node = current_node.children[best_choice]
         assert(self._is_sampleable(current_node))
         # sample it: compute a new solution, propagate result up
-        new_solution = self._sample(current_node)  # this is equal to a Monte Carlo rollout + backpropagation
+        # this is equal to a Monte Carlo rollout + backpropagation
+        new_solution = self._sample(current_node, b_impr_obj)
         if self._debug_visualizer:
             self._debug_visualizer.render(bupdate_data=True)
         if new_solution is not None:

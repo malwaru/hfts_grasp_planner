@@ -38,7 +38,7 @@ class PlacementGoalSampler(object):
             self.data = data
 
     @abstractmethod
-    def sample(self, num_solutions, max_attempts=1000):
+    def sample(self, num_solutions, max_attempts=1000, b_improve_objective=True):
         """
             Sample new solutions.
             ---------
@@ -46,6 +46,8 @@ class PlacementGoalSampler(object):
             ---------
             num_solutions, int - number of new solutions to sample
             max_attempts, int - maximal number of attempts (iterations or sth similar)
+            b_improve_objective, bool - if True, requires samples to achieve better objective than
+                all reached goals so far
             -------
             Returns
             -------
@@ -133,25 +135,23 @@ class PlacementHierarchy(object):
         pass
 
 
-class PlacementSolutionConstructor(object):
+class PlacementGoalConstructor(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def construct_solution(self, key, b_optimize_constraints=False, b_optimize_objective=False):
+    def construct_solution(self, key, b_optimize_constraints=False):
         """
-            Construct a new PlacementSolution from a hierarchy key.
+            Construct a new PlacementGoal from a hierarchy key.
             ---------
             Arguments
             ---------
             key, object - a key object that identifies a node in a PlacementHierarchy
             boptimize_constraints, bool - if True, the solution constructor may put additional computational
                 effort into computing a valid solution, e.g. some optimization of a constraint relaxation
-            b_optimize_objective, bool - if True, the solution constructor may optimize an objective
-                given the hierarchy key
             -------
             Returns
             -------
-            PlacementSolution sol, a placement solution for the given key
+            PlacementGoal sol, a placement solution for the given key
         """
         pass
 
@@ -182,13 +182,25 @@ class PlacementValidator(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def is_valid(self, solution):
+    def set_minimal_objective(self, val):
         """
-            Return whether the given PlacementSolution is valid.
+            Sets the minimal objective that a placement needs to achieve in order to be considered valid.
             ---------
             Arguments
             ---------
-            solution, PlacementSolution - solution to evaluate
+            val, float - minimal objective value
+        """
+        pass
+
+    @abstractmethod
+    def is_valid(self, solution, b_improve_objective):
+        """
+            Return whether the given PlacementGoal is valid.
+            ---------
+            Arguments
+            ---------
+            solution, PlacementGoal - solution to evaluate
+            b_improve_objective, bool - If True, the solution has to be better than the current minimal objective.
         """
         pass
 
@@ -201,7 +213,7 @@ class PlacementValidator(object):
             ---------
             Arguments
             ---------
-            solution, PlacementSolution - solution to evaluate
+            solution, PlacementGoal - solution to evaluate
             -------
             Returns
             -------
@@ -250,11 +262,12 @@ class PlacementObjective(object):
             ---------
             Arguments
             ---------
-            solution, PlacementSolution - solution to evaluate
+            solution, PlacementGoal - solution to evaluate
+                solution.obj_tf must not be None
             --------
             Returns
             --------
-            val, float - objective value (the smaller the better)
+            val, float - objective value (the larger the better)
         """
         pass
 

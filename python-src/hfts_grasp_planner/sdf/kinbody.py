@@ -497,6 +497,10 @@ class RigidBodyOccupancyGrid(object):
             tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
                 is expecting. If None, link.GetTransform is used.
             default_value, float - Value to add if an occupied cell of this link is out of bounds of the field.
+            -------
+            Returns
+            -------
+            result, float
         """
         if tf is None:
             tf = self._link.GetTransform()
@@ -506,6 +510,29 @@ class RigidBodyOccupancyGrid(object):
             values_to_sum = field.get_cell_values(indices)
             return np.sum(values_to_sum) + (query_pos.shape[0] - indices.shape[0]) * default_value
         return query_pos.shape[0] * default_value
+
+    def compute_gradients(self, field, tf=None):
+        """
+            Compute the gradients at the positions of this grid's cells.
+            ---------
+            Arguments
+            ---------
+            field, VoxelGrid - a voxel grid filled with values to compute gradient for
+            tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
+                is expecting. If None, link.GetTransform is used.
+            -------
+            Returns
+            -------
+            gradients, np.array of shape (n, 3) - gradients at all n cell positions (gradient is 0 if outside of field)
+            loc_positions, np.array of shape (n, 3) - local positions of cells
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        rgradients = np.zeros_like(self._locc_positions)
+        valid_mask, gradients = field.get_cell_gradients_pos(query_pos, b_return_values=False)
+        rgradients[valid_mask] = gradients
+        return gradients, self._locc_positions
 
     def count(self, field, val, comp=np.greater_equal, tf=None):
         """

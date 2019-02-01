@@ -273,7 +273,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         return itertools.product(enumerate(self._manips), enumerate(self._orientations))
 
 
-class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
+class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                       placement_interfaces.PlacementValidator,
                       placement_interfaces.PlacementObjective):
     """
@@ -718,6 +718,10 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
     class ReachabilityConstraint(object):
         """
             This constraint expresses that a solution needs to be kinematically reachable.
+            ----------
+            Parameters
+            ----------
+            eps_xi, float - epsilon in error function for objective function
         """
 
         def __init__(self, robot_data, baggressive=False):
@@ -819,42 +823,71 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
                          region=cache_entry.region, po=cache_entry.plcmnt_orientation)
             return fn, good_val
 
-    # class ObjectiveImprovementConstraint(object):
-    #     """
-    #         This constraint expresses that a new solution needs to be better than a previously
-    #         found one.
-    #     """
+    class ObjectiveImprovementConstraint(object):
+        """
+            This constraint expresses that a new solution needs to be better than a previously
+            found one.
+        """
 
-    #     def __init__(self):
-    #         """
-    #             Construct new QualityImprovementConstraint
-    #         """
-    #         self._best_value = float('inf')
+        def __init__(self, obj_fn, eps):
+            """
+                Construct new QualityImprovementConstraint
+            """
+            self.best_value = -float('inf')
+            self.obj_fn = obj_fn
+            self.eps = eps
 
-    #     def check_objective_improvement(self, cache_entry):
-    #         """
-    #             Check whether the solution stored in cache entry is has a better quality than the best
-    #             reached so far.
-    #             Returns True or False. TODO: implement relaxation
-    #             ---------
-    #             Arguments
-    #             ---------
-    #             cache_entry, SolutionCacheEntry
-    #             ------------
-    #             Side effects
-    #             ------------
-    #             sets the bbetter_objective flag in cache_entry
-    #         """
-    #         cache_entry.bbetter_objective = cache_entry.solution.objective_value < self._best_value
-    #         return cache_entry.bbetter_objective
+        def check_objective_improvement(self, cache_entry):
+            """
+                Check whether the solution stored in cache entry has a better objective than the best
+                reached so far.
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                ------------
+                Side effects
+                ------------
+                sets the bbetter_objective flag in cache_entry
+                -------
+                Returns
+                -------
+                True or False
+            """
+            cache_entry.bbetter_objective = cache_entry.solution.objective_value > self.best_value
+            return cache_entry.bbetter_objective
 
-    #     def get_relaxation(self, cache_entry):
-    #         """
-    #             Compute relaxation of objctive constraint.
-    #             #TODO
-    #         """
-    #         # TODO requires known objective values so far
-    #         pass
+        def get_relaxation(self, cache_entry):
+            """
+                Compute relaxation of objctive constraint.
+                #TODO
+            """
+            # TODO requires known objective values so far
+            pass
+
+        def get_error_gradient(self, cache_entry, to_ref_pose):
+            """
+                Return (non-normalized) error value on whether cache_entry achieves
+                a better objective as well as the gradient w.r.t. x, y, theta.
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                to_ref_pose, np.array (4, 4) - transformation matrix from object frame to reference pose frame.
+                -------
+                Returns
+                -------
+                error_val, float - error value, i.e. delta(xi(x) - xi_best)
+                gradient, np.array of shape (3,) - gradient of error w.r.t x, y, theta
+            """
+            if self.best_value == -float('inf'):
+                return 0.0, np.array([0.0, 0.0, 0.0])
+            xi = self.obj_fn(cache_entry.solution.obj_tf)
+            xi_grad = self.obj_fn.get_gradient(cache_entry.solution.obj_tf, cache_entry.region_state, to_ref_pose)
+            error_val = xi - self.best_value
+            vs, gs = utils.chomps_distance(np.array([error_val]), self.eps, np.array([xi_grad]))
+            return vs[0], gs[0]
+
     class JacobianOptimizer(object):
         """
             Optimization algorithm that follows the gradient of all contraints to locally search for
@@ -955,10 +988,11 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             manip = manip_data.manip
             # with self.robot:
             self.robot.SetActiveDOFValues(q_current)
+            cache_entry.solution.obj_tf = np.matmul(
+                cache_entry.solution.manip.GetEndEffector().GetTransform(), manip_data.inv_grasp_tf)
             # TODO delete
             crayola = self.robot.GetEnv().GetKinBody("crayola")
-            crayola.SetTransform(
-                np.matmul(cache_entry.solution.manip.GetEndEffector().GetTransform(), manip_data.inv_grasp_tf))
+            crayola.SetTransform(cache_entry.solution.obj_tf)
             # TODO until here
             # compute jacobian
             jacobian = np.empty((6, manip.GetArmDOF()))
@@ -994,7 +1028,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # TODO could also make this distance smooth
             # _, cart_grad_r = utils.chomps_distance()
             rospy.logdebug("In-region constraint gradient is %s" % str(cart_grad_r))
-            # ----- 2. Theta constraint - theta needs to be within the selected so2interval
+            # ------ 2. Theta constraint - theta needs to be within the selected so2interval
             # We compute no gradient for this constraint, and instead simply abort if we violate it
             if utils.dist_in_range(theta, cache_entry.so2_interval) != 0.0:
                 rospy.logdebug("Jacobian descent failed: Theta is out of so2 interval.")
@@ -1005,16 +1039,19 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             # ------ 4. Collision constraint - object must not be in collision
             cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
             rospy.logdebug("Object collisions constraint gradient is %s" % str(cart_grad_col))
-            # ------ 5. Translate cartesian gradients into c-space gradients
-            cart_grad = cart_grad_r + cart_grad_c + cart_grad_col
+            # ------ 5. Objective Improvement constraint - objective must be an improvement
+            xi_err, cart_grad_xi = self.objective_constraint.get_error_gradient(
+                cache_entry, cache_entry.plcmnt_orientation.inv_reference_tf)
+            rospy.logdebug("Objective improvement error is %s" % str(xi_err))
+            rospy.logdebug("Objective improvement constraint gradient is %s" % str(cart_grad_xi))
+            # ------ 6. Translate cartesian gradients into c-space gradients
+            cart_grad = cart_grad_r + cart_grad_c + cart_grad_col + cart_grad_xi
             rospy.logdebug("Resulting cartesian gradient (x, y, theta): %s" % str(cart_grad))
             extended_cart = np.zeros(6)
             extended_cart[:2] = cart_grad[:2]
             extended_cart[5] = cart_grad[2]
             qgrad = np.matmul(inv_jac, extended_cart)
-            # sub_jacobian = np.array([jacobian[0], jacobian[1], jacobian[5]])
-            # qgrad = np.matmul(cart_grad, sub_jacobian)
-            # ------ 5. Collision constraint - arm must not be in collision
+            # ------ 7. Arm collision constraint - arm must not be in collision
             col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
             col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
                                      np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
@@ -1027,7 +1064,8 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             return qgrad
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
-                 objective_fn, global_region_info, scene_sdf):
+                 objective_fn, global_region_info, scene_sdf,
+                 parameters):
         """
             Create a new ARPORobotBridge
             ---------
@@ -1039,6 +1077,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             objective_fn, ??? - TODO
             global_region_info, (VoxelGrid, VectorGrid) - stores for the full planning scene distances to where
                 contact points may be located, as well as gradients
+            parameters, dict - dictionary with parameters. See class description.
         """
         self._hierarchy = arpo_hierarchy
         self._robot_data = robot_data
@@ -1048,25 +1087,23 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         self._contact_constraint = ARPORobotBridge.ContactConstraint(global_region_info)
         self._collision_constraint = ARPORobotBridge.CollisionConstraint(object_data, robot_data, scene_sdf)
         self._reachability_constraint = ARPORobotBridge.ReachabilityConstraint(robot_data, True)
-        # self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint() # TODO move this into goal sampler
+        self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint(objective_fn, parameters['eps_xi'])
         self._solutions_cache = []  # array of SolutionCacheEntry objects
         self._call_stats = np.array([0, 0, 0, 0])  # num sol constructions, is_valid, get_relaxation, evaluate
         self._plcmnt_ik_solvers = {}  # maps (manip_id, placement_orientation_id) to a trac_ik solver
         self._init_ik_solvers()
         self._jacobian_optimizer = ARPORobotBridge.JacobianOptimizer(self._contact_constraint, self._collision_constraint,
-                                                                     None, self._robot_data)  # TODO objective constraint?
+                                                                     self._objective_constraint, self._robot_data)
 
-    def construct_solution(self, key, b_optimize_constraints=False, b_optimize_objective=False):
+    def construct_solution(self, key, b_optimize_constraints=False):
         """
             Construct a new PlacementSolution from a hierarchy key.
             ---------
             Arguments
             ---------
             key, object - a key object that identifies a node in a PlacementHierarchy
-            boptimize_constraints, bool - if True, the solution constructor may put additional computational
+            b_optimize_constraints, bool - if True, the solution constructor may put additional computational
                 effort into computing a valid solution, e.g. some optimization of a constraint relaxation
-            b_optimize_objective, bool - if True, the solution constructor may optimize an objective
-                given the hierarchy key
             -------
             Returns
             -------
@@ -1096,7 +1133,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         self._solutions_cache.append(sol_cache_entry)
         if b_optimize_constraints:
             # compute object pose and arm configuration jointly
-            self._optimize_constraints(sol_cache_entry, b_optimize_objective)
+            self._optimize_constraints(sol_cache_entry)
         else:
             # compute object and end-effector pose
             self._compute_object_pose(sol_cache_entry)
@@ -1111,13 +1148,24 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         """
         return len(key) >= self._hierarchy.get_minimum_depth_for_construction()
 
-    def is_valid(self, solution):
+    def set_minimal_objective(self, val):
+        """
+            Sets the minimal objective that a placement needs to achieve in order to be considered valid.
+            ---------
+            Arguments
+            ---------
+            val, float - minimal objective value
+        """
+        self._objective_constraint.best_value = val
+
+    def is_valid(self, solution, b_improve_objective):
         """
             Return whether the given PlacementSolution is valid.
             ---------
             Arguments
             ---------
             solution, PlacementSolution - solution to evaluate
+            b_improve_objective, bool - If True, the solution has to be better than the current minimal objective.
             -------
             Returns
             -------
@@ -1138,6 +1186,10 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         if not self._contact_constraint.check_contacts(cache_entry):
             rospy.logdebug("Solution invalid because it's unstable")
             return False
+        # finally check whether the objective is an improvement
+        if b_improve_objective:
+            cache_entry.objective_val = self._objective_fn(solution.obj_tf)
+            return cache_entry.objective_val > self._objective_constraint.best_value
         return True
 
     def get_constraint_relaxation(self, solution):
@@ -1176,9 +1228,27 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         return relaxation_val  # TODO could pass this value through a non-linear function here to make the reward sharper
 
     def evaluate(self, solution):
-        # TODO implement me
+        """
+            Evaluate the given solution.
+            ---------
+            Arguments
+            ---------
+            solution, PlacementSolution - solution to evaluate
+                solution.obj_tf must not be None
+            ------------
+            Side effects
+            ------------
+            solution.objective_value will be set to the solution's objective
+            -------
+            Returns
+            -------
+            objective_value, float
+        """
+        cache_entry = self._solutions_cache[solution.key]
         self._call_stats[3] += 1
-        solution.objective_value = solution.obj_tf[1, 3]
+        if cache_entry.objective_val is None:
+            cache_entry.objective_val = self._objective_fn(solution.obj_tf)
+        solution.objective_value = cache_entry.objective_val
         return solution.objective_value
 
     def get_num_construction_calls(self, b_reset=True):
@@ -1227,7 +1297,7 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
         # compute default end-effector tf
         cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)
 
-    def _optimize_constraints(self, cache_entry, b_optimize_obj):
+    def _optimize_constraints(self, cache_entry):
         """
             Compute an object pose and arm configuration jointly by using an optimizer to minimize
             constraint violation.
@@ -1236,7 +1306,6 @@ class ARPORobotBridge(placement_interfaces.PlacementSolutionConstructor,
             ---------
             cache_entry, SolutionCacheEntry - The following fields are required to be intialized:
                 manip, region, plcmnt_orientation, so2_interval, solution
-            b_optimize_obj, bool - if True, also optimize objective
             ------------
             Side effects
             ------------
