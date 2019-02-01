@@ -9,6 +9,7 @@ import skimage.measure as skm
 import hfts_grasp_planner.sdf.grid as grid_mod
 import scipy.ndimage.morphology as scipy_morph
 import hfts_grasp_planner.external.transformations as tf_mod
+import hfts_grasp_planner.utils as utils
 
 
 class PlanarPlacementRegion(object):
@@ -129,6 +130,38 @@ class PlanarPlacementRegion(object):
         if self._subregions is None:
             self.get_subregions()  # initializes subregions
         return len(self._subregions)
+
+    def get_leaf_key(self, position):
+        """
+            Return the key of the smallest subregion that contains the given position
+            ---------
+            Arguments
+            ---------
+            position, np.array of shape (3,) - (x, y, z)
+            -------
+            Returns
+            -------
+            key, tuple - key of the subregion, None if not within this region
+        """
+        # transform position into local frame
+        inv_base_tf = utils.inverse_transform(self.base_tf)
+        lpos = np.dot(inv_base_tf[:3, :3], position) + inv_base_tf[:3, 3]
+        if not self.has_subregions():  # is this a leaf?
+            if (lpos <= self.cell_size).all() and (lpos >= 0).all():  # position is in this leaf
+                return ()
+            else:
+                return None
+        if (lpos < 0).any() or (lpos > self.dimensions).any():  # is position out of bounding box?
+            return None
+
+        # since we sort children by area, we can't do much other than asking each child region whether
+        # it contains the position
+        childregions = self.get_subregions()
+        for i, child in enumerate(childregions):
+            key = child.get_leaf_key(position)
+            if key is not None:
+                return (i,) + key
+        return None
 
     def get_subregion(self, key):
         """

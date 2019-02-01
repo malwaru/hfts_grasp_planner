@@ -134,6 +134,25 @@ class PlacementHierarchy(object):
         """
         pass
 
+    @abstractmethod
+    def get_path(self, key_a, key_b):
+        """
+            Return a list of keys from key_a to key_b.
+            If key_b is a descendant of key_a, this function returns a list
+            [key_1, ..., key_b], where key_i is the parent of key_(i + 1).
+            If key_b is not a descendant of key_a, None is returned.
+            ---------
+            Arguments
+            ---------
+            key_a, tuple - see the implentation's documentation for key description
+            key_b, tuple - see the implentation's documentation for key description
+            -------
+            Returns
+            -------
+            path, list of tuple - each element a key, None if key_b is not within a branch rooted at key_a.
+        """
+        pass
+
 
 class PlacementGoalConstructor(object):
     __metaclass__ = ABCMeta
@@ -159,6 +178,22 @@ class PlacementGoalConstructor(object):
     def can_construct_solution(self, key):
         """
             Return whether it is possible to construct a solution from the given (partially defined) key.
+        """
+        pass
+
+    @abstractmethod
+    def get_leaf_key(self, solution):
+        """
+            Return the key of the deepest hierarchy node (i.e. the leaf) that the given solution
+            can belong to.
+            ---------
+            Arguments
+            ---------
+            solution, PlacementGoal - a solution constructed by this goal constructor.
+            -------
+            Returns
+            -------
+            key, object - a key object that identifies a node in a PlacementHierarchy
         """
         pass
 

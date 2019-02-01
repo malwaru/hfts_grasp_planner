@@ -5,7 +5,7 @@ import numpy as np
     to be tuples of integers. Each integer determines a cell on a layer
     of the hierarchy. For instance, the key (2, 3, 4) identifies the cell
     that is the 4th cell on layer 2 in the 3rd cell on layer 1 in the 2nd cell
-    on layer 0. The total number of cells per layer is determined by the 
+    on layer 0. The total number of cells per layer is determined by the
     branching_factor. Layer 0 represents the full interval [0, 2pi].
 """
 
@@ -47,6 +47,32 @@ def get_interval(key, branching_factor):
         interval[0] += key[i] * cell_width
         interval[1] = interval[0] + cell_width
     return interval
+
+
+def get_leaf_key(value, branching_factor, depth):
+    """
+        Return the key of the leaf interval that the given value lies in.
+        ---------
+        Arguments
+        ---------
+        value, float - angle in range [0, 2pi]
+        branching_factor, int - number of cells per layer
+        depth, int - depth of the hierarchy
+        -------
+        Returns
+        -------
+        key, tuple - key where value lies in, or None if value is out of [0, 2pi]
+    """
+    key = []
+    rvalue = value
+    if value < 0.0 or value > 2.0 * np.pi:
+        return None
+    for i in xrange(depth):
+        interval_size = 2.0 * np.pi / np.power(branching_factor, i + 1)
+        child_id = np.floor(rvalue / interval_size)
+        rvalue -= child_id * interval_size
+        key.append(int(child_id))
+    return tuple(key)
 
 
 def get_key_gen(key, branching_factor):

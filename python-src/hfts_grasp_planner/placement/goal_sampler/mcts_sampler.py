@@ -28,7 +28,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self.acc_rewards = 0.0  # stores sum of all rewards (excluding objective value based reward)
             self.obj_reward = 0.0  # stores the reward computed from objective values
             self.child_gen = None
-            self.children = []
+            self.children = {}
             self.parent = parent
             self.last_uct_value = 0.0  # for debug purposes
             self.last_fup_value = 0.0  # for debug purposes
@@ -204,8 +204,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             fup, float - fup score of the node
         """
         if len(node.children):
-            acc_rewards = np.array([child.acc_rewards for child in node.children])
-            visits = np.array([child.num_visits for child in node.children])
+            acc_rewards = np.array([child.acc_rewards for child in node.children.values()])
+            visits = np.array([child.num_visits for child in node.children.values()])
             avg_rewards = acc_rewards / visits
             uct_scores = avg_rewards + self._c * np.sqrt(2.0 * np.log(node.num_visits) / visits)
             if bcompute_fup:
@@ -255,7 +255,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
     #         node.last_fup_value = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / num_visits)
     #     return node.last_fup_value
 
-    def _add_new_child(self, node):
+    def _pull_fup_arm(self, node):
         """
             Add a new child of node to the MCTS tree.
             ---------
@@ -270,14 +270,17 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         assert(node.child_gen is not None)
         # try:
         new_child_key = node.child_gen.next()
-        new_node = MCTSPlacementSampler.MCTSNode(new_child_key, node)
+        while new_child_key in node.children:
+            new_child_key = node.child_gen.next()
+        return self._create_new_node(node, new_child_key)
+
+    def _create_new_node(self, parent, child_key):
+        new_node = MCTSPlacementSampler.MCTSNode(child_key, parent)
         new_node.child_gen = self._hierarchy.get_child_key_gen(new_node.key)
-        node.children.append(new_node)
+        parent.children[child_key] = new_node
         if self._debug_visualizer:
             self._debug_visualizer.add_node(new_node)
             self._debug_visualizer.render(bupdate_data=False)
-        # except:
-        # node.child_gen = None
         return new_node
 
     def _sample(self, node, b_impr_obj):
@@ -296,7 +299,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         assert(self._solution_constructor.can_construct_solution(node.key))
         # TODO what about optimization flags?
         new_solution = self._solution_constructor.construct_solution(node.key, True)
-        b_is_valid = self._validator.is_valid(new_solution, b_impr_obj)
+        # first, check whether all other non-objective constraints are fullfilled
+        b_is_valid = self._validator.is_valid(new_solution, False)
         if not b_is_valid and not self._hierarchy.is_leaf(node.key) and self._use_relaxation:
             base_reward = self._validator.get_constraint_relaxation(new_solution)
         else:
@@ -304,7 +308,20 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             if node.num_visits > 0:
                 base_reward /= node.num_visits
         obj_value = self._objective.evaluate(new_solution)
-        # TODO evaluate whether objective constraint is fulfilled
+        # TODO check whether objective value is improving
+        # add the path to the resulting solution
+        leaf_key = self._solution_constructor.get_leaf_key(new_solution)
+        if leaf_key is not None:
+            key_path = self._hierarchy.get_path(node.key, leaf_key)
+            if key_path is None:
+                # TODO figure out how to fix this
+                rospy.logerr("Jacobian projection moved object out of region/so2interval.")
+                key_path = []
+            for key in key_path:
+                if key in node.children:
+                    node = node.children[key]
+                else:
+                    node = self._create_new_node(node, key)
         node.update_rec(obj_value, base_reward)
         node.solutions.append(new_solution)
         if b_is_valid:
@@ -333,10 +350,10 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             if best_choice is None or fup_score > ucts_scores[best_choice]:
                 # if we decide to add a new child, choose this child as new current node
                 assert(self._hierarchy.get_num_children(current_node.key) > len(current_node.children))
-                current_node = self._add_new_child(current_node)
+                current_node = self._pull_fup_arm(current_node)
             else:
                 # choose child with best uct score
-                current_node = current_node.children[best_choice]
+                current_node = current_node.children.values()[best_choice]
         assert(self._is_sampleable(current_node))
         # sample it: compute a new solution, propagate result up
         # this is equal to a Monte Carlo rollout + backpropagation

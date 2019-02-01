@@ -107,4 +107,4 @@ class MCTSVisualizer(object):
             self._graph.vs[node_id]['fup'] = node.last_fup_value
             self._graph.vs[node_id]['num_visits'] = node.num_visits
             self._graph.vs[node_id]['acc_rewards'] = node.acc_rewards
-            children.extend(node.children)  # the order in which we update does not matter
+            children.extend(node.children.values())  # the order in which we update does not matter
