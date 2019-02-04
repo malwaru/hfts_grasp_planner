@@ -32,7 +32,8 @@ class MCTSVisualizer(object):
                 return
             if node == self._prev_selected_node[0]:  # the node was selected before, so go to the next solution
                 solution_id = self._prev_selected_node[1]
-                self._prev_selected_node[1] = (self._prev_selected_node[1] + 1) % len(node.solutions)
+                next_sol_id = (self._prev_selected_node[1] + 1) % len(node.solutions)
+                self._prev_selected_node = (node, next_sol_id)
             else:  # newly selected node
                 solution_id = 0
                 self._prev_selected_node = (node, solution_id)

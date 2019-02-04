@@ -35,7 +35,7 @@ class GUI(Gtk.Window):
         self.desired_width = 1920
         self.nominal_width = 1920
         self.desired_height = 1080
-        self.min_node_distance = 35
+        self.min_node_distance = 50
         self.node_size = 10
         self.margin = 20
         self._has_graph = False
