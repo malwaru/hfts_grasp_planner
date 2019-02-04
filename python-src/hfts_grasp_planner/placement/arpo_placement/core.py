@@ -202,14 +202,25 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             Returns
             -------
             key, tuple - leaf key that the position and orientation falls into, 
-                None if key can not be computed
+                None if the position and orientation do not lie within base_key
         """
         assert(len(base_key) >= 3)
         region = self._regions[base_key[1]]
-        r_sub_key = region.get_leaf_key(position)
-        so_sub_key = so2hierarchy.get_leaf_key(orientation, self._so2_branching, self._so2_depth)
+        if len(base_key) == 5:  # do we have a subregion and sub-so2-interval?
+            base_r_sub_key = base_key[3]
+            base_so_sub_key = base_key[4]
+            region = region.get_subregion(base_r_sub_key)
+        else:
+            base_r_sub_key = ()
+            base_so_sub_key = ()
+
+        r_sub_key = region.get_leaf_key(position)  # returns None, if not in region
+        so_sub_key = so2hierarchy.get_leaf_key(orientation, self._so2_branching,
+                                               self._so2_depth, base_so_sub_key)  # returns None, if out, else child
         if r_sub_key is None or so_sub_key is None:
             return None
+        r_sub_key = base_r_sub_key + r_sub_key
+        so_sub_key = base_so_sub_key + so_sub_key
         if len(r_sub_key) < len(so_sub_key):
             r_sub_key = r_sub_key + (len(so_sub_key) - len(r_sub_key)) * (0,)
         elif len(so_sub_key) < len(r_sub_key):
@@ -228,15 +239,15 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             return len(self._orientations)
         # extract sub region key
         if len(key) == 5:
-            subregion_key=key[3]
-            so2_key=key[4]
+            subregion_key = key[3]
+            so2_key = key[4]
         else:
             assert(len(key) == 3)
-            subregion_key=()
-            so2_key=()
-        subregion=self.get_placement_region((key[1], subregion_key))
-        b_region_leaf=not subregion.has_subregions()
-        b_so2_leaf=so2hierarchy.is_leaf(so2_key, self._so2_depth)
+            subregion_key = ()
+            so2_key = ()
+        subregion = self.get_placement_region((key[1], subregion_key))
+        b_region_leaf = not subregion.has_subregions()
+        b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
         if b_region_leaf and b_so2_leaf:
             return 0
         if b_region_leaf:
@@ -301,18 +312,18 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             -------
             path, list of tuple - each element a key, None if key_b is not within a branch rooted at key_a.
         """
-        current_key=key_b
-        path=[]
+        current_key = key_b
+        path = []
         while current_key != key_a and current_key != ():
             path.append(current_key)
             if len(current_key) == 5:
                 if len(current_key[3]) > 1:
-                    current_key=(current_key[0], current_key[1], current_key[2],
+                    current_key = (current_key[0], current_key[1], current_key[2],
                                    current_key[3][:-1], current_key[4][:-1])
                 else:
-                    current_key=current_key[:3]
+                    current_key = current_key[:3]
             else:
-                current_key=current_key[:-1]
+                current_key = current_key[:-1]
         if current_key == () and key_a != ():
             return None
         path.reverse()
@@ -335,7 +346,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         if type(region_key) is int:
             return self._regions[region_key]
         assert(type(region_key)) is tuple
-        region=self._regions[region_key[0]]
+        region = self._regions[region_key[0]]
         return region.get_subregion(region_key[1])
 
     def get_arpo_information(self, key):
@@ -356,8 +367,8 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         elif len(key) == 3:
             return (self._manips[key[0]], self._regions[key[1]], self._orientations[key[2]])
         assert(len(key) == 5)
-        subregion=self.get_placement_region((key[1], key[3]))
-        so2region=so2hierarchy.get_interval(key[4][:self._so2_depth], self._so2_branching)
+        subregion = self.get_placement_region((key[1], key[3]))
+        so2region = so2hierarchy.get_interval(key[4][:self._so2_depth], self._so2_branching)
         return (self._manips[key[0]], self._regions[key[1]], self._orientations[key[2]], subregion, so2region)
 
     def get_all_manip_orientations(self):
@@ -450,7 +461,9 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         """
 
         def __init__(self, key, region, plcmnt_orientation, so2_interval, solution):
-            self.key = key  # arpo hierarchy key
+            self.key = key  # arpo hierarchy key (the one it was created for)
+            # leaf arpo hierarchy key (the lowest element in the tree this solution could come from)
+            self.leaf_key = None
             self.solution = solution  # PlacementGoal
             self.region = region  # PlacementRegion from key
             self.plcmnt_orientation = plcmnt_orientation  # PlacementOrientation from key
@@ -1224,8 +1237,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             so2_interval = arpo_info[4]
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
-            # TODO real objective value
-            manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=0.0,
+            manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
             grasp_tf=None, grasp_config=manip_data.grasp_config)
         # create a cache entry for this solution
         sol_cache_entry = ARPORobotBridge.SolutionCacheEntry(
@@ -1263,8 +1275,13 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         """
         cache_entry = self._solutions_cache[solution.key]
         base_key = cache_entry.key
-        reference_points_pose = np.dot(solution.obj_tf, cache_entry.plcmnt_orientation.reference_tf)
-        return self._hierarchy.get_leaf_key(base_key, reference_points_pose[:3, 3], cache_entry.region_state[2])
+        reference_point_pose = np.dot(solution.obj_tf, cache_entry.plcmnt_orientation.reference_tf)
+        cache_entry.leaf_key = self._hierarchy.get_leaf_key(
+            base_key, reference_point_pose[:3, 3], cache_entry.region_state[2])
+        if cache_entry.leaf_key is None:
+            rospy.logwarn("Could not compute leaf key for solution. This means that the solution is out of bounds.")
+            cache_entry.leaf_key = base_key
+        return cache_entry.leaf_key
 
     def set_minimal_objective(self, val):
         """

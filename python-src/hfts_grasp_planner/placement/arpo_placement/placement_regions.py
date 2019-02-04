@@ -141,7 +141,7 @@ class PlanarPlacementRegion(object):
             -------
             Returns
             -------
-            key, tuple - key of the subregion, None if not within this region
+            key, tuple - key of the subregion, None if not within this region, () if this region is a leaf
         """
         # transform position into local frame
         inv_base_tf = utils.inverse_transform(self.base_tf)

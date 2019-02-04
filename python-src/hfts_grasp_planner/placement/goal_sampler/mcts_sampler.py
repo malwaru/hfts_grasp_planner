@@ -309,14 +309,10 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 base_reward /= node.num_visits
         obj_value = self._objective.evaluate(new_solution)
         # TODO check whether objective value is improving
-        # add the path to the resulting solution
-        leaf_key = self._solution_constructor.get_leaf_key(new_solution)
-        if leaf_key is not None:
+        if b_is_valid:  # if the solution is valid, we credit this to the full subbranch that this solution falls into
+            # add the path to the resulting solution
+            leaf_key = self._solution_constructor.get_leaf_key(new_solution)
             key_path = self._hierarchy.get_path(node.key, leaf_key)
-            if key_path is None:
-                # TODO figure out how to fix this
-                rospy.logerr("Jacobian projection moved object out of region/so2interval.")
-                key_path = []
             for key in key_path:
                 if key in node.children:
                     node = node.children[key]
