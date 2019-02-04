@@ -279,8 +279,7 @@ if __name__ == "__main__":
         #                                                         manip.GetName() for manip in manips])
         goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                 manip.GetName() for manip in manips],
-                                                             debug_visualizer=mcts_visualizer, 
-                                                             b_use_relaxation=problem_desc['parameters']['use_relaxations'])
+                                                             debug_visualizer=mcts_visualizer)
 
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips)
         # traj, goal = plan(motion_planner, target_object, 10)

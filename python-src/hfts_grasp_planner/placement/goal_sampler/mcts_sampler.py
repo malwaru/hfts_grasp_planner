@@ -1,4 +1,5 @@
 import rospy
+import bisect
 import numpy as np
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
@@ -24,14 +25,15 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self.key = key
             self.solutions = []  # list of all solutions that were created for this particular node
             self.branch_objectives = []  # stores all objective values found in this branch
-            self.num_visits = 0
             self.acc_rewards = 0.0  # stores sum of all rewards (excluding objective value based reward)
-            self.obj_reward = 0.0  # stores the reward computed from objective values
+            self.num_visits = 0
             self.child_gen = None
             self.children = {}
             self.parent = parent
             self.last_uct_value = 0.0  # for debug purposes
             self.last_fup_value = 0.0  # for debug purposes
+            # for internal use to remember whether we need to update self.branch_objectives
+            self._last_min_obj = -float("inf")
 
         def update_rec(self, obj_value, base_reward):
             """
@@ -48,8 +50,25 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             if self.parent is not None:
                 self.parent.update_rec(obj_value, base_reward)
 
-    def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, c=1.0, objective_weight=1.0/3.0,
-                 debug_visualizer=None, b_use_relaxation=True):
+        def update_objectives(self, min_obj):
+            """
+                Update the branch objectives list, given that the minimal objective is now min_obj.
+                As a result the list self.branch_objectives only contains values > min_obj and it is sorted.
+                If min_obj is less than or equal to a value this function has called before with, this is a no-op.
+                ---------
+                Arguments
+                ---------
+                min_obj, float - minimal objective
+            """
+            if min_obj <= self._last_min_obj:
+                return
+            self.branch_objectives.sort()
+            i = bisect.bisect(self.branch_objectives, min_obj)
+            self.branch_objectives = self.branch_objectives[i:]
+            self._last_min_obj = min_obj
+
+    def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, parameters=None,
+                 debug_visualizer=None):
         """
             Create new MCTS Sampler.
             ---------
@@ -60,22 +79,24 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             validator, interfaces.PlacementValidator
             objective, interfaces.PlacementObjective
             manip_names, list of string - manipulator names
-            c, float - exploration parameter
-            objective_weight, float - parameter to weight objective constraint relaxation w.r.t to other constraints
+            parameters(optional), dict - dictionary of parameters, see class description
             debug_visualizer(optional), mcts_visualization.MCTSVisualizer - visualizer for MCTS hierarchy
-            b_use_relaxation, bool - if True, uses relaxation function of solution_constructor to rate within-tree samples
         """
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
         self._validator = validator
         self._objective = objective
         self._manip_names = manip_names
-        self._c = c
-        self._obj_constr_weight = objective_weight
+        if parameters is None:
+            parameters = {'c': 1.0, 'objective_epsilon': 0.1}
+        self._parameters = parameters
+        self._c = self._parameters["c"]
+        weights = self._objective.get_constraint_weights()
+        self._objective_weight = weights[-1]
+        self._reward_normalizer = np.sum(weights[:-1])
         self._debug_visualizer = debug_visualizer
         self._root_node = MCTSPlacementSampler.MCTSNode((), None)
         self._root_node.child_gen = self._hierarchy.get_child_key_gen(self._root_node.key)
-        self._use_relaxation = b_use_relaxation
         self._best_reached_goal = None
         if self._debug_visualizer:
             self._debug_visualizer.add_node(self._root_node)
@@ -205,6 +226,10 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         """
         if len(node.children):
             acc_rewards = np.array([child.acc_rewards for child in node.children.values()])
+            if self._best_reached_goal is not None:
+                node.update_objectives(self._best_reached_goal.objective_value - self._parameters["objective_epsilon"])
+                obj_rewards = len(node.branch_objectives) * self._objective_weight / self._reward_normalizer
+                acc_rewards += obj_rewards
             visits = np.array([child.num_visits for child in node.children.values()])
             avg_rewards = acc_rewards / visits
             uct_scores = avg_rewards + self._c * np.sqrt(2.0 * np.log(node.num_visits) / visits)
@@ -297,18 +322,17 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             new_solution, PlacementSolution - newly sampled placement solution
         """
         assert(self._solution_constructor.can_construct_solution(node.key))
-        # TODO what about optimization flags?
         new_solution = self._solution_constructor.construct_solution(node.key, True)
         # first, check whether all other non-objective constraints are fullfilled
         b_is_valid = self._validator.is_valid(new_solution, False)
-        if not b_is_valid and not self._hierarchy.is_leaf(node.key) and self._use_relaxation:
+        if not b_is_valid and not self._hierarchy.is_leaf(node.key):
             base_reward = self._validator.get_constraint_relaxation(new_solution)
         else:
+            # TODO decide whether we wanna keep this
             base_reward = 1.0 if b_is_valid else 0.0  # leaves do not get a relaxation reward
             if node.num_visits > 0:
                 base_reward /= node.num_visits
         obj_value = self._objective.evaluate(new_solution)
-        # TODO check whether objective value is improving
         if b_is_valid:  # if the solution is valid, we credit this to the full subbranch that this solution falls into
             # add the path to the resulting solution
             leaf_key = self._solution_constructor.get_leaf_key(new_solution)

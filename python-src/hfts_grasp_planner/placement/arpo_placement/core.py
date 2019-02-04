@@ -394,6 +394,18 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         this class provides all these different functions together is that this way
         we can cache a lot at a single location.
         # TODO do we really need all this in one class?
+        ----------
+        Parameters
+        ----------
+        # TODO
+        relaxation_type, string - can either be 'binary', 'sub_binary', or 'continuous'
+            Binary relaxation: No constraint relaxation at all, the function get_constraint_relaxation(sol)
+                returns 0 if any constraint is violated by sol, else 1
+            Sub-binary relaxation(default): For each constraint, a binary value is computed indicating whether the respective
+                constraint is violated (0) or not (1). The overall relaxation is then a normalized weighted sum of
+                these binary values, if the in-region constraint is fulfilled, else it is 0
+            Continuous: For each constraint, a continuous relaxation function is used to compute to what degree the
+                constraint is violated. The returned relaxation is the normalized weighted sum of these.
     """
     class ObjectData(object):
         """
@@ -470,7 +482,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.so2_interval = so2_interval  # SO2 interval from key
             self.eef_tf = None  # store end-effector transform
             self.bkinematically_reachable = None  # store whether ik solutions exist
-            self.bcollision_free = None  # store whether collision-free
+            self.barm_collision_free = None  # store whether the arm is collision-free
+            self.bobj_collision_free = None  # store whether the object is collision-free
             self.bbetter_objective = None  # store whether it has better objective than the current best
             self.bstable = None  # store whether pose is actually a stable placement
             self.objective_val = None  # store objective value
@@ -488,6 +501,10 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         def __init__(self, global_region_info):
             """
                 Create a new instance of contact constraint.
+                ---------
+                Arguments
+                ---------
+                global_region_info, TODO
             """
             self._contact_point_distances = global_region_info[0]
             self._contact_point_gradients = global_region_info[1]
@@ -528,6 +545,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 Arguments
                 ---------
                 cache_entry, SolutionCacheEntry
+                rel_type, string - may either be 'continuous' or 'binary'
                 -------
                 Returns
                 -------
@@ -672,48 +690,65 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 ------------
                 Side effects
                 ------------
-                sets the bcollision_free flag in cache_entry
+                sets the barm_collision_free and bobj_collision_free flags in cache_entry
             """
-            cache_entry.bcollision_free = False
+            cache_entry.barm_collision_free = False
+            cache_entry.bobj_collision_free = False
             if cache_entry.solution.arm_config is None:
                 return False
             manip = cache_entry.solution.manip
             manip_data = self._manip_data[manip.GetName()]
             robot = manip.GetRobot()
+            env = robot.GetEnv()
             with robot:
                 with orpy.KinBodyStateSaver(self._target_obj):
                     # grab object (sets active manipulator for us)
                     utils.set_grasp(manip, self._target_obj,
                                     manip_data.inv_grasp_tf, manip_data.grasp_config)
                     robot.SetDOFValues(cache_entry.solution.arm_config, manip.GetArmIndices())
-                    env = robot.GetEnv()
-                    cache_entry.bcollision_free = not env.CheckCollision(robot) and not robot.CheckSelfCollision()
+                    col_free = not env.CheckCollision(robot) and not robot.CheckSelfCollision()
+                    if not col_free:  # there is some collision
+                        robot.Enable(False)
+                        # is the object without robot in collision?
+                        cache_entry.bobj_collision_free = not env.CheckCollision(self._target_obj)
+                        robot.Enable(True)
+                        self._target_obj.Enable(False)
+                        # is the robot without object in collision?
+                        cache_entry.barm_collision_free = not env.CheckCollision(
+                            robot) and not robot.CheckSelfCollision()
+                        self._target_obj.Enable(True)
+                        # lastly, make sure the robot isn't colliding with the object
+                        cache_entry.barm_collision_free = cache_entry.barm_collision_free and not env.CheckCollision(
+                            robot, self._target_obj)
+                    else:
+                        cache_entry.barm_collision_free = True
+                        cache_entry.bobj_collision_free = True
+                    # 2. check joint robot object collision
                     robot.Release(self._target_obj)
-            return cache_entry.bcollision_free
+            return cache_entry.barm_collision_free and cache_entry.bobj_collision_free
 
         def get_relaxation(self, cache_entry):
             """
                 Compute relaxation of collision constraint.
+                ---------
+                Arguments
+                ---------
                 # TODO
             """
             robot_intersection = 0.0
             arm_config = None
             if cache_entry.solution.arm_config is None:
                 return 0.0
-                # TODO compute intersection using approximate arm configuration
-                robot_intersection = 0.0
-            else:
-                arm_config = cache_entry.solution.arm_config
+            arm_config = cache_entry.solution.arm_config
             # first compute intersection for the arm
-            if arm_config is not None:
-                manip = cache_entry.solution.manip
-                manip_data = self._manip_data[manip.GetName()]
-                robot = manip.GetRobot()
-                with robot:
-                    robot.SetActiveDOFs(manip.GetArmIndices())
-                    isec_values = self._robot_volumetric.compute_intersection(
-                        robot.GetTransform(), arm_config, self._scene_sdf, links=manip_data.manip_links)
-                    robot_intersection = isec_values[1]
+            manip = cache_entry.solution.manip
+            manip_data = self._manip_data[manip.GetName()]
+            robot = manip.GetRobot()
+            with robot:
+                robot.SetActiveDOFs(manip.GetArmIndices())
+                isec_values = self._robot_volumetric.compute_intersection(
+                    robot.GetTransform(), arm_config, self._scene_sdf, links=manip_data.manip_links)
+                robot_intersection = isec_values[1]
             # next compute intersection for the object
             obj_tf = np.array(cache_entry.solution.obj_tf)
             # shift the obj tf a bit away from the contact region to ensure we do not count in contact on the surface
@@ -721,9 +756,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             isec_values = self._object_volumetric.compute_intersection(self._scene_sdf, obj_tf)
             # from this compute relaxation value that is in interval 0, 1
             object_intersection = isec_values[1]
-            violation_term = np.clip((object_intersection + robot_intersection /
-                                      self._max_robot_intersection)/2.0, 0.0, 1.0)
-            return 1.0 - violation_term
+            arm_violation_term = np.clip(robot_intersection / self._max_robot_intersection, 0.0, 1.0)
+            return 1.0 - arm_violation_term, 1.0 - object_intersection
 
         def get_cart_obj_collision_gradient(self, cache_entry):
             """
@@ -866,39 +900,39 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             cache_entry.bkinematically_reachable = cache_entry.solution.arm_config is not None
             return cache_entry.bkinematically_reachable
 
-        def get_relaxation(self, cache_entry):
-            """
-                Compute relaxation of reachability constraint.
-                ---------
-                Arguments
-                ---------
-                cache_entry, SolutionCacheEntry
-                ------------
-                Side effects
-                ------------
-                TODO: set approximate arm configuration
-                -------
-                Returns
-                -------
-                val, float - relaxation value in [0, 1]
-            """
-            if cache_entry.solution.arm_config is not None:
-                return 1.0
-            if self._baggressive:
-                return 0.0
-            # else compute heuristic value using reachability map
-            manip = cache_entry.solution.manip
-            manip_data = self._manip_data[manip.GetName()]
-            pose = np.empty((1, 7))
-            pose[0, :3] = cache_entry.eef_tf[:3, 3]
-            pose[0, 3:] = orpy.quatFromRotationMatrix(cache_entry.eef_tf[:3, :3])
-            _, nn_poses, configs = manip_data.reachability_map.query(pose)
-            cart_dist = np.linalg.norm(pose[0, :3] - nn_poses[0, :3])
-            quat_dist = so3hierarchy.quat_distance(pose[0, 3:], nn_poses[0, 3:])
-            # cache_entry. TODO set arm config to configs[0]?
-            # relate cartesian distance to the size of the placement region
-            # normalize quaternion distance
-            return 1.0 - 0.5 * np.clip(cart_dist / cache_entry.region.radius, 0.0, 1.0) - 0.5 * quat_dist / np.pi
+        # def get_relaxation(self, cache_entry):
+        #     """
+        #         Compute relaxation of reachability constraint.
+        #         ---------
+        #         Arguments
+        #         ---------
+        #         cache_entry, SolutionCacheEntry
+        #         ------------
+        #         Side effects
+        #         ------------
+        #         TODO: set approximate arm configuration
+        #         -------
+        #         Returns
+        #         -------
+        #         val, float - relaxation value in [0, 1]
+        #     """
+        #     if cache_entry.solution.arm_config is not None:
+        #         return 1.0
+        #     if self._baggressive:
+        #         return 0.0
+        #     # else compute heuristic value using reachability map
+        #     manip = cache_entry.solution.manip
+        #     manip_data = self._manip_data[manip.GetName()]
+        #     pose = np.empty((1, 7))
+        #     pose[0, :3] = cache_entry.eef_tf[:3, 3]
+        #     pose[0, 3:] = orpy.quatFromRotationMatrix(cache_entry.eef_tf[:3, :3])
+        #     _, nn_poses, configs = manip_data.reachability_map.query(pose)
+        #     cart_dist = np.linalg.norm(pose[0, :3] - nn_poses[0, :3])
+        #     quat_dist = so3hierarchy.quat_distance(pose[0, 3:], nn_poses[0, 3:])
+        #     # cache_entry. TODO set arm config to configs[0]?
+        #     # relate cartesian distance to the size of the placement region
+        #     # normalize quaternion distance
+        #     return 1.0 - 0.5 * np.clip(cart_dist / cache_entry.region.radius, 0.0, 1.0) - 0.5 * quat_dist / np.pi
 
         def get_pose_reachability_fn(self, cache_entry):
             """
@@ -973,10 +1007,17 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         def get_relaxation(self, cache_entry):
             """
                 Compute relaxation of objctive constraint.
-                # TODO
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                    requires cache_entry.solution.objective_value to be set
+                -------
+                Returns
+                -------
+                float value in range [0, 1]
             """
-            # TODO requires known objective values so far
-            pass
+            return min(np.exp(cache_entry.solution.objective_value - self.best_value), 1.0)
 
         def get_error_gradient(self, cache_entry, to_ref_pose):
             """
@@ -1207,6 +1248,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         self._init_ik_solvers()
         self._jacobian_optimizer = ARPORobotBridge.JacobianOptimizer(self._contact_constraint, self._collision_constraint,
                                                                      self._objective_constraint, self._robot_data)
+        self._parameters = parameters
 
     def construct_solution(self, key, b_optimize_constraints=False):
         """
@@ -1323,44 +1365,70 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             return False
         # finally check whether the objective is an improvement
         if b_improve_objective:
-            cache_entry.objective_val = self._objective_fn(solution.obj_tf)
-            return cache_entry.objective_val > self._objective_constraint.best_value
+            return self._objective_constraint.check_objective_improvement(cache_entry)
         return True
 
-    def get_constraint_relaxation(self, solution):
+    def get_constraint_relaxation(self, solution, b_incl_obj=False, b_obj_normalizer=False):
         """
-            Return a value in the interval [0, 1], where 0 corresponds to invalid
-            and 1 to valid. If a solution is somehow close to being valid, a value in the interval
-            [0, 1] is returned. The larger the value, the closer it is to being a valid solution.
+            Return a relaxation value between [0, 1] that is 0
+            if the solution is invalid and goes towards 1 the closer the solution is to
+            something valid.
+            The constraint relexation may include the objective-improvement constraint, or not.
+            This is determined by setting b_incl_obj. If it is True, the returned relaxation
+            includes it, else not. In any case, to ensure the returned value lies within [0, 1], it is internally
+            normalized. If b_incl_obj=False, by setting b_obj_norrmalizer the normalizer can be forced
+            to be the same as if b_incl_obj was True. Note that this implies that returned values are in some range [0, c] 
+            with c < 1.
             ---------
             Arguments
             ---------
-            solution, PlacementSolution - solution to evaluate
+            solution, PlacementGoal - solution to evaluate
             -------
             Returns
             -------
-            val, float
+            val, float - relaxation value in [0, 1], or [0, c] with c < 1 if b_incl_obj=False, and b_obj_normalizer=True
         """
+        if self._parameters["relaxation_type"] == "binary":
+            return float(self.is_valid(solution, b_incl_obj))
+        # sub-binary or continuous
         cache_entry = self._solutions_cache[solution.key]
         assert(cache_entry.solution == solution)
-        # self._object_data.kinbody.SetTransform(solution.obj_tf)  # TODO remove
-        # if solution.arm_config is not None:  # TODO remove
-        #     robot = solution.manip.GetRobot()  # TODO remove
-        #     old_config = robot.GetDOFValues()  # TODO remove
-        #     robot.SetDOFValues(solution.arm_config, solution.manip.GetArmIndices())  # TODO remove
-        reachability_val = self._reachability_constraint.get_relaxation(cache_entry)
-        contact_val = self._contact_constraint.get_relaxation(cache_entry)
-        col_val = self._collision_constraint.get_relaxation(cache_entry)
-        rospy.logdebug("Reachability value: %f, contact value: %f, collision value: %f" %
-                       (reachability_val, contact_val, col_val))
-        # if solution.arm_config is not None:  # TODO remove
-        #     robot.SetDOFValues(old_config)  # TODO remove
         self._call_stats[2] += 1
-        relaxation_val = (reachability_val + contact_val + col_val) / 3.0  # TODO could add weights here
-        relaxation_val = relaxation_val**5
-        solution.data = {'reachability': reachability_val,
-                         "contact": contact_val, "col": col_val, "total": relaxation_val}
-        return relaxation_val  # TODO could pass this value through a non-linear function here to make the reward sharper
+        self.is_valid(solution, b_incl_obj)  # ensure all validity flags are set
+        val = 0.0
+        if not cache_entry.bkinematically_reachable:  # not a useful solution without an arm configuration
+            return 0.0
+        # compute binary or continuous sub relaxatoins
+        if self._parameters["relaxation_type"] == "sub-binary":
+            val += self._parameters["weight_arm_col"] * float(cache_entry.barm_collision_free)
+            val += self._parameters["weight_obj_col"] * float(cache_entry.bobj_collision_free)
+            val += self._parameters["weight_contact"] * float(cache_entry.bstable)
+            if b_incl_obj:
+                valid_sol = float(cache_entry.bobj_collision_free) * float(cache_entry.bstable)
+                val += valid_sol * self._parameters["weight_objective"] * float(cache_entry.bimpr_objective)
+        else:  # compute continuous relaxation
+            assert(self._parameters["relaxation_type"] == "continuous")
+            contact_val = self._contact_constraint.get_relaxation(cache_entry)
+            arm_col_val, obj_col_val = self._collision_constraint.get_relaxation(cache_entry)
+            rospy.logdebug("contact value: %f, arm-collision value: %f, obj_collision value: %f" %
+                           (contact_val, arm_col_val, obj_col_val))
+            val += self._parameters["weight_arm_col"] * arm_col_val
+            val += self._parameters["weight_obj_col"] * obj_col_val
+            val += self._parameters["weight_contact"] * contact_val
+            solution.data = {'arm_col': arm_col_val, "obj_col": obj_col_val, "contact": contact_val, "total": val}
+            if b_incl_obj:
+                valid_sol = float(cache_entry.bobj_collision_free) * float(cache_entry.bstable)
+                val += valid_sol * self._parameters["weight_objective"] * \
+                    self._objective_constraint.get_relaxation(cache_entry)
+        normalizer = self._parameters["weight_arm_col"] + \
+            self._parameters["weight_obj_col"] + self._parameters["weight_contact"]
+        if b_incl_obj or b_obj_normalizer:
+            normalizer += self._parameters["weight_objective"]
+        return val / normalizer
+
+    def get_constraint_weights(self):
+        return np.array((self._parameters["weight_arm_col"], self._parameters["weight_obj_col"],
+                         self._parameters["weight_contact"], self._parameters["weight_objective"]))
 
     def evaluate(self, solution):
         """
@@ -1510,139 +1578,3 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self._plcmnt_ik_solvers[mkey] = ik_module.IKSolver(
                 manip, urdf_content=self._robot_data.urdf_desc, timeout=0.025)
             manip.SetLocalToolTransform(np.eye(4))
-
-        # def optimize_constraints(self, solution):
-        #     """
-        #         Perform optimization on the constraint relaxation in order to make the given solution feasible.
-        #         This method runs one of scipy's optimization algorithms to locally move the
-        #         arm configuration in the given solution towards a feasible configuration.
-        #         TODO:
-        #         If there is no arm configuration, i.e. the object pose is not reachable, it first attempts to
-        #         move the object towards a feasible pose.
-        #     """
-        #     # TODO implement optimzation!
-        #     pass
-        # constraints = [
-        #     {
-        #         'type': 'ineq',
-        #         'fun': functools.partial(pose_wrapper_fn, self.collision_cost),
-        #     },
-        #     {
-        #         'type': 'ineq',
-        #         'fun': lambda x: x - search_space_bounds[:, 0]
-        #     },
-        #     {
-        #         'type': 'ineq',
-        #         'fun': lambda x: search_space_bounds[:, 1] - x
-        #     }
-        # ]
-        # options = {
-        #     'maxiter': self._parameters["max_iter"],
-        #     'rhobeg': self._parameters["rhobeg"],
-        #     'disp': True,
-        # }
-        # opt_result = scipy.optimize.minimize(functools.partial(pose_wrapper_fn, self.objective_fn, multiplier=-1.0),
-        #                                      x0, method='COBYLA', constraints=constraints, options=options)
-        # else:
-        #     # TODO do nothing if start pose already reachable?
-        #     # TODO just try simple gradient descent
-        #     # grad_fn = self._reachability_constraint.get_pose_reachability_grad(cache_entry)
-        #     # def region_distance(val):
-        #     #     print "region_distance"
-        #     #     pos = np.array([[val[0], val[1], cache_entry.region.cell_size / 2.0]])
-        #     #     dist_val = cache_entry.region.local_distance_field.get_cell_values_pos(pos, b_global_frame=False)[0]
-        #     #     print dist_val
-        #     #     return dist_val
-
-        #     reachability_fn, _ = self._reachability_constraint.get_pose_reachability_fn(cache_entry)
-        #     # constraints = [
-        #     #     {
-        #     #         'type': 'eq',
-        #     #         'fun': region_distance,
-        #     #     },
-        #     # ]
-        #     # TODO delete
-        #     default_obj_tf = np.dot(cache_entry.region.contact_tf, np.dot(tf_mod.rotation_matrix(
-        #         center_angle, [0., 0., 1]), cache_entry.plcmnt_orientation.inv_reference_tf))
-        #     self._object_data.kinbody.SetTransform(default_obj_tf)
-        #     default_eef_tf = np.dot(default_obj_tf, manip_data.grasp_tf)
-        #     # TODO remove
-        #     handle = orpy.misc.DrawAxes(manip_data.manip.GetRobot().GetEnv(), default_eef_tf)
-        #     # TODO until here
-        #     start_point = np.empty(3)
-        #     start_point[:2] = cache_entry.region.contact_xy
-        #     start_point[2] = center_angle
-        #     options = {
-        #         'disp': True,
-        #     }
-        #     bounds = [(0.0, cache_entry.region.dimensions[0]),
-        #               (0.0, cache_entry.region.dimensions[1]),
-        #               (cache_entry.so2_interval[0], cache_entry.so2_interval[1])]
-        #     result = scipy.optimize.fmin_tnc(reachability_fn, start_point, approx_grad=True, bounds=bounds)
-        #     # result = scipy.optimize.minimize(reachability_fn, start_point, method='SLSQP', constraints=constraints,
-        #                                     #  options=options, bounds=bounds)
-        #     local_pose = tf_mod.rotation_matrix(result[0][2], [0, 0, 1])
-        #     local_pose[:2, 3] = result[0][:2]
-        #     cache_entry.solution.obj_tf = np.dot(cache_entry.region.contact_tf, np.dot(local_pose, cache_entry.plcmnt_orientation.inv_reference_tf))
-        #     # compute end-effector tf
-        #     cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)
-        # # TODO remove
-        # self._object_data.kinbody.SetTransform(cache_entry.solution.obj_tf)
-        # handle = orpy.misc.DrawAxes(manip_data.manip.GetRobot().GetEnv(), cache_entry.eef_tf)
-        # print "Pose computed"
-
-        ######### Untested code for scipy version 1.1.0  #########
-        # lower_bounds = np.empty(3)
-        # lower_bounds[:2] = 0.0
-        # lower_bounds[2] = cache_entry.so2_interval[0]
-        # upper_bounds = np.empty(3)
-        # upper_bounds[:2] = cache_entry.region.dimensions
-        # upper_bounds[2] = cache_entry.so2_interval[1]
-        # bounds_constraint = scipy.optimize.Bounds(lower_bounds, upper_bounds, True)  # bounds should be enforced!
-
-        # def region_distance(val):
-        #     return cache_entry.local_distance_field.get_cell_values_pos(val.reshape((1, 3)))
-        # in_region_constraint = scipy.optimize.NonlinearConstraint(region_distance, [0.0], [0.0])
-        # reachability_fn, threshold = self._reachability_constraint.get_pose_reachability_fn(cache_entry)
-        # start_point = np.empty(3)
-        # start_point[:2] = cache_entry.contact_xy
-        # start_point[2] = center_angle
-
-        # def termination_criteria(val, state):
-        #     return state.fun[0] <= threshold
-        # result = scipy.optimize.minimize(reachability_fn, start_point, method='trust-constr',
-        #                                  jac='2-point', bounds=bounds_constraint, constraints=in_region_constraint,
-        #                                  callback=termination_criteria)
-
-        ###################### Not working optimization code ###############################
-        # def region_distance(val):
-        #     print "region_distance"
-        #     pos = np.array([[val[0], val[1], cache_entry.region.cell_size / 2.0]])
-        #     dist_val = cache_entry.region.local_distance_field.get_cell_values_pos(pos, b_global_frame=False)[0]
-        #     print dist_val
-        #     return dist_val
-
-        # reachability_fn, _ = self._reachability_constraint.get_pose_reachability_fn(cache_entry)
-        # constraints = [
-        #     {
-        #         'type': 'eq',
-        #         'fun': region_distance,
-        #     },
-        # ]
-        # start_point = np.empty(3)
-        # start_point[:2] = cache_entry.region.contact_xy
-        # start_point[2] = center_angle
-        # options = {
-        #     'disp': True,
-        # }
-        # bounds = [(0.0, cache_entry.region.dimensions[0]),
-        #           (0.0, cache_entry.region.dimensions[1]),
-        #           (cache_entry.so2_interval[0], cache_entry.so2_interval[1])]
-        # result = scipy.optimize.minimize(reachability_fn, start_point, method='SLSQP', constraints=constraints,
-        #                                  options=options, bounds=bounds)
-        # local_pose = tf_mod.rotation_matrix(result.x[2], [0, 0, 1])
-        # local_pose[:2, 3] = result.x[:2]
-        # cache_entry.solution.obj_tf = np.dot(cache_entry.region.base_tf, np.dot(
-        #     local_pose, cache_entry.plcmnt_orientation.inv_reference_tf))
-        # # compute end-effector tf
-        # cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)

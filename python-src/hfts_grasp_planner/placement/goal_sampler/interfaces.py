@@ -240,11 +240,17 @@ class PlacementValidator(object):
         pass
 
     @abstractmethod
-    def get_constraint_relaxation(self, solution):
+    def get_constraint_relaxation(self, solution, b_incl_obj=False, b_obj_normalizer=False):
         """
             Return a relaxation value between [0, 1] that is 0
             if the solution is invalid and goes towards 1 the closer the solution is to
             something valid.
+            The constraint relexation may include the objective-improvement constraint, or not.
+            This is determined by setting b_incl_obj. If it is True, the returned relaxation
+            includes it, else not. In any case, to ensure the returned value lies within [0, 1], it is internally
+            normalized. If b_incl_obj=False, by setting b_obj_norrmalizer the normalizer can be forced
+            to be the same as if b_incl_obj was True. Note that this implies that returned values are in some range [0, c] 
+            with c < 1.
             ---------
             Arguments
             ---------
@@ -252,7 +258,19 @@ class PlacementValidator(object):
             -------
             Returns
             -------
-            val, float - relaxation value in [0, 1]
+            val, float - relaxation value in [0, 1], or [0, c] with c < 1 if b_incl_obj=False, and b_obj_normalizer=True
+        """
+        pass
+
+    @abstractmethod
+    def get_constraint_weights(self):
+        """
+            Return the weight factors for all constraint relaxations.
+            -------
+            Returns
+            -------
+            weights, np.array of length (n,) - weights of constraint relaxations. weights[-1] is guaranteed to be
+                the objective_constraint weight
         """
         pass
 
