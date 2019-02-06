@@ -139,17 +139,18 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             ---------
             goals, list of PlacementGoals
         """
-        if self._best_reached_goal is not None:
-            ovals = np.empty(len(goals) + 1)
-            ovals[0] = self._best_reached_goal.objective_value
-            ovals[1:] = [g.objective_value for g in goals]
-            best_idx = np.argmax(ovals)
-            if best_idx != 0:
-                self._best_reached_goal = goals[best_idx - 1]
-        else:
-            ovals = np.array([g.objective_value for g in goals])
-            best_idx = np.argmax(ovals)
-            self._best_reached_goal = goals[best_idx]
+        if len(goals) > 0:
+            if self._best_reached_goal is not None:
+                ovals = np.empty(len(goals) + 1)
+                ovals[0] = self._best_reached_goal.objective_value
+                ovals[1:] = [g.objective_value for g in goals]
+                best_idx = np.argmax(ovals)
+                if best_idx != 0:
+                    self._best_reached_goal = goals[best_idx - 1]
+            else:
+                ovals = np.array([g.objective_value for g in goals])
+                best_idx = np.argmax(ovals)
+                self._best_reached_goal = goals[best_idx]
 
     def set_reached_configurations(self, manip, configs):
         """

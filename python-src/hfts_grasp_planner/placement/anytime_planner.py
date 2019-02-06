@@ -177,11 +177,12 @@ class AnyTimePlacementPlanner:
         if mplanner is None:
             # mplanner = "OMPL_LazyPRM"
             # mplanner = "OMPL_LazyPRMstar"
-            mplanner = "OMPL_RRTConnect"
+            # mplanner = "OMPL_RRTConnect"
+            mplanner = "OMPL_RedirectableRRTConnect"
             # mplanner = "OMPL_SPARStwo"
         self.goal_sampler = goal_sampler
         self._motion_planners = {}  # store separate motion planner for each manipulator
-        self._params = {"num_goal_samples": 10, "num_goal_iterations": 1000, "vel_scale": 0.1}
+        self._params = {"num_goal_samples": 10, "num_goal_iterations": 10, "vel_scale": 0.1}
         for manip in manips:
             self._motion_planners[manip.GetName()] = RedirectableOMPLPlanner(mplanner, manip)
         self._robot = manips[0].GetRobot()
@@ -226,7 +227,6 @@ class AnyTimePlacementPlanner:
                     # get motion planner for this manipulator
                     motion_planner = self._motion_planners[manip_name]
                     # filter goals out that are worse than our current best solution
-                    # TODO should we always pass all goals?
                     remaining_goals = self._filter_goals(manip_goals, best_solution)
                     if len(remaining_goals) > 0:
                         traj, goal_id = motion_planner.plan(remaining_goals)
@@ -279,7 +279,8 @@ class AnyTimePlacementPlanner:
                            for manip_name, goals in new_goals.iteritems() if len(goals) > 0]
         # sort based on average score
         goal_candidates.sort(key=lambda x: x[1])
-        return goal_candidates.reverse()
+        goal_candidates.reverse()
+        return goal_candidates
 
     def _filter_goals(self, goals, best_solution):
         """
@@ -296,7 +297,7 @@ class AnyTimePlacementPlanner:
         """
         if best_solution is None:
             return goals
-        return [x for x in goals if x.objetive_value > best_solution[1].objective_value]
+        return [x for x in goals if x.objective_value > best_solution[1].objective_value]
 
     def set_parameters(self, **kwargs):
         """

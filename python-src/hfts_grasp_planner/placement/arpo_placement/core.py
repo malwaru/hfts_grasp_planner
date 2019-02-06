@@ -934,41 +934,41 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         #     # normalize quaternion distance
         #     return 1.0 - 0.5 * np.clip(cart_dist / cache_entry.region.radius, 0.0, 1.0) - 0.5 * quat_dist / np.pi
 
-        def get_pose_reachability_fn(self, cache_entry):
-            """
-                Return a function that maps a tuple (x, y, theta) to a reachability value in R.
-                ---------
-                Arguments
-                ---------
-                cache_entry, SolutionCacheEntry
-                -------
-                Returns
-                -------
-                a function fn that returns a reachability value r, i.e. fn(x) = r
-                good_val, float - a value that if fn(x) <= good_val, x is very likely to be kinematically reachable
-            """
-            def reachability_fn(val, manip_data, region, po):
-                local_pose = tf_mod.rotation_matrix(val[2], [0, 0, 1])
-                local_pose[:2, 3] = val[:2]
-                obj_tf = np.dot(region.base_tf, np.dot(local_pose, po.inv_reference_tf))
-                # compute end-effector tf
-                eef_tf = np.dot(obj_tf, manip_data.grasp_tf)
-                pose = np.empty((1, 7))
-                pose[0, :3] = eef_tf[:3, 3]
-                pose[0, 3:] = orpy.quatFromRotationMatrix(eef_tf[:3, :3])
-                # cart_distances, quat_distances = manip_data.reachability_map.query(pose)
-                distances, _, _ = manip_data.reachability_map.query(pose)
-                # return distances[0]
-                # print "Reachability fn:", cart_distances[0] + 0.1 * quat_distances[0]
-                # return cart_distances[0] + 0.1 * quat_distances[0]
-                return distances[0]
+        # def get_pose_reachability_fn(self, cache_entry):
+        #     """
+        #         Return a function that maps a tuple (x, y, theta) to a reachability value in R.
+        #         ---------
+        #         Arguments
+        #         ---------
+        #         cache_entry, SolutionCacheEntry
+        #         -------
+        #         Returns
+        #         -------
+        #         a function fn that returns a reachability value r, i.e. fn(x) = r
+        #         good_val, float - a value that if fn(x) <= good_val, x is very likely to be kinematically reachable
+        #     """
+        #     def reachability_fn(val, manip_data, region, po):
+        #         local_pose = tf_mod.rotation_matrix(val[2], [0, 0, 1])
+        #         local_pose[:2, 3] = val[:2]
+        #         obj_tf = np.dot(region.base_tf, np.dot(local_pose, po.inv_reference_tf))
+        #         # compute end-effector tf
+        #         eef_tf = np.dot(obj_tf, manip_data.grasp_tf)
+        #         pose = np.empty((1, 7))
+        #         pose[0, :3] = eef_tf[:3, 3]
+        #         pose[0, 3:] = orpy.quatFromRotationMatrix(eef_tf[:3, :3])
+        #         # cart_distances, quat_distances = manip_data.reachability_map.query(pose)
+        #         distances, _, _ = manip_data.reachability_map.query(pose)
+        #         # return distances[0]
+        #         # print "Reachability fn:", cart_distances[0] + 0.1 * quat_distances[0]
+        #         # return cart_distances[0] + 0.1 * quat_distances[0]
+        #         return distances[0]
 
-            manip = cache_entry.solution.manip
-            manip_data = self._manip_data[manip.GetName()]
-            good_val = 0.5 * manip_data.reachability_map.get_dispersion()
-            fn = partial(reachability_fn, manip_data=manip_data,
-                         region=cache_entry.region, po=cache_entry.plcmnt_orientation)
-            return fn, good_val
+        #     manip = cache_entry.solution.manip
+        #     manip_data = self._manip_data[manip.GetName()]
+        #     good_val = 0.5 * manip_data.reachability_map.get_dispersion()
+        #     fn = partial(reachability_fn, manip_data=manip_data,
+        #                  region=cache_entry.region, po=cache_entry.plcmnt_orientation)
+        #     return fn, good_val
 
     class ObjectiveImprovementConstraint(object):
         """
@@ -1280,7 +1280,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
-            grasp_tf=None, grasp_config=manip_data.grasp_config)
+            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
         # create a cache entry for this solution
         sol_cache_entry = ARPORobotBridge.SolutionCacheEntry(
             key=key, region=region, plcmnt_orientation=po, so2_interval=so2_interval, solution=new_solution)

@@ -208,15 +208,15 @@ if __name__ == "__main__":
             # TODO have different grasp poses for each manipulator
             grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
             grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
-            rmap = rmap_mod.SimpleReachabilityMap(manip, ik_solver)
-            try:
-                filename = problem_desc["reachability_path"] + '/' + robot.GetName() + '_' + manip.GetName() + '.npy'
-                rmap.load(filename)
-            except IOError:
-                rospy.logerr("Could not load reachability map for %s from file %s. Please provide one!" % (manip.GetName(), filename))
-                sys.exit(1)
+            # rmap = rmap_mod.SimpleReachabilityMap(manip, ik_solver)
+            # try:
+            #     filename = problem_desc["reachability_path"] + '/' + robot.GetName() + '_' + manip.GetName() + '.npy'
+            #     rmap.load(filename)
+            # except IOError:
+            #     rospy.logerr("Could not load reachability map for %s from file %s. Please provide one!" % (manip.GetName(), filename))
+            #     sys.exit(1)
             manip_data[manip.GetName()] = arpo_placement_mod.ARPORobotBridge.ManipulatorData(
-                manip, ik_solver, rmap, grasp_pose, problem_desc['grasp_config'])
+                manip, ik_solver, None, grasp_pose, problem_desc['grasp_config'])
             manip_links = [link.GetName() for link in get_manipulator_links(manip)]
             # remove base link - it does not move so
             manip_links.remove(manip.GetBase().GetName())
@@ -282,7 +282,7 @@ if __name__ == "__main__":
                                                              debug_visualizer=mcts_visualizer)
 
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips)
-        # traj, goal = plan(motion_planner, target_object, 10)
+        traj, goal = plan(motion_planner, target_object, 2)
         # solutions, num_solutions = goal_sampler.sample(1, 1)
         # probe = env.GetKinBody("probe")
         # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])

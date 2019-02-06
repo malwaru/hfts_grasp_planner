@@ -186,8 +186,11 @@ void computeMinSpanningtree(const np_b_array& input_arr, const std::vector<Relat
     // copy distances into out_arr
     double* out_data = out_arr.mutable_data();
     for (auto& cell_info : cells) {
-        out_data[cell_info.id] = cell_info.distance;
-        assert(cell_info.cell_state == CellInfo::CellState::Visited);
+        if (cell_info.cell_state == CellInfo::CellState::Visited) {
+            out_data[cell_info.id] = cell_info.distance;
+        } else {
+            out_data[cell_info.id] = std::numeric_limits<float>::infinity();
+        }
     }
     // std::cout << "Done." << std::endl;
 }
