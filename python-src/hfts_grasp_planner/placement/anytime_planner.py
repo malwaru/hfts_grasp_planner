@@ -28,6 +28,8 @@ class RedirectableOMPLPlanner:
             self._robot.SetActiveDOFs(manip.GetArmIndices())
             self._params.SetRobotActiveJoints(self._robot)
         self._ompl_planner = orpy.RaveCreatePlanner(env, planner_name)
+        if self._ompl_planner is None:
+            raise ValueError("Could not create OMPL planner with name %s" % planner_name)
         self._simplifier = orpy.RaveCreatePlanner(env, "OMPL_Simplifier")
         self._manip = manip
         self._bplanner_initialized = False  # whether the underlying motion planner has been intialized

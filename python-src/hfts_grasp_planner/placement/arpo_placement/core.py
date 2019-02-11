@@ -535,7 +535,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             none_values = values == None  # Ignore linter warning!
             if none_values.any():
                 return False
-            cache_entry.bstable = (values == 0.0).all()
+            cache_entry.bstable = (values <= 0.0).all()
             return cache_entry.bstable
 
         def get_relaxation(self, cache_entry):
@@ -590,6 +590,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 -------
                 Returns
                 -------
+                violation, float - violation value
                 gradient, np.array of shape (3,) - gradient of contact constraint w.r.t. x, y, ez
             """
             # first extract contact points in local and global frame
@@ -605,15 +606,15 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                     "The gradient field is too small or sth else is wrong. Try debugging:")
                 import IPython
                 IPython.embed()
-                return np.zeros(3)
+                return 0.0, np.zeros(3)
             # compute chomp's smooth distances
-            _, cart_gradients = utils.chomps_distance(-values + self.eps, self.eps, -cart_gradients[:, :2])
+            smooth_values, cart_gradients = utils.chomps_distance(-values + self.eps, self.eps, -cart_gradients[:, :2])
             # next, we need to compute the gradient w.r.t. theta
             # filter zero gradients
             non_zero_idx = np.unique(np.nonzero(cart_gradients)[0])  # rows with non zero gradients
             non_zero_grads, non_zero_pos = cart_gradients[non_zero_idx], local_contact_points[non_zero_idx]
             if non_zero_grads.shape[0] == 0:
-                return np.zeros(3)
+                return 0.0, np.zeros(3)
             # get object state
             x, y, theta = cache_entry.region_state
             # compute gradient w.r.t to state
@@ -623,7 +624,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             lcart_grads[:, :2] = non_zero_grads[:, :2]
             dthetas = np.sum(non_zero_grads[:, :2] * dxi_dtheta, axis=1)
             lcart_grads[:, 2] = dthetas
-            return 1.0 / lcart_grads.shape[0] * np.sum(lcart_grads, axis=0)
+            return np.sum(smooth_values), 1.0 / lcart_grads.shape[0] * np.sum(lcart_grads, axis=0)
 
             # compute transform from region base frame to current pose of reference point
             # tf_r_p = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
@@ -771,19 +772,20 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 -------
                 Returns
                 -------
+                violation_val, float 
                 gradient, np array of shape (3,) - gradient of CHOMP's collision cost for the object
                     w.r.t x, y, theta(ez)
             """
-            _, cart_grads, loc_positions = self._object_volumetric.compute_obstacle_cost(
+            values, cart_grads, loc_positions = self._object_volumetric.compute_obstacle_cost(
                 self._scene_sdf, bgradients=True)
             # translate local positions into positions relative to reference pose
             to_ref_pose = cache_entry.plcmnt_orientation.inv_reference_tf
             loc_positions = np.dot(loc_positions, to_ref_pose[:3, :3].T) + to_ref_pose[:3, 3]
             # filter zero gradients
-            non_zero_idx = np.unique(np.nonzero(cart_grads[:, :2])[0])
+            non_zero_idx = np.unique(np.nonzero(cart_grads[:, :2] > 1e-5)[0])
             non_zero_grads, non_zero_pos = cart_grads[non_zero_idx], loc_positions[non_zero_idx]
             if non_zero_grads.shape[0] == 0:
-                return np.zeros(3)
+                return 0.0, np.zeros(3)
             # get object state
             x, y, theta = cache_entry.region_state
             # compute gradient w.r.t to state
@@ -792,7 +794,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             lcart_grads = np.empty((non_zero_grads.shape[0], 3))
             lcart_grads[:, :2] = non_zero_grads[:, :2]
             lcart_grads[:, 2] = np.sum(non_zero_grads[:, :2] * dxi_dtheta, axis=1)
-            return 1.0 / lcart_grads.shape[0] * np.sum(lcart_grads, axis=0)
+            return np.sum(values[non_zero_idx]), 1.0 / lcart_grads.shape[0] * np.sum(lcart_grads, axis=0)
 
         def get_obj_collision_gradient(self, cache_entry, config):
             """
@@ -849,6 +851,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 -------
                 Returns
                 -------
+                violation_value, float - violation value
                 gradient, np array of shape (q,) - gradient of CHOMP's collision cost
             """
             manip = cache_entry.solution.manip
@@ -859,8 +862,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # compute the gradient w.r.t to q for object
             # gradient += self.get_obj_collision_gradient(cache_entry, config)
             # get distances from ball approximation (much faster)
-            _, gradient = self._robot_ball_approx.compute_penetration_cost(self._scene_sdf, manip_data.manip_links)
-            return gradient
+            cost, gradient = self._robot_ball_approx.compute_penetration_cost(self._scene_sdf, manip_data.manip_links)
+            return cost, gradient
 
     class ReachabilityConstraint(object):
         """
@@ -1063,11 +1066,14 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.objective_constraint = objective_constraint
             self.robot_data = robot_data
             self.manip_data = robot_data.manip_data
-            self.epsilon = 0.01  # minimal magnitude of cspace gradient
+            self.robot = robot_data.robot
+            self.grad_epsilon = 0.01  # minimal magnitude of cspace gradient
+            self.val_epsilon = 1e-4  # minimal magnitude of cspace gradient
             self.step_size = 0.01  # multiplier for update step
             self.max_iterations = 100  # maximal number of iterations
             self.damping_matrix = np.diag([0.9, 0.9, 1.0, 1.0, 1.0, 0.8])  # damping matrix for nullspace projection
-            self.robot = robot_data.robot
+            self.momentum = 0.4  # interpolation value between cartesian gradient from prev and current iteration
+            self._last_cart_grad = None  # save last cartesian gradient
 
         def optimize(self, cache_entry):
             """
@@ -1096,36 +1102,38 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             q_current = cache_entry.solution.arm_config
             q_best = np.array(q_current)
             # compute jacobian
-            q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-            if not q_grad is None:
+            cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+            if q_grad is not None:
                 grad_norm = np.linalg.norm(q_grad)
             else:
                 grad_norm = 0.0
             b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+            best_cval = cval
             # iterate as long as the gradient is not zero and we are not beyond limits
             # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
             for i in xrange(self.max_iterations):
-                if q_grad is None or grad_norm < self.epsilon or not b_in_limits:
+                if q_grad is None or grad_norm < self.grad_epsilon or not b_in_limits or cval < self.val_epsilon:
                     break
                 rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
                                (str(q_current), str(q_grad), grad_norm))
-                q_current -= self.step_size * q_grad / grad_norm
+                q_current -= self.step_size * q_grad / grad_norm  # update q_current
                 b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
                 if b_in_limits:
-                    # TODO save best based on error function values
-                    # save q_current and compute next jacobian + gradient
-                    q_best[:] = q_current
-                    q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                    if q_grad is not None:
+                    # compute gradient at this position + constraint violation
+                    cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                    if cval < best_cval:  # is constraint violation less?
+                        q_best[:] = q_current  # then save q_current
+                        best_cval = cval
+                    if q_grad is not None:  # do we have a gradient?
                         grad_norm = np.linalg.norm(q_grad)
                     else:
-                        grad_norm = 0.0
+                        break
                 else:
                     rospy.logdebug("Jacobian descent has led to joint limit violation. Aborting")
-                # iteration += 1
             rospy.logdebug("Jacobian descent finished after %i iterations" % i)
             cache_entry.solution.arm_config = q_best
             manip.SetLocalToolTransform(np.eye(4))
+            self._last_cart_grad = None
             self.robot.SetActiveDOFValues(q_original)  # TODO remove
             self.robot_data.ball_approx.hide_balls()  # TODO remove
 
@@ -1135,6 +1143,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 -------
                 Returns
                 -------
+                violation_value, float - accumulated value of violation of constraints >= 0.0
                 qgrad, numpy array of shape (manip.GetArmDOF,) - gradient of po + collision constraints
                     w.r.t arm configurations. The returned gradient is None, if we either moved out
                     of range where we can compute it, or when we hit a singularity.
@@ -1148,6 +1157,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             crayola = self.robot.GetEnv().GetKinBody("crayola")
             crayola.SetTransform(cache_entry.solution.obj_tf)
             # TODO until here
+            # violation value
+            violation_value = 0.0
             # compute jacobian
             jacobian = np.empty((6, manip.GetArmDOF()))
             jacobian[:3] = manip.CalculateJacobian()
@@ -1158,7 +1169,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             if rank < 6:  # if we are in a singularity, just return None
                 # TODO instead of doing this, we could also only skip all Cartesian gradients
                 rospy.logdebug("Jacobian descent failed: Ran into singularity.")
-                return None
+                return np.inf, None
             # get pose of placement reference point
             ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
             # compute relative pose and state
@@ -1173,49 +1184,62 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # ----- 1. Region constraint - reference point needs to be within the selected placement region
             region = cache_entry.region
             query_pos = ref_pose[:3, 3].reshape((1, 3))
-            # values = region.aabb_distance_field.get_cell_values_pos(query_pos)
+            values = region.aabb_distance_field.get_cell_values_pos(query_pos)
+            value = max(values[0], 0.0)
+            violation_value += value
+            rospy.logdebug("In-region violation value is " + str(value))
             b_valid, region_pos_grad = region.aabb_dist_gradient_field.get_interpolated_vectors(query_pos)
-            if not b_valid[0]:
-                rospy.logdebug("Jacobian descent failed: It went out of the placement region's aabb.")
-                return None
-            cart_grad_r = np.array([region_pos_grad[0, 0], region_pos_grad[0, 1], 0.0])
             # TODO could also make this distance smooth
             # _, cart_grad_r = utils.chomps_distance()
+            if not b_valid[0]:
+                rospy.logdebug("Jacobian descent failed: It went out of the placement region's aabb.")
+                return np.inf, None
+            cart_grad_r = np.array([region_pos_grad[0, 0], region_pos_grad[0, 1], 0.0])
             rospy.logdebug("In-region constraint gradient is %s" % str(cart_grad_r))
             # ------ 2. Theta constraint - theta needs to be within the selected so2interval
             # We compute no gradient for this constraint, and instead simply abort if we violate it
             if utils.dist_in_range(theta, cache_entry.so2_interval) != 0.0:
                 rospy.logdebug("Jacobian descent failed: Theta is out of so2 interval.")
-                return None
+                return np.inf, None
             # ------ 3. Stability - all contact points need to be in a placement region (any)
-            cart_grad_c = self.contact_constraint.compute_cart_gradient(cache_entry, ref_pose)
+            value, cart_grad_c = self.contact_constraint.compute_cart_gradient(cache_entry, ref_pose)
             rospy.logdebug("Contact constraint gradient is %s" % str(cart_grad_c))
+            violation_value += value
             # ------ 4. Collision constraint - object must not be in collision
-            cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
+            value, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
+            rospy.logdebug("Object collisions constraint value is %s" % str(value))
             rospy.logdebug("Object collisions constraint gradient is %s" % str(cart_grad_col))
+            violation_value += value
             # ------ 5. Objective Improvement constraint - objective must be an improvement
             xi_err, cart_grad_xi = self.objective_constraint.get_error_gradient(
                 cache_entry, cache_entry.plcmnt_orientation.inv_reference_tf)
             rospy.logdebug("Objective improvement error is %s" % str(xi_err))
             rospy.logdebug("Objective improvement constraint gradient is %s" % str(cart_grad_xi))
+            violation_value += xi_err
             # ------ 6. Translate cartesian gradients into c-space gradients
             cart_grad = cart_grad_r + cart_grad_c + cart_grad_col + cart_grad_xi
             rospy.logdebug("Resulting cartesian gradient (x, y, theta): %s" % str(cart_grad))
+            if self._last_cart_grad is not None:
+                cart_grad = self.momentum * self._last_cart_grad + (1.0 - self.momentum) * cart_grad
+                rospy.logdebug("Cartesian gradient with momentum (x, y, theta): %s" % str(cart_grad))
+            self._last_cart_grad = cart_grad
             extended_cart = np.zeros(6)
             extended_cart[:2] = cart_grad[:2]
             extended_cart[5] = cart_grad[2]
             qgrad = np.matmul(inv_jac, extended_cart)
             # ------ 7. Arm collision constraint - arm must not be in collision
-            col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
+            val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
             col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
                                      np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
             # col_cart = np.matmul(jacobian, col_grad)
             # rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
+            rospy.logdebug("Arm collision constraint value is " + str(val))
             qgrad += col_grad
+            violation_value += val
             # remove any motion that changes the base orientation/z height of the object
             jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
             qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
-            return qgrad
+            return violation_value, qgrad
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
                  objective_fn, global_region_info, scene_sdf,

@@ -597,7 +597,7 @@ class RigidBodyOccupancyGrid(object):
             -------
             Returns
             -------
-            value, float - intersection cost
+            values, np.array of shape (n, 3) - individual c(x_i), to compute C(x) run np.sum(values)
             gradients(optional), numpy array of shape (n, 3) - gradients dc(x_i)/dx_i if bgradients is True
             local_positions(optional), np array of shape (n, 3) - positions of voxel positions in link frame if bgradients is True
         """

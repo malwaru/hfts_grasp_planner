@@ -80,7 +80,7 @@ class PlanarPlacementRegion(object):
         raw_data = self.aabb_distance_field.get_raw_data()
         raw_data[:, :] = True
         raw_data[self.x_indices + 1, self.y_indices + 1] = False
-        raw_data = scipy_morph.distance_transform_edt(raw_data, sampling=self.cell_size)
+        raw_data = scipy_morph.distance_transform_edt(raw_data, sampling=self.cell_size) - self.cell_size
         self.aabb_distance_field.set_raw_data(raw_data)
         self.aabb_dist_gradient_field = grid_mod.VectorGrid(workspace, cell_size=self.cell_size,
                                                             num_cells=shape,
