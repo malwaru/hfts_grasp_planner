@@ -91,7 +91,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._objective = objective
         self._manip_names = manip_names
         if parameters is None:
-            parameters = {'c': 1.0, 'objective_epsilon': 0.1}
+            parameters = {'c': 1.0, 'objective_impr_f': 0.1}
         self._parameters = parameters
         self._c = self._parameters["c"]
         weights = self._objective.get_constraint_weights()
@@ -239,10 +239,10 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         if len(node.children):
             acc_rewards = np.array([child.acc_rewards for child in node.children.values()])
             if self._best_reached_goal is not None:
-                node.update_objectives(self._best_reached_goal.objective_value -
-                                       self._parameters["objective_epsilon"])
-                obj_rewards = len(node.branch_objectives) * self._objective_weight / self._reward_normalizer
-                acc_rewards += obj_rewards
+                bobjv = self._best_reached_goal.objective_value
+                node.update_objectives(bobjv - self._parameters["objective_impr_f"] * abs(bobjv))
+            obj_rewards = len(node.branch_objectives) * self._objective_weight / self._reward_normalizer
+            acc_rewards += obj_rewards
             visits = np.array([child.num_visits for child in node.children.values()])
             avg_rewards = acc_rewards / visits
             uct_scores = avg_rewards + self._c * np.sqrt(2.0 * log_visits / visits)
@@ -321,7 +321,12 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             # if node.num_visits > 0:
             #     base_reward /= node.num_visits
         obj_value = self._objective.evaluate(new_solution)
-        if b_is_valid:  # if the solution is valid, we credit this to the full subbranch that this solution falls into
+        if b_impr_obj and self._best_reached_goal is not None:
+            b_improves_obj = obj_value > self._best_reached_goal.objective_value
+        else:
+            b_improves_obj = True
+        # if the solution is all valid, we credit this to the full subbranch that this solution falls into
+        if b_is_valid and b_improves_obj:
             # add the path to the resulting solution
             leaf_key = self._solution_constructor.get_leaf_key(new_solution)
             key_path = self._hierarchy.get_path(node.key, leaf_key)
@@ -337,7 +342,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # finally propagate rewards up from this leaf
         node.update_rec(obj_value, base_reward)
         node.solutions.append(new_solution)
-        if b_is_valid:
+        if b_is_valid and b_improves_obj:
             return new_solution
         return None
 

@@ -184,11 +184,13 @@ class AnyTimePlacementPlanner:
             # mplanner = "OMPL_SPARStwo"
         self.goal_sampler = goal_sampler
         self._motion_planners = {}  # store separate motion planner for each manipulator
-        self._params = {"num_goal_samples": 10, "num_goal_iterations": 10, "vel_scale": 0.1}
+        self._params = {"num_goal_samples": 10, "num_goal_iterations": 10, "vel_scale": 0.1,
+                        "mp_timeout": 5.0}
         for manip in manips:
             self._motion_planners[manip.GetName()] = RedirectableOMPLPlanner(mplanner, manip)
         self._robot = manips[0].GetRobot()
         self.set_parameters(**kwargs)
+        self.solutions = []
 
     def plan(self, max_iter, target_object):
         """
@@ -208,15 +210,15 @@ class AnyTimePlacementPlanner:
         """
         num_goal_samples = self._params["num_goal_samples"]
         num_goal_iter = self._params["num_goal_iterations"]
+        self.solutions = []
         best_solution = None  # store tuple (Trajectory, PlacementGoal)
         # initialize motion planners
         for _, planner in self._motion_planners.iteritems():
-            planner.setup(grasped_obj=target_object)
+            planner.setup(grasped_obj=target_object, time_limit=self._params["mp_timeout"])
         # repeatedly query new goals, and plan motions
         for iter_idx in xrange(max_iter):
             rospy.logdebug("Running iteration %i" % iter_idx)
             connected_goals = []  # store goals that we manage to connect to in this iteration
-            # TODO we may have some goals left from a previous iteration, what about those?
             rospy.logdebug("Sampling %i new goals" % num_goal_samples)
             new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter, True)
             rospy.logdebug("Got %i valid new goals" % num_new_goals)
@@ -237,6 +239,7 @@ class AnyTimePlacementPlanner:
                             # by invariant a newly reached goal should always have better objective
                             assert(best_solution is None or
                                    best_solution[1].objective_value < reached_goal.objective_value)
+                            self.solutions.append((traj, reached_goal))
                             best_solution = (traj, reached_goal)
                             rospy.logdebug("Found new solution - it has objective value %f" %
                                            best_solution[1].objective_value)
@@ -306,7 +309,7 @@ class AnyTimePlacementPlanner:
             Set parameters
         """
         for key, value in kwargs.iteritems():
-            if key in self.params:
-                self.params[key] = value
+            if key in self._params:
+                self._params[key] = value
             else:
                 rospy.logwarn("Unknown parameter: %s" % key)
