@@ -35,12 +35,13 @@ class GUI(Gtk.Window):
         self.desired_width = 1920
         self.nominal_width = 1920
         self.desired_height = 1080
-        self.min_node_distance = 50
+        self.min_node_distance = 80
         self.node_size = 10
-        self.margin = 20
+        self.xmargin = 40
+        self.ymargin = 100
+        self.head_margin = 10
         self._has_graph = False
         self.terminated = False
-        self.max_uct = 2.0
         self.graph = None
         self.layout = None
         self.plot = None
@@ -69,12 +70,14 @@ class GUI(Gtk.Window):
             else:
                 self.desired_width = self.nominal_width
             self.graph.vs['shape'] = len(self.graph.vs) * ['circle']
+            self.max_reward = max(x['acc_rewards'] for x in self.graph.vs)
+            self.max_reward = 1.0 if self.max_reward == 0.0 else self.max_reward
             self.graph.vs['color'] = [self.compute_color(x) for x in self.graph.vs]
             for vidx in range(len(self.graph.vs)):
-                label = 'uct:%.3f\nfup:%.3f\nnum_visits:%i\nacc_rewards:%.2f' % (self.graph.vs[vidx]['uct'],
-                                                                                 self.graph.vs[vidx]['fup'],
-                                                                                 self.graph.vs[vidx]['num_visits'],
-                                                                                 self.graph.vs[vidx]['acc_rewards'])
+                label = '#visits:%i\nrewards:%.2f\n#const:%i\n#nvconstr:%i' % (self.graph.vs[vidx]['num_visits'],
+                                                                               self.graph.vs[vidx]['acc_rewards'],
+                                                                               self.graph.vs[vidx]['num_constructions'],
+                                                                               self.graph.vs[vidx]['num_new_valid_constr'])
                 self.graph.vs[vidx]['label'] = label
             self.graph.vs['label_dist'] = 2
             self.graph.vs['size'] = self.node_size
@@ -85,7 +88,7 @@ class GUI(Gtk.Window):
         # color = self.baseColor + vertex['temperature'] / self.maxTemp * (self.hotColor - self.baseColor)
         # color = color * 255
         # return map(int, color)
-        color_code = int(vertex['uct'] / self.max_uct * 255.0)
+        color_code = int(vertex['acc_rewards'] / self.max_reward * 255.0)
         return min(color_code, 255)
 
     def expose(self, widget, cairo_context):
@@ -98,7 +101,7 @@ class GUI(Gtk.Window):
                                         bbox=(0, 0, self.desired_width, self.desired_height),
                                         layout=self.layout,
                                         palette=igraph.drawing.colors.GradientPalette('black', 'orange'),
-                                        margin=self.margin)
+                                        margin=(self.xmargin, self.head_margin, self.xmargin, self.ymargin))
                 self.plot.redraw(cairo_context)
 
     def compute_node_index(self):
@@ -120,8 +123,9 @@ class GUI(Gtk.Window):
             x_range = 1.0
         if y_range == 0.0:
             y_range = 1.0
-        x_screen = (x_layout - x_min) / x_range * (self.desired_width - 2 * self.margin) + self.margin
-        y_screen = (y_layout - y_min) / y_range * (self.desired_height - 2 * self.margin) + self.margin
+        x_screen = (x_layout - x_min) / x_range * (self.desired_width - 2 * self.xmargin) + self.xmargin
+        y_screen = (y_layout - y_min) / y_range * (self.desired_height -
+                                                   (self.ymargin + self.head_margin)) + self.head_margin
         position = [x_screen, y_screen]
         return position
 

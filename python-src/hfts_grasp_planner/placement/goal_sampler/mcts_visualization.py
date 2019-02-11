@@ -78,10 +78,12 @@ class MCTSVisualizer(object):
                 self._graph.add_edge(parent_id, node_id)
             else:
                 self._root_node = node
-        self._graph.vs[node_id]['uct'] = node.last_uct_value
-        self._graph.vs[node_id]['fup'] = node.last_fup_value
+        # self._graph.vs[node_id]['uct'] = node.last_uct_value
+        # self._graph.vs[node_id]['fup'] = node.last_fup_value
         self._graph.vs[node_id]['num_visits'] = node.num_visits
         self._graph.vs[node_id]['acc_rewards'] = node.acc_rewards
+        self._graph.vs[node_id]['num_constructions'] = node.num_constructions
+        self._graph.vs[node_id]['num_new_valid_constr'] = node.num_new_valid_constr
         self._nodes_cache[node.key] = node
         return node_id
 
@@ -104,8 +106,10 @@ class MCTSVisualizer(object):
         while children:
             node = children.pop()
             node_id = self._labels_to_ids[node.key]
-            self._graph.vs[node_id]['uct'] = node.last_uct_value
-            self._graph.vs[node_id]['fup'] = node.last_fup_value
+            # self._graph.vs[node_id]['uct'] = node.last_uct_value
+            # self._graph.vs[node_id]['fup'] = node.last_fup_value
             self._graph.vs[node_id]['num_visits'] = node.num_visits
             self._graph.vs[node_id]['acc_rewards'] = node.acc_rewards
+            self._graph.vs[node_id]['num_constructions'] = node.num_constructions
+            self._graph.vs[node_id]['num_new_valid_constr'] = node.num_new_valid_constr
             children.extend(node.children.values())  # the order in which we update does not matter

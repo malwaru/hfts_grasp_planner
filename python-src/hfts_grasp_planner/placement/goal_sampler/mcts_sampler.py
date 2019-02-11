@@ -26,12 +26,15 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self.solutions = []  # list of all solutions that were created for this particular node
             self.branch_objectives = []  # stores all objective values found in this branch
             self.acc_rewards = 0.0  # stores sum of all rewards (excluding objective value based reward)
-            self.num_visits = 0
+            self.num_visits = 0  # number of times visited (includes construct solution calls on children)
+            self.num_constructions = 0  # number of times we constructed a solution from THIS node (excluding children)
+            self.num_new_valid_constr = 0  # number of times constructing a solution from THIS node led to a new child node
             self.child_gen = None
             self.children = {}
             self.parent = parent
             self.last_uct_value = 0.0  # for debug purposes
             self.last_fup_value = 0.0  # for debug purposes
+            self.sampleable = False
             # for internal use to remember whether we need to update self.branch_objectives
             self._last_min_obj = -float("inf")
 
@@ -95,8 +98,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._objective_weight = weights[-1]
         self._reward_normalizer = np.sum(weights[:-1])
         self._debug_visualizer = debug_visualizer
-        self._root_node = MCTSPlacementSampler.MCTSNode((), None)
-        self._root_node.child_gen = self._hierarchy.get_child_key_gen(self._root_node.key)
+        self._root_node = self._create_new_node(None, ())
         self._best_reached_goal = None
         if self._debug_visualizer:
             self._debug_visualizer.add_node(self._root_node)
@@ -163,14 +165,14 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # TODO
         pass
 
-    def _is_sampleable(self, node):
-        """
-            Return whether (bool) the given node can be queried for a solution.
-            A node is sampleable, if it is possible to construct a solution from it and
-            it is either a leaf, or has not been visited before.
-        """
-        return self._solution_constructor.can_construct_solution(node.key) and \
-            (self._hierarchy.is_leaf(node.key) or node.num_visits == 0)
+    # def _is_sampleable(self, node):
+    #     """
+    #         Return whether (bool) the given node can be queried for a solution.
+    #         A node is sampleable, if it is possible to construct a solution from it and
+    #         it is either a leaf, or has not been visited before.
+    #     """
+    #     return self._solution_constructor.can_construct_solution(node.key) and \
+    #         (self._hierarchy.is_leaf(node.key) or node.num_visits == 0)
 
     # def _compute_uct(self, node):
     #     """
@@ -211,75 +213,57 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
     #         return uct_scores
     #     return np.array([])
 
-    def _compute_fup_and_uct(self, node, bcompute_fup):
+    def _compute_uct_resample_fup(self, node, bcompute_fup):
         """
-            Compute uct scores for the children of the given node and the node's fup score.
+            Compute uct, resample and fup scores for the given node.
+            The uct scores are UCB1 scores for the children of the given node.
+            The resample score is a score denoting whether the current node should be resampled.
+            THe fup score denotes whether a child of the given node should be selected to forcibly be selected.
             ---------
             Arguments
             ---------
             node, MCTSNode - node to compute scores for
-            bcompute_fup, bool - if True compute fup score, else return 0.0 for it
+            bcompute_fup, bool - if True compute resample and fup score, else return 0.0 for both
             -------
             Returns
             -------
             scores, np.array of float - UCB scores (might be empty) of children
+            resample_score, float - resample score for sampling this node for the nth time
             fup, float - fup score of the node
         """
+        resample_score = 0.0
+        fup_score = 0.0
+        uct_scores = np.array([])
+        log_visits = 0 if node.num_visits == 0 else np.log(node.num_visits)
+        # compute uct scores, if there are children
         if len(node.children):
             acc_rewards = np.array([child.acc_rewards for child in node.children.values()])
             if self._best_reached_goal is not None:
-                node.update_objectives(self._best_reached_goal.objective_value - self._parameters["objective_epsilon"])
+                node.update_objectives(self._best_reached_goal.objective_value -
+                                       self._parameters["objective_epsilon"])
                 obj_rewards = len(node.branch_objectives) * self._objective_weight / self._reward_normalizer
                 acc_rewards += obj_rewards
             visits = np.array([child.num_visits for child in node.children.values()])
             avg_rewards = acc_rewards / visits
-            uct_scores = avg_rewards + self._c * np.sqrt(2.0 * np.log(node.num_visits) / visits)
-            if bcompute_fup:
-                fup_score = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / len(node.children))
-            else:
-                fup_score = 0.0
-            return uct_scores, fup_score
-        return np.array([]), float("inf")
-    # def _compute_uct_batch(self, node):
-    #     """
-    #         Compute uct scores for the children of the given node.
-    #     """
-    #     values = np.array([(child.acc_rewards, child.num_visits) for child in node.children])
-    #     if len(values):
-    #         uct_scores = values[:, 0] / values[:, 1] + self._c * np.sqrt(2.0 * np.log(node.num_visits) / values[:, 1])
-    #     else:
-    #         uct_scores = []
-    #     return uct_scores
+            uct_scores = avg_rewards + self._c * np.sqrt(2.0 * log_visits / visits)
 
-    # def _compute_uct_batch(self, node):
-    #     """
-    #         Compute uct scores for the children of the given node.
-    #     """
-    #     values = np.array([[child.acc_rewards, child.num_visits] for child in node.children]).transpose()
-    #     if len(values):
-    #         return values[0, :] / values[1, :] + self._c * np.sqrt(2.0 * np.log(node.num_visits) / values[1, :])
-    #     return np.array([])
-
-    # def _compute_fup_uct(self, node):
-    #     """
-    #         Compute UCT score for first play urgency move from the given node.
-    #         ---------
-    #         Arguments
-    #         ---------
-    #         node, MCTSNode - node to compute score for
-    #         -------
-    #         Returns
-    #         -------
-    #         score, float - UCB score (may be infinite)
-    #     """
-    #     # TODO incoporate objective values
-    #     avg_rewards = np.array([child.acc_rewards / child.num_visits for child in node.children])
-    #     num_visits = len(node.children)
-    #     if num_visits == 0:
-    #         node.last_fup_value = float("inf")
-    #     else:
-    #         node.last_fup_value = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * np.log(node.num_visits) / num_visits)
-    #     return node.last_fup_value
+        # compute fup and resample_score if requested
+        if bcompute_fup:
+            if node.sampleable:  # can we resample?
+                assert(node.num_visits > 0)
+                # if node.num_visits == 0:  # if have never visited this node, definitely sample
+                # return uct_scores, np.inf, fup_score
+                fup_score = self._c * np.sqrt(2.0 * log_visits / (1 + len(node.children)))
+                # compute resample score
+                assert(node.num_constructions >= 1)
+                resample_score = node.num_new_valid_constr / node.num_constructions + \
+                    self._c * np.sqrt(2.0 * log_visits / node.num_constructions)
+            else:  # fup is the only option to add new children
+                if len(node.children):
+                    fup_score = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * log_visits / len(node.children))
+                else:
+                    fup_score = np.inf
+        return uct_scores, resample_score, fup_score
 
     def _pull_fup_arm(self, node):
         """
@@ -303,7 +287,9 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
     def _create_new_node(self, parent, child_key):
         new_node = MCTSPlacementSampler.MCTSNode(child_key, parent)
         new_node.child_gen = self._hierarchy.get_child_key_gen(new_node.key)
-        parent.children[child_key] = new_node
+        new_node.sampleable = self._solution_constructor.can_construct_solution(new_node.key)
+        if parent:
+            parent.children[child_key] = new_node
         if self._debug_visualizer:
             self._debug_visualizer.add_node(new_node)
             self._debug_visualizer.render(bupdate_data=False)
@@ -322,8 +308,9 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             -------
             new_solution, PlacementSolution - newly sampled placement solution
         """
-        assert(self._solution_constructor.can_construct_solution(node.key))
+        assert(node.sampleable)
         new_solution = self._solution_constructor.construct_solution(node.key, True)
+        node.num_constructions += 1
         # first, check whether all other non-objective constraints are fullfilled
         b_is_valid = self._validator.is_valid(new_solution, False)
         if not b_is_valid and not self._hierarchy.is_leaf(node.key):
@@ -331,18 +318,23 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         else:
             # TODO decide whether we wanna keep this
             base_reward = 1.0 if b_is_valid else 0.0  # leaves do not get a relaxation reward
-            if node.num_visits > 0:
-                base_reward /= node.num_visits
+            # if node.num_visits > 0:
+            #     base_reward /= node.num_visits
         obj_value = self._objective.evaluate(new_solution)
         if b_is_valid:  # if the solution is valid, we credit this to the full subbranch that this solution falls into
             # add the path to the resulting solution
             leaf_key = self._solution_constructor.get_leaf_key(new_solution)
             key_path = self._hierarchy.get_path(node.key, leaf_key)
+            # add subbranch
             for key in key_path:
                 if key in node.children:
                     node = node.children[key]
                 else:
+                    node.num_new_valid_constr += 1
                     node = self._create_new_node(node, key)
+                node.num_constructions += 1  # we count a rollout from a parent node also as a construction for the child node
+            node.num_new_valid_constr += 1  # for the last node it is a new valid goal if it is valid
+        # finally propagate rewards up from this leaf
         node.update_rec(obj_value, base_reward)
         node.solutions.append(new_solution)
         if b_is_valid:
@@ -354,28 +346,27 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             # TODO
         """
         current_node = self._root_node
-        # descend in hierarchy until we reach the first unsampled sampleable node
-        while current_node.children or not self._is_sampleable(current_node):
+        # descend in hierarchy until we reach the first unsampled sampleable node without children (or until abortion)
+        while not current_node.sampleable or len(current_node.children) > 0:
             # get arms
-            # ucts_scores = self._compute_uct_batch(current_node)
             b_compute_fup = self._hierarchy.get_num_children(current_node.key) > len(current_node.children)
-            ucts_scores, fup_score = self._compute_fup_and_uct(current_node, b_compute_fup)
+            # uct_scores = scores of children, resample_score = self sample score, fup_score = select child node score
+            uct_scores, resample_score, fup_score = self._compute_uct_resample_fup(current_node, b_compute_fup)
             # get best performing arm
-            best_choice = np.argmax(ucts_scores) if len(ucts_scores) > 0 else None
-            # add an additional arm if there are children that haven't been added to mct yet (first play urgency)
-            # if self._hierarchy.get_num_children(current_node.key) > len(current_node.children):
-            #     fup_score = self._compute_fup_uct(current_node)
-            # else:
-            #     fup_score = 0.0
+            best_choice = np.argmax(uct_scores) if len(uct_scores) > 0 else None
             # decide whether to move down in mct or add a new child to mct
-            if best_choice is None or fup_score > ucts_scores[best_choice]:
-                # if we decide to add a new child, choose this child as new current node
-                assert(self._hierarchy.get_num_children(current_node.key) > len(current_node.children))
-                current_node = self._pull_fup_arm(current_node)
+            if best_choice is None or max(resample_score, fup_score) > uct_scores[best_choice]:
+                if resample_score < fup_score:
+                    # if we decide to add a new child, choose this child as new current node
+                    assert(self._hierarchy.get_num_children(current_node.key) > len(current_node.children))
+                    current_node = self._pull_fup_arm(current_node)
+                else:
+                    # we decided to sample current node itself again, break so that we sample current_node
+                    break
             else:
                 # choose child with best uct score
                 current_node = current_node.children.values()[best_choice]
-        assert(self._is_sampleable(current_node))
+        assert(current_node.sampleable)
         # sample it: compute a new solution, propagate result up
         # this is equal to a Monte Carlo rollout + backpropagation
         new_solution = self._sample(current_node, b_impr_obj)
