@@ -184,7 +184,7 @@ class AnyTimePlacementPlanner:
             # mplanner = "OMPL_SPARStwo"
         self.goal_sampler = goal_sampler
         self._motion_planners = {}  # store separate motion planner for each manipulator
-        self._params = {"num_goal_samples": 10, "num_goal_iterations": 10, "vel_scale": 0.1,
+        self._params = {"num_goal_samples": 2, "num_goal_iterations": 50, "vel_scale": 0.1,
                         "mp_timeout": 5.0}
         for manip in manips:
             self._motion_planners[manip.GetName()] = RedirectableOMPLPlanner(mplanner, manip)
@@ -212,6 +212,7 @@ class AnyTimePlacementPlanner:
         num_goal_iter = self._params["num_goal_iterations"]
         self.solutions = []
         best_solution = None  # store tuple (Trajectory, PlacementGoal)
+        goal_set = {}
         # initialize motion planners
         for _, planner in self._motion_planners.iteritems():
             planner.setup(grasped_obj=target_object, time_limit=self._params["mp_timeout"])
@@ -222,11 +223,12 @@ class AnyTimePlacementPlanner:
             rospy.logdebug("Sampling %i new goals" % num_goal_samples)
             new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter, True)
             rospy.logdebug("Got %i valid new goals" % num_new_goals)
+            goal_set = self._merge_goal_sets(goal_set, new_goals)
             # TODO we could/should plan motions for each manipulator in parallel. For now, instead, plan
             # TODO for one at a time
-            if num_new_goals > 0:
+            if len(goal_set) > 0:
                 # compute in which order to plan (i.e. which manipulator first)
-                manip_goal_pairs = self._compute_planning_order(new_goals)
+                manip_goal_pairs = self._compute_planning_order(goal_set)
                 for manip_name, _, manip_goals in manip_goal_pairs:
                     # get motion planner for this manipulator
                     motion_planner = self._motion_planners[manip_name]
@@ -239,6 +241,7 @@ class AnyTimePlacementPlanner:
                             # by invariant a newly reached goal should always have better objective
                             assert(best_solution is None or
                                    best_solution[1].objective_value < reached_goal.objective_value)
+                            traj, reached_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
                             self.solutions.append((traj, reached_goal))
                             best_solution = (traj, reached_goal)
                             rospy.logdebug("Found new solution - it has objective value %f" %
@@ -303,6 +306,26 @@ class AnyTimePlacementPlanner:
         if best_solution is None:
             return goals
         return [x for x in goals if x.objective_value > best_solution[1].objective_value]
+
+    def _merge_goal_sets(self, old_goals, new_goals):
+        """
+            Merge new_goals into old_goals.
+            ---------
+            Arguments
+            ---------
+            old_goals, dict - manip_name -> list of goals
+            new_goals, dict - manip_name -> list of goals
+            -------
+            Returns
+            -------
+            old_goals
+        """
+        for (key, goals) in new_goals.iteritems():
+            if key in old_goals:
+                old_goals[key].extend(goals)
+            else:
+                old_goals[key] = goals
+        return old_goals
 
     def set_parameters(self, **kwargs):
         """
