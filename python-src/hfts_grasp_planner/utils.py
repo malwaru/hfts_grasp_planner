@@ -441,6 +441,44 @@ def set_grasp(manip, body, inv_grasp_tf, hand_config):
     robot.SetDOFValues(hand_config, manip.GetGripperIndices())
 
 
+def retime_traj(ortraj, robot, vel_factor=0.8):
+    """
+        Retime the given OpenRAVE trajectory.
+        ---------
+        Arguments
+        ---------
+        ortraj, OpenRAVE trajectory to extend
+        robot, OpenRAVE robot
+        vel_factor, float - percentage (in [0, 1]) of maximal velocity
+        -------
+        Returns
+        -------
+        ortraj, OpenRAVE trajectory time velocities
+    """
+    vel_limits = robot.GetDOFVelocityLimits()
+    robot.SetDOFVelocityLimits(vel_factor * vel_limits)
+    orpy.planningutils.RetimeTrajectory(ortraj, hastimestamps=False)
+    robot.SetDOFVelocityLimits(vel_limits)
+    return ortraj
+
+
+def extend_or_traj(ortraj, path):
+    """
+        Extend the given OpenRAVE trajectory by path.
+        Can not be called if ortraj has been retimed before.
+        ---------
+        Arguments
+        ---------
+        ortraj, OpenRAVE trajectory to extend
+        path, list of np.array - list of waypoints to add to ortraj
+        dof_indices, np.array of int - if provided, specifies active dof_indices
+            for the path.
+    """
+    for wp in path:
+        ortraj.Insert(ortraj.GetNumWaypoints(), wp)
+    return ortraj
+
+
 def path_to_trajectory(robot, path, vel_factor=0.2):
     """
         Create an OpenRAVE trajectory for the given path.
