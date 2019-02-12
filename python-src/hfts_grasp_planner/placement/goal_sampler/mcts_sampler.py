@@ -1,6 +1,7 @@
 import rospy
 import bisect
 import numpy as np
+import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
     This module contains the definition of a Monte-Carlo-tree-search-based placement
@@ -22,13 +23,14 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             """
                 Create a new MCTSNode for the hierarchy node with the given key.
             """
-            self.key = key
+            self.key = key  # hierarchy key
             self.solutions = []  # list of all solutions that were created for this particular node
             self.branch_objectives = []  # stores all objective values found in this branch
             self.acc_rewards = 0.0  # stores sum of all rewards (excluding objective value based reward)
             self.num_visits = 0  # number of times visited (includes construct solution calls on children)
             self.num_constructions = 0  # number of times we constructed a solution from THIS node (excluding children)
             self.num_new_valid_constr = 0  # number of times constructing a solution from THIS node led to a new child node
+            self.normalized_obj_reward = 0.0  # reward stemming from objectives in this branch
             self.child_gen = None
             self.children = {}
             self.parent = parent
@@ -49,11 +51,12 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             """
             self.num_visits += 1
             self.acc_rewards += base_reward
-            self.branch_objectives.append(obj_value)
+            if obj_value is not None:
+                self.branch_objectives.append(obj_value)
             if self.parent is not None:
                 self.parent.update_rec(obj_value, base_reward)
 
-        def update_objectives(self, min_obj):
+        def update_objectives(self, min_obj, objective_weight, reward_normalizer):
             """
                 Update the branch objectives list, given that the minimal objective is now min_obj.
                 As a result the list self.branch_objectives only contains values > min_obj and it is sorted.
@@ -62,6 +65,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 Arguments
                 ---------
                 min_obj, float - minimal objective
+                objective_weight, float - weight of the objective reward
+                reward_normalizer, float - normalizer for objective reward
             """
             if min_obj <= self._last_min_obj:
                 return
@@ -69,6 +74,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             i = bisect.bisect(self.branch_objectives, min_obj)
             self.branch_objectives = self.branch_objectives[i:]
             self._last_min_obj = min_obj
+            self.normalized_obj_reward = len(self.branch_objectives) * objective_weight / reward_normalizer
 
     def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, parameters=None,
                  debug_visualizer=None):
@@ -165,53 +171,56 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # TODO
         pass
 
-    # def _is_sampleable(self, node):
-    #     """
-    #         Return whether (bool) the given node can be queried for a solution.
-    #         A node is sampleable, if it is possible to construct a solution from it and
-    #         it is either a leaf, or has not been visited before.
-    #     """
-    #     return self._solution_constructor.can_construct_solution(node.key) and \
-    #         (self._hierarchy.is_leaf(node.key) or node.num_visits == 0)
+    def improve_path_goal(self, traj, goal):
+        """
+            Attempt to extend the given path locally to a new goal that achieves a better objective.
+            In case the goal can not be further improved locally, traj and goal is returned.
+            ---------
+            Arguments
+            ---------
+            traj, OpenRAVE trajectory - arm trajectory leading to goal
+            goal, PlacementGoal - the goal traj leads to
+            -------
+            Returns
+            -------
+            traj - extended by a new path segment to a new goal
+            new_goal, PlacementGoal - the new goal that achieves a better objective than goal or goal
+                if improving objective failed
+        """
+        new_goal, path = self._solution_constructor.locally_improve(goal)
+        if len(path) > 0:
+            # extend path
+            traj = utils.extend_or_traj(traj, path)
+            # add new_goal to mcts hierarchy
+            leaf_key = self._solution_constructor.get_leaf_key(new_goal)
+            self._insert_solution(self._root_node, leaf_key, new_goal, True, 1.0)
+            return traj, new_goal
+        return traj, goal
 
-    # def _compute_uct(self, node):
-    #     """
-    #         Compute UCT score for the given node.
-    #         ---------
-    #         Arguments
-    #         ---------
-    #         node, MCTSNode - node to compute score for
-    #         parent, MCTSNode - parent node
-    #         -------
-    #         Returns
-    #         -------
-    #         score, float - UCB score
-    #     """
-    #     # TODO incorporate objective values
-    #     # assert(node.parent is not None)
-    #     # assert(node.num_visits > 0)
-    #     node.last_uct_value = node.acc_rewards / node.num_visits + \
-    #         self._c * np.sqrt(2.0 * np.log(node.parent.num_visits) / node.num_visits)
-    #     return node.last_uct_value
-
-    # def _compute_uct_batch(self, node):
-    #     """
-    #         Compute uct scores for the children of the given node.
-    #         ---------
-    #         Arguments
-    #         ---------
-    #         node, MCTSNode - node to compute score for
-    #         -------
-    #         Returns
-    #         -------
-    #         scores, np.array of float - UCB scores (might be empty)
-    #     """
-    #     if node.num_visits:
-    #         acc_rewards = np.array([child.acc_rewards for child in node.children])
-    #         visits = np.array([child.num_visits for child in node.children])
-    #         uct_scores = acc_rewards / visits + self._c * np.sqrt(2.0 * np.log(node.num_visits) / visits)
-    #         return uct_scores
-    #     return np.array([])
+    def _insert_solution(self, start_node, key, solution, bvalid, reward):
+        """
+            Add the given solution to the node with given key. If the node is not in the hierarchy yet, 
+            it is created.
+        """
+        key_path = self._hierarchy.get_path(start_node.key, key)
+        if key_path is None:
+            raise ValueError("Could not insert node with key %s as descendant of node with key %s" %
+                             (str(key), str(start_node.key)))
+        node = start_node
+        for ckey in key_path:
+            node.num_constructions += node.sampleable
+            if ckey in node.children:
+                node = node.children[ckey]
+            else:
+                node.num_new_valid_constr += node.sampleable and bvalid
+                node = self._create_new_node(node, ckey)
+        # for the last node above loop didn't update num_constructions and num_new_valid_constr
+        node.num_constructions += node.sampleable
+        node.num_new_valid_constr += node.sampleable and bvalid
+        # add solution
+        node.solutions.append(solution)
+        # propagate rewards up from this node
+        node.update_rec(solution.objective_value, reward)
 
     def _compute_uct_resample_fup(self, node, bcompute_fup):
         """
@@ -237,11 +246,14 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         log_visits = 0 if node.num_visits == 0 else np.log(node.num_visits)
         # compute uct scores, if there are children
         if len(node.children):
-            acc_rewards = np.array([child.acc_rewards for child in node.children.values()])
+            children = node.children.values()
+            acc_rewards = np.array([child.acc_rewards for child in children])
             if self._best_reached_goal is not None:
                 bobjv = self._best_reached_goal.objective_value
-                node.update_objectives(bobjv - self._parameters["objective_impr_f"] * abs(bobjv))
-            obj_rewards = len(node.branch_objectives) * self._objective_weight / self._reward_normalizer
+                for child in children:
+                    child.update_objectives(bobjv - self._parameters["objective_impr_f"] * abs(bobjv),
+                                            self._objective_weight, self._reward_normalizer)
+            obj_rewards = np.array([child.normalized_obj_reward for child in children])
             acc_rewards += obj_rewards
             visits = np.array([child.num_visits for child in node.children.values()])
             avg_rewards = acc_rewards / visits
@@ -310,41 +322,33 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         """
         assert(node.sampleable)
         new_solution = self._solution_constructor.construct_solution(node.key, True)
-        node.num_constructions += 1
         # first, check whether all other non-objective constraints are fullfilled
         b_is_valid = self._validator.is_valid(new_solution, False)
-        if not b_is_valid and not self._hierarchy.is_leaf(node.key):
-            base_reward = self._validator.get_constraint_relaxation(new_solution)
+        if b_is_valid:
+            base_reward = 1.0
+            obj_value = self._objective.evaluate(new_solution)
+            if b_impr_obj and self._best_reached_goal is not None:
+                b_improves_obj = obj_value > self._best_reached_goal.objective_value
+            else:
+                b_improves_obj = True
         else:
-            # TODO decide whether we wanna keep this
-            base_reward = 1.0 if b_is_valid else 0.0  # leaves do not get a relaxation reward
-            # if node.num_visits > 0:
-            #     base_reward /= node.num_visits
-        obj_value = self._objective.evaluate(new_solution)
-        if b_impr_obj and self._best_reached_goal is not None:
-            b_improves_obj = obj_value > self._best_reached_goal.objective_value
-        else:
-            b_improves_obj = True
+            obj_value = None
+            if not self._hierarchy.is_leaf(node.key):
+                base_reward = self._validator.get_constraint_relaxation(new_solution)
+            else:
+                base_reward = 0.0  # leaves do not get a relaxation
         # if the solution is all valid, we credit this to the full subbranch that this solution falls into
         if b_is_valid and b_improves_obj:
             # add the path to the resulting solution
             leaf_key = self._solution_constructor.get_leaf_key(new_solution)
-            key_path = self._hierarchy.get_path(node.key, leaf_key)
-            # add subbranch
-            for key in key_path:
-                if key in node.children:
-                    node = node.children[key]
-                else:
-                    node.num_new_valid_constr += 1
-                    node = self._create_new_node(node, key)
-                node.num_constructions += 1  # we count a rollout from a parent node also as a construction for the child node
-            node.num_new_valid_constr += 1  # for the last node it is a new valid goal if it is valid
-        # finally propagate rewards up from this leaf
-        node.update_rec(obj_value, base_reward)
-        node.solutions.append(new_solution)
-        if b_is_valid and b_improves_obj:
+            self._insert_solution(node, leaf_key, new_solution, True, base_reward)
             return new_solution
-        return None
+        else:
+            # we only count that we sampled this node without success, and add the solution to this node
+            node.num_constructions += 1
+            node.update_rec(obj_value, base_reward)
+            node.solutions.append(new_solution)
+            return None
 
     def _run_mcts(self, solutions, b_impr_obj):
         """

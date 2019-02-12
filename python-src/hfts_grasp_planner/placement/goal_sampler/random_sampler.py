@@ -1,6 +1,7 @@
 import rospy
 import numpy as np
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
+import hfts_grasp_planner.utils as utils
 """
     This module contains the definition of a naive placement goal sampler - purely random sampler.
     The random sampler samples an arpo_hierarchy uniformly at random.
@@ -88,3 +89,25 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         """
         # Nothing to do here
         pass
+
+    def improve_path_goal(self, traj, goal):
+        """
+            Attempt to extend the given path locally to a new goal that achieves a better objective.
+            In case the goal can not be further improved locally, traj and goal is returned.
+            ---------
+            Arguments
+            ---------
+            traj, OpenRAVE trajectory - arm trajectory leading to goal
+            goal, PlacementGoal - the goal traj leads to
+            -------
+            Returns
+            -------
+            traj - extended by a new path segment to a new goal
+            new_goal, PlacementGoal - the new goal that achieves a better objective than goal or goal
+                if improving objective failed
+        """
+        new_goal, path = self._solution_constructor.locally_improve(goal)
+        if len(path) > 0:
+            traj = utils.extend_or_traj(traj, path)
+            return traj, new_goal
+        return traj, goal

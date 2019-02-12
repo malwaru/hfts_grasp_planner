@@ -189,6 +189,24 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
         return b_region_leaf and b_so2_leaf
 
+    def get_region(self, position):
+        """
+            Return the region the given position belongs to.
+            ---------
+            Arguments
+            ---------
+            position, np.array (3,) - x, y, z position
+            -------
+            Returns
+            -------
+            id, int - region id, None if not in any region.
+        """
+        for i, r in enumerate(self._regions):
+            leaf_key = r.get_leaf_key(position)
+            if leaf_key is not None:
+                return i
+        return None
+
     def get_leaf_key(self, base_key, position, orientation):
         """
             Returns the key of the leaf containing the given position and orientation.
@@ -492,6 +510,21 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.region_pose = None  # pose of the object relative to region frame
             self.region_state = None  # (x, y, theta) within region
 
+        def copy(self):
+            new_entry = ARPORobotBridge.SolutionCacheEntry(self.key, self.region, self.plcmnt_orientation,
+                                                           np.array(self.so2_interval), self.solution.copy())
+            new_entry.eef_tf = None if self.eef_tf is None else np.array(new_entry.eef_tf)
+            new_entry.bkinematically_reachable = self.bkinematically_reachable
+            new_entry.barm_collision_free = self.barm_collision_free
+            new_entry.bobj_collision_free = self.bobj_collision_free
+            new_entry.bbetter_objective = self.bbetter_objective
+            new_entry.bstable = self.bstable
+            new_entry.objective_val = self.objective_val
+            new_entry.jacobian = np.array(self.jacobian) if self.jacobian is not None else None
+            new_entry.region_pose = np.array(self.region_pose) if self.region_pose is not None else None
+            new_entry.region_state = self.region_state
+            return new_entry
+
     class ContactConstraint(object):
         """
             This constraint expresses that all contact points of a placement face need to
@@ -594,8 +627,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 gradient, np.array of shape (3,) - gradient of contact constraint w.r.t. x, y, ez
             """
             # first extract contact points in local and global frame
-            # exclude reference point itself
-            local_contact_points = cache_entry.plcmnt_orientation.local_placement_face[2:]
+            # exclude reference point itself TODO does including it make any problems?
+            local_contact_points = cache_entry.plcmnt_orientation.local_placement_face[1:]
             global_contact_points = np.matmul(local_contact_points, ref_pose[:3, :3].transpose()) + ref_pose[:3, 3]
             values = self._contact_point_distances.get_cell_values_pos(global_contact_points)
             # retrieve gradients w.r.t. x, y at contact points
@@ -626,29 +659,6 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             lcart_grads[:, 2] = dthetas
             return np.sum(smooth_values), 1.0 / lcart_grads.shape[0] * np.sum(lcart_grads, axis=0)
 
-            # compute transform from region base frame to current pose of reference point
-            # tf_r_p = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
-            # # TODO the following assumes that ez == theta, i.e. placement region and world frame are aligned
-            # # a position in global_contact_points is computed as base_tf * tf_r_p * local_position
-            # # thus if we rotate around the reference position tf_r_p[:3, 3] (i.e. change theta),
-            # # the position changes. Assuming that base_tf's z axis is aligned with the world frame,
-            # # we can compute the gradient w.r.t to theta/ez as base_tf * dR/dtheta * gradient_x,y
-            # # compute dR/dtheta, since the rotation is only a rotation around the z axis, we can simply construct
-            # # the derivative by swapping the x and y column and negating the x column
-            # x_column = np.array(tf_r_p[:, 0])
-            # y_column = np.array(tf_r_p[:, 1])
-            # tf_r_p[:, 0] = y_column
-            # tf_r_p[:, 1] = -x_column
-            # # transformation matrix for gradient w.r.t ez
-            # dtf = np.matmul(cache_entry.region.base_tf, tf_r_p)
-            # dcontact_dtheta = np.matmul(local_contact_points, dtf[:3, :3].transpose())  # dworld_contact_points / dtheta
-            # non_zero_grads = np.nonzero(cart_gradients)[0]
-            # grad = np.empty(3)
-            # grad[:2] = np.sum(cart_gradients, axis=0)  # x, y part of gradient
-            # # theta part = sum(<dcontact_dtheta[i], cart_gradients[i]>) with cart_gradient[i] = dd(c)/dx, dy
-            # # TODO drops z coordinate because we assume that frames are aligned
-            # grad[2] = np.sum(dcontact_dtheta[:, :2] * cart_gradients)
-            # return grad / non_zero_grads.shape[0]  # the cost is average distance
 
     class CollisionConstraint(object):
         """
@@ -683,7 +693,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         def check_collision(self, cache_entry):
             """
                 Check whether the solution stored in cache entry represents a collision-free placement.
-                Returns True or False. TODO: implement relaxation
+                Returns True or False.
                 ---------
                 Arguments
                 ---------
@@ -1045,15 +1055,175 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             vs, gs = utils.chomps_distance(np.array([error_val]), self.eps, np.array([xi_grad]))
             return vs[0], gs[0]
 
+
     class JacobianOptimizer(object):
+        def __init__(self, contact_constraint, collision_constraint, obj_fn, robot_data, object_data):
+            """
+                Create a new JacobianOptimizer.
+                ---------
+                Arguments
+                ---------
+                contact_constraint, ContactConstraint
+                collision_constraint, CollisionConstraint
+                obj_fn, ObjectiveFunction TODO
+                robot_data, RobotData
+                object_data, ObjectData
+            """
+            self.contact_constraint = contact_constraint
+            self.collision_constraint = collision_constraint
+            self.obj_fn = obj_fn
+            self.robot_data = robot_data
+            self.object_data = object_data
+            self.manip_data = robot_data.manip_data
+            self.robot = robot_data.robot
+            self.grad_epsilon = 0.01  # minimal magnitude of cspace gradient
+            self.step_size = 0.01  # multiplier for update step
+            self.max_iterations = 100  # maximal number of iterations
+            self.damping_matrix = np.diag([0.9, 0.9, 1.0, 1.0, 1.0, 0.8])  # damping matrix for nullspace projection
+            self.joint_limit_margin = 1e-4  # minimal margin to joint limits
+            self._last_obj_value = None  # objective value of previous iteration
+
+        def locally_maximize(self, cache_entry):
+            """
+                Locally maximize the objective.
+                ---------
+                Arguments
+                ---------
+                cache_entry, SolutionCacheEntry
+                ------------
+                Side effects
+                ------------
+                cache_entry.solution.arm_config is set to the improved arm configuration
+                cache_entry.solution.obj_tf is set to the improved object pose
+                TODO
+                -------
+                Returns
+                -------
+                arm_configs, list of np.array - list of arm configurations that describe a path from
+                    cache_entry.arm_config to arm_configs[-1], where arm_configs[-1] achieves the locally
+                    maximal objective that can be reached by following the gradient of the objective
+                    from cache_entry.solution.arm_config. The returned list does not contain the initial
+                    cache_entry.solution.arm_config.
+            """
+            self._last_obj_value = cache_entry.solution.objective_value
+            manip_data = self.manip_data[cache_entry.solution.manip.GetName()]
+            lower, upper = manip_data.lower_limits + self.joint_limit_margin, manip_data.upper_limits - self.joint_limit_margin
+            manip = manip_data.manip
+            arm_configs = []
+            # with self.robot:
+            # with self.object_data.kinbody:
+            utils.set_grasp(manip, self.object_data.kinbody, 
+                            manip_data.inv_grasp_tf, manip_data.grasp_config)
+            reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+            manip.SetLocalToolTransform(reference_pose)
+            self.robot.SetActiveDOFs(manip.GetArmIndices())
+            # init jacobian descent
+            q_current = cache_entry.solution.arm_config
+            # iterate as long as the gradient is not None, zero or we are in collision or out of joint limits
+            # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+            for _ in xrange(self.max_iterations):
+                in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                if in_limits:
+                    q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                    grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
+                    if q_grad is None or grad_norm < self.grad_epsilon:
+                        break
+                    arm_configs.append(np.array(q_current))
+                    q_current -= self.step_size * q_grad / grad_norm  # update q_current
+                else:
+                    break
+            manip.SetLocalToolTransform(np.eye(4))
+            manip.GetRobot().Release(self.object_data.kinbody)
+            if len(arm_configs) > 1:  # first element is start configuration
+                self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
+                return arm_configs[1:]
+            assert(len(arm_configs) > 0)
+            self._set_cache_entry_values(cache_entry, arm_configs[0], manip_data)
+            return []  # else return empty array
+
+        def _set_cache_entry_values(self, cache_entry, q, manip_data):
+            manip = manip_data.manip
+            self.robot.SetActiveDOFValues(q)
+            cache_entry.solution.arm_config = q
+            cache_entry.solution.obj_tf = np.matmul(manip.GetEndEffector().GetTransform(),
+                                                    manip_data.inv_grasp_tf)
+            ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
+            # TODO we are not constraining the pose to stay in the region here, so technically we would need to compute
+            # TODO which region we are actually in now (we might transition into a neighboring region)
+            cache_entry.relative_tf = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
+            ex, ey, ez = tf_mod.euler_from_matrix(cache_entry.relative_tf)
+            theta = utils.normalize_radian(ez)
+            cache_entry.region_state = (cache_entry.relative_tf[0, 3], cache_entry.relative_tf[1, 3], theta)
+            cache_entry.solution.objective_value = self.obj_fn(cache_entry.solution.obj_tf)
+
+        def _compute_gradient(self, cache_entry, q_current, manip_data):
+            """
+                Compute gradient for the current configuration.
+                -------
+                Returns
+                -------
+                qgrad, numpy array of shape (manip.GetArmDOF,) - gradient of po + collision constraints
+                    w.r.t arm configurations. The returned gradient is None, if stability constraint
+                    is violated, we descreased objective value, or we encountered a singularity.
+            """
+            manip = manip_data.manip
+            self.robot.SetActiveDOFValues(q_current)
+            # save last objective value from previous iteration
+            self._last_obj_value = cache_entry.solution.objective_value
+            # update cache_entry and solution to reflect q_current
+            self._set_cache_entry_values(cache_entry, q_current, manip_data)
+            # compute jacobian
+            jacobian = np.empty((6, manip.GetArmDOF()))
+            jacobian[:3] = manip.CalculateJacobian()
+            jacobian[3:] = manip.CalculateAngularVelocityJacobian()
+            cache_entry.jacobian = jacobian
+            # compute pseudo inverse
+            inv_jac, rank = utils.compute_pseudo_inverse_rank(jacobian)
+            if rank < 6:  # if we are in a singularity, just return None
+                return None
+            # get pose of placement reference point
+            ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
+            # Compute gradient w.r.t. constraints
+            # ------ 1. Stability - all contact points need to be in a placement region (any)
+            value, cart_grad_c = self.contact_constraint.compute_cart_gradient(cache_entry, ref_pose)
+            if value > 0.0:
+                return None
+            # ------ 2. Collision constraint - object must not be in collision
+            # can not trust collision value properly, check for collision
+            in_collision = self.robot.GetEnv().CheckCollision(self.robot) or self.robot.CheckSelfCollision()
+            if in_collision:
+                return None
+            _, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
+            # ------ 3. Objective Improvement constraint - objective must be an improvement
+            if cache_entry.solution.objective_value < self._last_obj_value:
+                return None
+            cart_grad_xi = -self.obj_fn.get_gradient(cache_entry.solution.obj_tf, cache_entry.region_state,
+                                                     cache_entry.plcmnt_orientation.inv_reference_tf)
+            # ------ 4. Translate cartesian gradients into c-space gradients
+            cart_grad = cart_grad_c + cart_grad_col + cart_grad_xi
+            extended_cart = np.zeros(6)
+            extended_cart[:2] = cart_grad[:2]
+            extended_cart[5] = cart_grad[2]
+            qgrad = np.matmul(inv_jac, extended_cart)
+            # ------ 5. Arm collision constraint - arm must not be in collision
+            _, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
+            col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
+                                    np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
+            qgrad += col_grad
+            # remove any motion that changes the base orientation/z height of the object
+            jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
+            qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
+            return qgrad
+
+    class JacobianProjection(object):
         """
-            Optimization algorithm that follows the gradient of all contraints to locally search for
+            Projection algorithm that follows the gradient of all contraints to locally search for
             feasible solutions.
         """
 
         def __init__(self, contact_constraint, collision_constraint, objective_constraint, robot_data):
             """
-                Create a new JacobianOptimizer.
+                Create a new JacobianProjection.
                 ---------
                 Arguments
                 ---------
@@ -1073,11 +1243,12 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.max_iterations = 100  # maximal number of iterations
             self.damping_matrix = np.diag([0.9, 0.9, 1.0, 1.0, 1.0, 0.8])  # damping matrix for nullspace projection
             self.momentum = 0.4  # interpolation value between cartesian gradient from prev and current iteration
+            self.joint_limit_margin = 1e-4  # minimal margin to joint limits
             self._last_cart_grad = None  # save last cartesian gradient
 
-        def optimize(self, cache_entry):
+        def project(self, cache_entry):
             """
-                Attempt to make the arm configuration in cache_entry to feasible.
+                Attempt to make the arm configuration in cache_entry feasible.
                 ---------
                 Arguments
                 ---------
@@ -1090,52 +1261,66 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 cache_entry.solution.arm_config, numpy array of shape (n,) - arm configuration (n DOFs)
             """
             # rospy.logdebug("Running JacobianOptimizer to make solution feasible")
-            # q_original = self.robot.GetActiveDOFValues()  # TODO remove
+            q_original = self.robot.GetActiveDOFValues()  # TODO remove
             manip_data = self.manip_data[cache_entry.solution.manip.GetName()]
-            lower, upper = manip_data.lower_limits, manip_data.upper_limits
+            lower, upper = manip_data.lower_limits + self.joint_limit_margin, manip_data.upper_limits - self.joint_limit_margin
             manip = manip_data.manip
-            # with self.robot:
-            reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
-            manip.SetLocalToolTransform(reference_pose)
-            self.robot.SetActiveDOFs(manip.GetArmIndices())
-            # init jacobian descent
-            q_current = cache_entry.solution.arm_config
-            q_best = np.array(q_current)
-            # compute jacobian
-            cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-            if q_grad is not None:
-                grad_norm = np.linalg.norm(q_grad)
-            else:
-                grad_norm = 0.0
-            b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-            best_cval = cval
-            # iterate as long as the gradient is not zero and we are not beyond limits
-            # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
-            for i in xrange(self.max_iterations):
-                if q_grad is None or grad_norm < self.grad_epsilon or not b_in_limits or cval < self.val_epsilon:
-                    break
-                # rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
-                            #    (str(q_current), str(q_grad), grad_norm))
-                q_current -= self.step_size * q_grad / grad_norm  # update q_current
+            with self.robot:
+                reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+                manip.SetLocalToolTransform(reference_pose)
+                self.robot.SetActiveDOFs(manip.GetArmIndices())
+                # init jacobian descent
+                q_current = cache_entry.solution.arm_config
+                q_best = np.array(q_current)
+                # compute jacobian
+                cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                if q_grad is not None:
+                    grad_norm = np.linalg.norm(q_grad)
+                else:
+                    grad_norm = 0.0
                 b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                if b_in_limits:
-                    # compute gradient at this position + constraint violation
-                    cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                    if cval < best_cval:  # is constraint violation less?
-                        q_best[:] = q_current  # then save q_current
-                        best_cval = cval
-                    if q_grad is not None:  # do we have a gradient?
-                        grad_norm = np.linalg.norm(q_grad)
-                    else:
+                best_cval = cval
+                # iterate as long as the gradient is not zero and we are not beyond limits
+                # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+                for i in xrange(self.max_iterations):
+                    if q_grad is None or grad_norm < self.grad_epsilon or not b_in_limits or cval < self.val_epsilon:
                         break
-                # else:
-                    # rospy.logdebug("Jacobian descent has led to joint limit violation. Aborting")
-            # rospy.logdebug("Jacobian descent finished after %i iterations" % i)
-            cache_entry.solution.arm_config = q_best
-            manip.SetLocalToolTransform(np.eye(4))
-            self._last_cart_grad = None
-            # self.robot.SetActiveDOFValues(q_original)  # TODO remove
-            # self.robot_data.ball_approx.hide_balls()  # TODO remove
+                    # rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
+                                #    (str(q_current), str(q_grad), grad_norm))
+                    q_current -= self.step_size * q_grad / grad_norm  # update q_current
+                    b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                    if b_in_limits:
+                        # compute gradient at this position + constraint violation
+                        cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                        if cval < best_cval:  # is constraint violation less?
+                            q_best[:] = q_current  # then save q_current
+                            best_cval = cval
+                        if q_grad is not None:  # do we have a gradient?
+                            grad_norm = np.linalg.norm(q_grad)
+                        else:
+                            break
+                    # else:
+                        # rospy.logdebug("Jacobian descent has led to joint limit violation. Aborting")
+                # rospy.logdebug("Jacobian descent finished after %i iterations" % i)
+                # set q_best as arm config in solution
+                self._set_cache_entry_values(cache_entry, q_best, manip_data)
+                manip.SetLocalToolTransform(np.eye(4))
+                self._last_cart_grad = None
+            self.robot.SetActiveDOFValues(q_original)  # TODO remove
+            self.robot_data.ball_approx.hide_balls()  # TODO remove
+
+        def _set_cache_entry_values(self, cache_entry, q, manip_data):
+            manip = manip_data.manip
+            with self.robot:
+                self.robot.SetActiveDOFValues(q)
+                cache_entry.solution.arm_config = q
+                cache_entry.solution.obj_tf = np.matmul(manip.GetEndEffector().GetTransform(),
+                                                        manip_data.inv_grasp_tf)
+                ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
+                cache_entry.relative_tf = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
+                ex, ey, ez = tf_mod.euler_from_matrix(cache_entry.relative_tf)
+                theta = utils.normalize_radian(ez)
+                cache_entry.region_state = (cache_entry.relative_tf[0, 3], cache_entry.relative_tf[1, 3], theta)
 
         def _compute_gradient(self, cache_entry, q_current, manip_data):
             """
@@ -1149,97 +1334,93 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                     of range where we can compute it, or when we hit a singularity.
             """
             manip = manip_data.manip
-            with self.robot:
-                self.robot.SetActiveDOFValues(q_current)
-                cache_entry.solution.obj_tf = np.matmul(
-                    cache_entry.solution.manip.GetEndEffector().GetTransform(), manip_data.inv_grasp_tf)
-                # TODO delete
-                # crayola = self.robot.GetEnv().GetKinBody("crayola")
-                # crayola.SetTransform(cache_entry.solution.obj_tf)
-                # TODO until here
-                # violation value
-                violation_value = 0.0
-                # compute jacobian
-                jacobian = np.empty((6, manip.GetArmDOF()))
-                jacobian[:3] = manip.CalculateJacobian()
-                jacobian[3:] = manip.CalculateAngularVelocityJacobian()
-                cache_entry.jacobian = jacobian
-                # compute pseudo inverse
-                inv_jac, rank = utils.compute_pseudo_inverse_rank(jacobian)
-                if rank < 6:  # if we are in a singularity, just return None
-                    # TODO instead of doing this, we could also only skip all Cartesian gradients
-                    # rospy.logdebug("Jacobian descent failed: Ran into singularity.")
-                    return np.inf, None
-                # get pose of placement reference point
-                ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
-                # compute relative pose and state
-                cache_entry.relative_tf = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
-                ex, ey, ez = tf_mod.euler_from_matrix(cache_entry.relative_tf)
-                theta = utils.normalize_radian(ez)
-                # rospy.logdebug("Current [x=%f, y=%f, z=%f, ex=%f, ey=%f, ez=%f, theta=%f]" %
-                            #    (cache_entry.relative_tf[0, 3], cache_entry.relative_tf[1, 3], cache_entry.relative_tf[2, 3],
-                                # ex, ey, ez, theta))
-                cache_entry.region_state = (cache_entry.relative_tf[0, 3], cache_entry.relative_tf[1, 3], theta)
-                # Compute gradient w.r.t. constraints
-                # ----- 1. Region constraint - reference point needs to be within the selected placement region
-                region = cache_entry.region
-                query_pos = ref_pose[:3, 3].reshape((1, 3))
-                values = region.aabb_distance_field.get_cell_values_pos(query_pos)
-                value = max(values[0], 0.0)
-                violation_value += value
-                # rospy.logdebug("In-region violation value is " + str(value))
-                b_valid, region_pos_grad = region.aabb_dist_gradient_field.get_interpolated_vectors(query_pos)
-                # TODO could also make this distance smooth
-                # _, cart_grad_r = utils.chomps_distance()
-                if not b_valid[0]:
-                    # rospy.logdebug("Jacobian descent failed: It went out of the placement region's aabb.")
-                    return np.inf, None
-                cart_grad_r = np.array([region_pos_grad[0, 0], region_pos_grad[0, 1], 0.0])
-                # rospy.logdebug("In-region constraint gradient is %s" % str(cart_grad_r))
-                # ------ 2. Theta constraint - theta needs to be within the selected so2interval
-                # We compute no gradient for this constraint, and instead simply abort if we violate it
-                if utils.dist_in_range(theta, cache_entry.so2_interval) != 0.0:
-                    # rospy.logdebug("Jacobian descent failed: Theta is out of so2 interval.")
-                    return np.inf, None
-                # ------ 3. Stability - all contact points need to be in a placement region (any)
-                value, cart_grad_c = self.contact_constraint.compute_cart_gradient(cache_entry, ref_pose)
-                # rospy.logdebug("Contact constraint gradient is %s" % str(cart_grad_c))
-                violation_value += value
-                # ------ 4. Collision constraint - object must not be in collision
-                value, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
-                # rospy.logdebug("Object collisions constraint value is %s" % str(value))
-                # rospy.logdebug("Object collisions constraint gradient is %s" % str(cart_grad_col))
-                violation_value += value
-                # ------ 5. Objective Improvement constraint - objective must be an improvement
-                xi_err, cart_grad_xi = self.objective_constraint.get_error_gradient(
-                    cache_entry, cache_entry.plcmnt_orientation.inv_reference_tf)
-                # rospy.logdebug("Objective improvement error is %s" % str(xi_err))
-                # rospy.logdebug("Objective improvement constraint gradient is %s" % str(cart_grad_xi))
-                violation_value += xi_err
-                # ------ 6. Translate cartesian gradients into c-space gradients
-                cart_grad = cart_grad_r + cart_grad_c + cart_grad_col + cart_grad_xi
-                # rospy.logdebug("Resulting cartesian gradient (x, y, theta): %s" % str(cart_grad))
-                if self._last_cart_grad is not None:
-                    cart_grad = self.momentum * self._last_cart_grad + (1.0 - self.momentum) * cart_grad
-                    # rospy.logdebug("Cartesian gradient with momentum (x, y, theta): %s" % str(cart_grad))
-                self._last_cart_grad = cart_grad
-                extended_cart = np.zeros(6)
-                extended_cart[:2] = cart_grad[:2]
-                extended_cart[5] = cart_grad[2]
-                qgrad = np.matmul(inv_jac, extended_cart)
-                # ------ 7. Arm collision constraint - arm must not be in collision
-                val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
-                col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
-                                        np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
-                # col_cart = np.matmul(jacobian, col_grad)
-                # rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
-                # rospy.logdebug("Arm collision constraint value is " + str(val))
-                qgrad += col_grad
-                violation_value += val
-                # remove any motion that changes the base orientation/z height of the object
-                jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
-                qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
-                return violation_value, qgrad
+            # with self.robot:
+            self.robot.SetActiveDOFValues(q_current)
+            self._set_cache_entry_values(cache_entry, q_current, manip_data)
+            # TODO delete
+            # crayola = self.robot.GetEnv().GetKinBody("crayola")
+            # crayola.SetTransform(cache_entry.solution.obj_tf)
+            # TODO until here
+            # violation value
+            violation_value = 0.0
+            # compute jacobian
+            jacobian = np.empty((6, manip.GetArmDOF()))
+            jacobian[:3] = manip.CalculateJacobian()
+            jacobian[3:] = manip.CalculateAngularVelocityJacobian()
+            cache_entry.jacobian = jacobian
+            # compute pseudo inverse
+            inv_jac, rank = utils.compute_pseudo_inverse_rank(jacobian)
+            if rank < 6:  # if we are in a singularity, just return None
+                # TODO instead of doing this, we could also only skip all Cartesian gradients
+                # rospy.logdebug("Jacobian descent failed: Ran into singularity.")
+                return np.inf, None
+            # get pose of placement reference point
+            ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
+            # compute relative pose and state
+            # rospy.logdebug("Current [x=%f, y=%f, z=%f, ex=%f, ey=%f, ez=%f, theta=%f]" %
+                        #    (cache_entry.relative_tf[0, 3], cache_entry.relative_tf[1, 3], cache_entry.relative_tf[2, 3],
+                            # ex, ey, ez, theta))
+            # Compute gradient w.r.t. constraints
+            # ----- 1. Region constraint - reference point needs to be within the selected placement region
+            region = cache_entry.region
+            query_pos = ref_pose[:3, 3].reshape((1, 3))
+            values = region.aabb_distance_field.get_cell_values_pos(query_pos)
+            value = max(values[0], 0.0)
+            violation_value += value
+            # rospy.logdebug("In-region violation value is " + str(value))
+            b_valid, region_pos_grad = region.aabb_dist_gradient_field.get_interpolated_vectors(query_pos)
+            # TODO could also make this distance smooth
+            # _, cart_grad_r = utils.chomps_distance()
+            if not b_valid[0]:
+                # rospy.logdebug("Jacobian descent failed: It went out of the placement region's aabb.")
+                return np.inf, None
+            cart_grad_r = np.array([region_pos_grad[0, 0], region_pos_grad[0, 1], 0.0])
+            # rospy.logdebug("In-region constraint gradient is %s" % str(cart_grad_r))
+            # ------ 2. Theta constraint - theta needs to be within the selected so2interval
+            # We compute no gradient for this constraint, and instead simply abort if we violate it
+            if utils.dist_in_range(cache_entry.region_state[2], cache_entry.so2_interval) != 0.0:
+                rospy.logdebug("Jacobian descent failed: Theta is out of so2 interval.")
+                return np.inf, None
+            # ------ 3. Stability - all contact points need to be in a placement region (any)
+            value, cart_grad_c = self.contact_constraint.compute_cart_gradient(cache_entry, ref_pose)
+            # rospy.logdebug("Contact constraint gradient is %s" % str(cart_grad_c))
+            violation_value += value
+            # ------ 4. Collision constraint - object must not be in collision
+            # value, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
+            # rospy.logdebug("Object collisions constraint value is %s" % str(value))
+            # rospy.logdebug("Object collisions constraint gradient is %s" % str(cart_grad_col))
+            # violation_value += value
+            cart_grad_col = np.zeros(3)
+            # ------ 5. Objective Improvement constraint - objective must be an improvement
+            xi_err, cart_grad_xi = self.objective_constraint.get_error_gradient(
+                cache_entry, cache_entry.plcmnt_orientation.inv_reference_tf)
+            # rospy.logdebug("Objective improvement error is %s" % str(xi_err))
+            # rospy.logdebug("Objective improvement constraint gradient is %s" % str(cart_grad_xi))
+            violation_value += xi_err
+            # ------ 6. Translate cartesian gradients into c-space gradients
+            cart_grad = cart_grad_r + cart_grad_c + cart_grad_col + cart_grad_xi
+            # rospy.logdebug("Resulting cartesian gradient (x, y, theta): %s" % str(cart_grad))
+            if self._last_cart_grad is not None:
+                cart_grad = self.momentum * self._last_cart_grad + (1.0 - self.momentum) * cart_grad
+                # rospy.logdebug("Cartesian gradient with momentum (x, y, theta): %s" % str(cart_grad))
+            self._last_cart_grad = cart_grad
+            extended_cart = np.zeros(6)
+            extended_cart[:2] = cart_grad[:2]
+            extended_cart[5] = cart_grad[2]
+            qgrad = np.matmul(inv_jac, extended_cart)
+            # ------ 7. Arm collision constraint - arm must not be in collision
+            # val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
+            # col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
+            #                         np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
+            # col_cart = np.matmul(jacobian, col_grad)
+            # rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
+            # rospy.logdebug("Arm collision constraint value is " + str(val))
+            # qgrad += col_grad
+            # violation_value += val
+            # remove any motion that changes the base orientation/z height of the object
+            jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
+            qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
+            return violation_value, qgrad
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
                  objective_fn, global_region_info, scene_sdf,
@@ -1270,8 +1451,13 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         self._call_stats = np.array([0, 0, 0, 0])  # num sol constructions, is_valid, get_relaxation, evaluate
         self._plcmnt_ik_solvers = {}  # maps (manip_id, placement_orientation_id) to a trac_ik solver
         self._init_ik_solvers()
-        self._jacobian_optimizer = ARPORobotBridge.JacobianOptimizer(self._contact_constraint, self._collision_constraint,
-                                                                     self._objective_constraint, self._robot_data)
+        self._jacobian_projection = ARPORobotBridge.JacobianProjection(self._contact_constraint,
+                                                                       self._collision_constraint,
+                                                                       self._objective_constraint, self._robot_data)
+        self._jacobian_optimizer = ARPORobotBridge.JacobianOptimizer(self._contact_constraint,
+                                                                     self._collision_constraint,
+                                                                     objective_fn, self._robot_data,
+                                                                     self._object_data)
         self._parameters = parameters
 
     def construct_solution(self, key, b_optimize_constraints=False):
@@ -1348,6 +1534,39 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             rospy.logwarn("Could not compute leaf key for solution. This means that the solution is out of bounds.")
             cache_entry.leaf_key = base_key
         return cache_entry.leaf_key
+
+    def locally_improve(self, solution):
+        """
+            Search for a new placement that maximizes the objective locally around solution such that
+            there exists a simple collision-free path from solution to the new solution.
+            By simple collision-free path it is meant that this function is only using
+            a local path planner rather than a global path planner (such as straight line motions).
+            ---------
+            Arguments
+            ---------
+            solution, PlacementGoal - a valid PlacementGoal
+            -------
+            Returns
+            -------
+            new_solution, PlacementGoal - the newly reached goal
+            approach_path, list of np.array - arm configurations describing a path from solution to new_solution
+        """
+        cache_entry = self._solutions_cache[solution.key]
+        cache_entry = cache_entry.copy()
+        arm_configs = self._jacobian_optimizer.locally_maximize(cache_entry)
+        if len(arm_configs) > 0:
+            # The local optimizer was succesful at improving the solution a bit
+            # add new solution to cache
+            cache_entry.solution.key = len(self._solutions_cache)
+            self._solutions_cache.append(cache_entry)
+            # figure out what part of the hierarchy the new solution lies in
+            reference_point_pose = np.dot(cache_entry.solution.obj_tf, cache_entry.plcmnt_orientation.reference_tf)
+            # the jacobian optimizer may have moved the solution to a different region
+            # TODO this should maybe be done within jacobian optimizer
+            region_id = self._hierarchy.get_region(reference_point_pose[:3, 3])  
+            cache_entry.key = (cache_entry.key[0], region_id, cache_entry.key[2])
+            return cache_entry.solution, arm_configs
+        return None, []
 
     def set_minimal_objective(self, val):
         """
@@ -1557,7 +1776,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         if arm_config is not None:
             cache_entry.solution.arm_config = arm_config
             # rospy.logdebug("Trac-IK found an intial ik-solution for placement region.")
-            self._jacobian_optimizer.optimize(cache_entry)
+            self._jacobian_projection.project(cache_entry)
             # compute object_pose and end-effector transform TODO: do we need this here after the jacobian optimizer finished?
             with self._robot_data.robot:
                 self._robot_data.robot.SetDOFValues(cache_entry.solution.arm_config, manip_data.manip.GetArmIndices())

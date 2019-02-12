@@ -1,3 +1,4 @@
+import numpy as np
 from abc import ABCMeta, abstractmethod
 """
     This module describes the goal sampler interface for placement planning.
@@ -22,7 +23,7 @@ class PlacementGoalSampler(object):
                 manip - OpenRAVE manipulator this goal is for
                 arm_config, numpy array (n,) - arm configuration
                 obj_tf, numpy array (4, 4) - pose of the object
-                key, object - key information that can be used by the placement goal sampler to identify this goal
+                key, int - key information that can be used by the placement goal sampler to identify this goal
                 objective_value, float - objective value of this solution
                 grasp_tf, np.array (4, 4) - eef frame in object frame
                 grasp_config, np.array (q,) - q = manip.GetGripperDOF(), hand configuration for grasp
@@ -36,6 +37,17 @@ class PlacementGoalSampler(object):
             self.grasp_tf = grasp_tf
             self.grasp_config = grasp_config
             self.data = data
+
+        def copy(self):
+            """
+                Construct a copy of this goal. All elements that are unique to this goal, e.g. arm configuration,
+                are deep-copied.
+            """
+            new_goal = PlacementGoalSampler.PlacementGoal(
+                self.manip, np.array(self.arm_config), np.array(
+                    self.obj_tf), self.key, self.objective_value, np.array(self.grasp_tf),
+                np.array(self.grasp_config), self.data)  # TODO deep copy data
+            return new_goal
 
     @abstractmethod
     def sample(self, num_solutions, max_attempts=1000, b_improve_objective=True):
@@ -74,6 +86,25 @@ class PlacementGoalSampler(object):
             Arguments
             ---------
             # TODO nearest neighbor data structure or just numpy array?
+        """
+        pass
+
+    @abstractmethod
+    def improve_path_goal(self, traj, goal):
+        """
+            Attempt to extend the given path locally to a new goal that achieves a better objective.
+            In case the goal can not be further improved locally, traj and goal is returned.
+            ---------
+            Arguments
+            ---------
+            traj, OpenRAVE trajectory - arm trajectory leading to goal
+            goal, PlacementGoal - the goal traj leads to
+            -------
+            Returns
+            -------
+            traj - extended by a new path segment to a new goal
+            new_goal, PlacementGoal - the new goal that achieves a better objective than goal or goal
+                if improving objective failed
         """
         pass
 
@@ -209,6 +240,25 @@ class PlacementGoalConstructor(object):
             Returns
             -------
             num_calls, int - number of times construct_solution has been called
+        """
+        pass
+
+    @abstractmethod
+    def locally_improve(self, solution):
+        """
+            Search for a new placement that maximizes the objective locally around solution such that
+            there exists a simple collision-free path from solution to the new solution.
+            By simple collision-free path it is meant that this function is only using
+            a local path planner rather than a global path planner (such as straight line motions).
+            ---------
+            Arguments
+            ---------
+            solution, PlacementGoal - a valid PlacementGoal
+            -------
+            Returns
+            -------
+            new_solution, PlacementGoal - the newly reached goal
+            approach_path, list of np.array - arm configurations describing a path from solution to new_solution
         """
         pass
 
