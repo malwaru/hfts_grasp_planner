@@ -130,13 +130,16 @@ class SDF(object):
             values(optional), np array of shape (n,) - distances at the query positions if b_values == True
             gradients, np array of shape (n, 3) - gradients at the query positions
         """
-        result = self._grid.get_cell_gradients_pos(positions, b_return_values=b_values)
+        # result = self._grid.get_cell_gradients_pos(positions, b_return_values=b_values)
+        result = self._grid.get_cell_gradients_pos_cuda(positions, b_return_values=b_values)
         if b_values:
-            valid_mask, values, gradients = result
+            # valid_mask, values, gradients = result
+            values, gradients = result
         else:
-            valid_mask, gradients = result
-        if np.sum(valid_mask) < gradients.shape[0]:
-            raise NotImplementedError("Dealing with positions that are out of bounds is not implemented yet")
+            # valid_mask, gradients = result
+            gradients = result
+        # if np.sum(valid_mask) < gradients.shape[0]:
+            # raise NotImplementedError("Dealing with positions that are out of bounds is not implemented yet")
         if b_values:
             return values, gradients
         return gradients

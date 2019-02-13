@@ -2,6 +2,7 @@ import os
 import operator
 import numpy as np
 from hfts_grasp_planner.utils import inverse_transform
+from hfts_grasp_planner.sdf.cuda_grid import CudaInterpolator
 from scipy import ndimage
 
 
@@ -117,9 +118,16 @@ class VoxelGrid(object):
         if b_additional_data:
             self._additional_data = np.empty(self._num_cells, dtype=object)
         self._homogeneous_point = np.ones(4)
+        self._init_interpolator()
 
     def __iter__(self):
         return self.get_cell_generator()
+
+    def _init_interpolator(self):
+        if self._cells.dtype == np.float_:
+            self._cuda_interpolator = CudaInterpolator(self._cells)
+        else:
+            self._cuda_interpolator = None
 
     def _fill_border_cells(self):
         """
@@ -175,6 +183,7 @@ class VoxelGrid(object):
             grid._transform = np.eye(4)
         if os.path.exists(add_data_file_name):
             grid._additional_data = np.load(add_data_file_name)
+        grid._init_interpolator()
         return grid
 
     def get_index_generator(self):
@@ -514,6 +523,25 @@ class VoxelGrid(object):
             values[valid_mask] = self.get_cell_values(grid_indices)
         return values
 
+    def get_cell_gradients_pos_cuda(self, positions, b_global_frame=True, b_return_values=True):
+        """
+            Just like get_cell_gradients_pos(..) but utilizes a CUDA accelerated version.
+            -----
+            Assumes all positions are within range and thus does not return a valid flag mask.
+        """
+        assert(self._cells.dtype == np.float_)
+        tf = np.array(self._inv_transform)
+        if not b_global_frame:
+            tf = np.eye(4)
+        tf[:3, 3] -= self._base_pos
+        delta = self._cell_size / 4.0
+        values, gradients = self._cuda_interpolator.gradient(positions, tf_matrix=tf,
+                                                             scale=1.0/self._cell_size, delta=delta)
+        # values = self._cuda_interpolator.interpolate(positions, tf_matrix=tf, scale=1.0 / self._cell_size)
+        if b_return_values:
+            return values, gradients
+        return gradients
+
     def get_cell_gradients_pos(self, positions, b_global_frame=True, b_return_values=True):
         """
             Return the gradients and optionally the values at the given positions
@@ -689,6 +717,7 @@ class VoxelGrid(object):
         self._cells = self._cells.astype(data.dtype)
         self._cells[1:-1, 1:-1, 1:-1] = data
         self._fill_border_cells()
+        self._init_interpolator()
 
     def get_cell_size(self):
         """

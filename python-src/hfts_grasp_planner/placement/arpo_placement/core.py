@@ -1386,11 +1386,11 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # rospy.logdebug("Contact constraint gradient is %s" % str(cart_grad_c))
             violation_value += value
             # ------ 4. Collision constraint - object must not be in collision
-            # value, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
+            value, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
             # rospy.logdebug("Object collisions constraint value is %s" % str(value))
             # rospy.logdebug("Object collisions constraint gradient is %s" % str(cart_grad_col))
-            # violation_value += value
-            cart_grad_col = np.zeros(3)
+            violation_value += value
+            # cart_grad_col = np.zeros(3)
             # ------ 5. Objective Improvement constraint - objective must be an improvement
             xi_err, cart_grad_xi = self.objective_constraint.get_error_gradient(
                 cache_entry, cache_entry.plcmnt_orientation.inv_reference_tf)
@@ -1409,14 +1409,14 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             extended_cart[5] = cart_grad[2]
             qgrad = np.matmul(inv_jac, extended_cart)
             # ------ 7. Arm collision constraint - arm must not be in collision
-            # val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
-            # col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
-            #                         np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
+            val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
+            col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
+                                    np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
             # col_cart = np.matmul(jacobian, col_grad)
             # rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
             # rospy.logdebug("Arm collision constraint value is " + str(val))
-            # qgrad += col_grad
-            # violation_value += val
+            qgrad += col_grad
+            violation_value += val
             # remove any motion that changes the base orientation/z height of the object
             jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
             qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
