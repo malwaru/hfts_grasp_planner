@@ -1,6 +1,6 @@
 import pycuda.autoinit
 import pycuda.driver as cuda
-from pycuda.compiler import SourceModule
+import pycuda.compiler as cucompiler
 import numpy as np
 import os
 import math
@@ -12,7 +12,7 @@ import math
 #
 
 
-def numpy3d_to_array(np_array, allow_surface_bind=False):
+def numpy3d_to_array(np_array, layered=False):
     d, h, w = np_array.shape
     # create ArrayDescriptor
     descr = cuda.ArrayDescriptor3D()
@@ -22,8 +22,8 @@ def numpy3d_to_array(np_array, allow_surface_bind=False):
     descr.format = cuda.dtype_to_array_format(np_array.dtype)
     descr.num_channels = 1
     descr.flags = 0
-    if allow_surface_bind:
-        descr.flags = cuda.array3d_flags.SURFACE_LDST
+    if layered:
+        descr.flags = cuda.array3d_flags.ARRAY3D_2DARRAY
     # create actual array
     device_array = cuda.Array(descr)
     # copy data
@@ -76,6 +76,11 @@ def array_to_numpy3d(cuda_array):
 
 
 class CudaInterpolator(object):
+    """
+        This class allows reading values and gradients from a grid using the GPU.
+        For frequent queries of the same positions, where only the transformation
+        between grid and positions changes, you should use CudaStaticPositionsInterpolator.
+    """
     kernel = None
 
     @staticmethod
@@ -85,54 +90,321 @@ class CudaInterpolator(object):
             kernel_file_name = os.path.normpath(os.path.dirname(__file__) + '/cuda_interpolation.cu')
             with open(kernel_file_name, 'r') as kernel_file:
                 kernel_string = kernel_file.read()
-            CudaInterpolator.kernel = SourceModule(kernel_string)
+            CudaInterpolator.kernel = cucompiler.compile(kernel_string)
         return CudaInterpolator.kernel
 
-    def __init__(self, data):
+    def __init__(self, data, blayered=False):
+        """
+            Create a new CudaInterpolator.
+            ---------
+            Arguments
+            ---------
+            data, np.array of shape (n, m, k) (float) - grid data
+        """
         # first get kernel
         kernel = CudaInterpolator.get_kernel()
+        self._mod = cuda.module_from_buffer(kernel)
+        # copy data to gpu. need to convert to single precision
+        if data.dtype == np.float64:
+            data = data.astype(np.float32)
+        assert(data.dtype == np.float32)
+        data = data.transpose().copy()
+        self._gpu_data = numpy3d_to_array(data, blayered)
+        if blayered:
+            # allocate data to texture memory
+            self._tex_field = self._mod.get_texref('tex_field_layered')
+            self._tex_field.set_array(self._gpu_data)
+            self._tex_field.set_filter_mode(cuda.filter_mode.LINEAR)
+            # get functions
+            self._get_val_fn = self._mod.get_function("get_val_layered")
+            self._get_val_fn.prepare(("P", "P", "P", np.float32, np.int32), texrefs=[self._tex_field])
+            # TODO implement 
+            # self._get_val_grad_fn = self._mod.get_function("get_val_and_grad_layered")
+            # self._get_val_grad_fn.prepare(("P", "P", "P", "P", np.float32, np.float32, np.int32),
+            #                               texrefs=[self._tex_field])
+        else:
+            # allocate data to texture memory
+            self._tex_field = self._mod.get_texref('tex_field')
+            self._tex_field.set_array(self._gpu_data)
+            self._tex_field.set_filter_mode(cuda.filter_mode.LINEAR)
+            # get functions
+            self._get_val_fn = self._mod.get_function("get_val")
+            self._get_val_fn.prepare(("P", "P", "P", np.float32, np.int32), texrefs=[self._tex_field])
+            self._get_val_grad_fn = self._mod.get_function("get_val_and_grad")
+            self._get_val_grad_fn.prepare(("P", "P", "P", "P", np.float32, np.float32, np.int32),
+                                          texrefs=[self._tex_field])
+        # allocate memory for transformation matrix
+        self._gpu_tf_matrix = cuda.mem_alloc(48)
+        # init variables for dynamic memory
+        self._gpu_values = None
+        self._gpu_grads = None
+        self._cpu_values = None
+        self._cpu_grads = None
+        self._gpu_positions = None
+
+    def _allocate_gpu_mem(self, num_pos, bgrads):
+        """
+            Ensure self._gpu_position, self._gpu_values, self._gpu_grads, self._cpu_values, self._cpu_grad
+            are sufficiently large for the number of positions queried.
+            ---------
+            Arguments
+            ---------
+            num_pos, int - number of positions
+            bgrads, bool - whether to allocate gradient memory
+        """
+        if self._cpu_values is None or self._cpu_values.shape[0] < num_pos:
+            self._cpu_values = np.empty(num_pos, dtype=np.float32)
+            self._gpu_values = cuda.mem_alloc(self._cpu_values.nbytes)
+            self._gpu_positions = cuda.mem_alloc(3 * num_pos * 4)
+        if bgrads and (self._cpu_grads is None or self._cpu_grads.shape[0] < num_pos):
+            self._cpu_grads = np.empty((num_pos, 3), dtype=np.float32)
+            self._gpu_grads = cuda.mem_alloc(self._cpu_grads.nbytes)
+
+    def interpolate(self, positions, tf_matrix=np.eye(4), scale=1.0):
+        """
+            Retrieve grid values for the given positions.
+            ---------
+            Arguments
+            ---------
+            positions, np array of shape (n, 3) - query positions
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            scale, float - scaling factor from positions to grid indices
+            -------
+            Returns
+            -------
+            values, np array of shape (n,) - interpolated values at the given positions
+                If a position is outside of the grid, the closest value is returned
+                WARNING: the returned array is used for subsequent calls as well. You should copy
+                    it, if you intend to keep the values.
+        """
+        num_pos = positions.shape[0]
+        if positions.dtype != np.float32:
+            positions = positions.astype(np.float32)
+        if tf_matrix.dtype != np.float32:
+            tf_matrix = tf_matrix.astype(np.float32)
+        tf_matrix = tf_matrix.flatten()[:12]
+        if num_pos == 0:
+            return np.empty(0)
+        self._allocate_gpu_mem(num_pos, False)
+        # copy positions to gpu
+        cuda.memcpy_htod(self._gpu_positions, positions)
+        # copy tf matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix)
+        # compute number of threads
+        grid = (int(math.ceil(num_pos / 1024.0)), 1)  # there can be at most 1024 threads per block
+        block = (min(1024, num_pos), 1, 1)
+        # self._get_val_fn(cuda.In(positions), cuda.Out(out_values), cuda.In(tf_matrix), np.float32(scale),
+                        #  np.int32(num_pos), grid=grid, block=block, texrefs=[self._tex_field])
+        self._get_val_fn.prepared_call(grid, block,
+                                       self._gpu_positions, self._gpu_values, self._gpu_tf_matrix,
+                                       np.float32(scale), np.int32(num_pos))
+        # copy result
+        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        return self._cpu_values
+
+    def gradient(self, positions, tf_matrix=np.eye(4), scale=1.0, delta=0.01):
+        """
+            Retrieve grid values and gradients for the given positions.
+            ---------
+            Arguments
+            ---------
+            positions, np array of shape (n, 3) - query positions
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            scale, float - scaling factor from positions to grid indices
+            delta, float - step size for numerical gradient computation
+            -------
+            Returns
+            -------
+            values, np array of shape (n,) - interpolated values at the given positions
+                If a position is outside of the grid, the closest value is returned
+            grad, np array of shape (n, 3) - gradients at the given positions. The gradients are w.r.t
+                the x, y, z axis of the frame positions is defined in.
+            WARNING: the returned arrays are used for subsequent calls as well. You should copy
+                them, if you intend to keep the values.
+        """
+        num_pos = positions.shape[0]
+        if num_pos == 0:
+            return np.empty(0), np.empty(0)
+        if positions.dtype != np.float32:
+            positions = positions.astype(np.float32)
+        if tf_matrix.dtype != np.float32:
+            tf_matrix = tf_matrix.astype(np.float32)
+        tf_matrix = tf_matrix.flatten()[:12]
+        self._allocate_gpu_mem(num_pos, True)
+        # copy positions to gpu
+        cuda.memcpy_htod(self._gpu_positions, positions)
+        # copy tf matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix)
+        # compute number of threads
+        grid = (int(math.ceil(num_pos / 1024.0)), 1)  # there can be at most 1024 threads per block
+        block = (min(1024, num_pos), 1, 1)
+        self._get_val_grad_fn.prepared_call(grid, block,
+                                       self._gpu_positions, self._gpu_values, self._gpu_grads, self._gpu_tf_matrix,
+                                       np.float32(scale), np.float32(delta), np.int32(num_pos))
+        # copy result
+        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        cuda.memcpy_dtoh(self._cpu_grads, self._gpu_grads)
+        return self._cpu_values, self._cpu_grads
+
+
+class CudaStaticPositionsInterpolator(object):
+    """
+        Just like CudaInterpolator, but more efficient if you query the gradient/interpolate function multiple times
+        for the same positions and only the transformation matrix changes. This allows us to allocate memory
+        on the GPU only for the positions once and then only copy the transformation matrix to GPU when queried.
+
+        Both data and positions need to be of type float. In fact, internally everything is converted to float32,
+        as float64 isn't supported by many GPUs.
+    """
+
+    def __init__(self, data, positions, base_tf, scale, delta):
+        """
+            Create a new CudaStaticPositionsInterpolator.
+            ---------
+            Arguments
+            ---------
+            data, np.array of shape (n, m, k), float - grid data
+            positions, np array of shape (j, 3), float - positions to perform queries for
+            base_tf, np array of shape (4, 4), float - base transformation matrix that input tf matrices should be left
+                multiplied by
+            scale, float - scaling factor from positions to grid indices
+            delta, float - step size for numerical gradient computation
+        """
+        num_pos = positions.shape[0]
+        if num_pos == 0:
+            raise ValueError("Can not create interpolator for 0 query positions")
+        # first get kernel
+        kernel = CudaInterpolator.get_kernel()
+        self._mod = cuda.module_from_buffer(kernel)
         # copy data to gpu. need to convert to single precision
         if data.dtype == np.float64:
             data = data.astype(np.float32)
         assert(data.dtype == np.float32)
         self._gpu_data = numpy3d_to_array(data)
         # allocate data to texture memory
-        self._tex_field = kernel.get_texref('tex_field')
+        self._tex_field = self._mod.get_texref('tex_field')
         self._tex_field.set_array(self._gpu_data)
         self._tex_field.set_filter_mode(cuda.filter_mode.LINEAR)
-        # offset = self._gpu_data.bind_to_texref_ext(self._tex_field)
-        # print "OFFSET", offset
-        self._get_val_fn = kernel.get_function("get_val")
-        self._get_val_grad_fn = kernel.get_function("get_val_and_grad")
-
-    def interpolate(self, positions, tf_matrix=np.eye(4), scale=1.0):
-        num_pos = positions.shape[0]
-        out_values = np.empty(num_pos, dtype=np.float32)
-        if positions.dtype != np.float32:
+        # allocate memory for positions
+        if positions.dtype == np.float64:
             positions = positions.astype(np.float32)
+        assert(positions.dtype == np.float32)
+        self._gpu_positions = cuda.mem_alloc(positions.nbytes)
+        cuda.memcpy_htod(self._gpu_positions, positions)
+        # allocate memory for values
+        self._gpu_values = cuda.mem_alloc(num_pos * 4)
+        self._cpu_values = np.empty(num_pos, dtype=np.float32)
+        # allocate memory for gradients
+        self._gpu_gradients = cuda.mem_alloc(positions.nbytes)
+        self._cpu_gradients = np.empty((num_pos, 3), dtype=np.float32)
+        # allocate memory for matrix
+        self._gpu_tf_matrix = cuda.mem_alloc(48)
+        # get actual functions and prepare them
+        self._get_val_fn = self._mod.get_function("get_val")
+        self._get_val_fn.prepare(("P", "P", "P", np.float32, np.int32), texrefs=[self._tex_field])
+        self._get_val_grad_fn = self._mod.get_function("get_val_and_grad")
+        self._get_val_grad_fn.prepare(("P", "P", "P", "P", np.float32, np.float32, np.int32), texrefs=[self._tex_field])
+        self._chomp_smooth_val_grad_fn = self._mod.get_function("chomp_smooth_dist_grad")
+        self._chomp_smooth_val_grad_fn.prepare(("P", "P", "P", "P", np.float32, np.float32, np.float32, np.int32),
+                                               texrefs=[self._tex_field])
+        self._grid = (int(math.ceil(num_pos / 1024.0)), 1)  # there can be at most 1024 threads per block
+        self._block = (min(1024, num_pos), 1, 1)
+        # save other parameters
+        self._num_pos = np.int32(num_pos)
+        self._scale = np.float32(scale)
+        self._delta = np.float32(delta)
+        self._base_tf = base_tf
+
+    def interpolate(self, tf_matrix):
+        """
+            Retrieve grid values at the set positions given that the transformation matrix is tf_matrix.
+            ---------
+            Arguments
+            ---------
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            -------
+            Returns
+            -------
+            values, np array of shape (n,) - interpolated values at the set positions
+                If a position is outside of the grid, the closest value is returned
+                WARNING: the returned array is used for subsequent calls as well. You should copy
+                    it, if you intend to keep the values.
+        """
+        tf_matrix = np.dot(self._base_tf, tf_matrix)
         if tf_matrix.dtype != np.float32:
             tf_matrix = tf_matrix.astype(np.float32)
-        if num_pos == 0:
-            return out_values
-        grid = (int(math.ceil(num_pos / 1024.0)), 1)  # there can be at most 1024 threads per block
-        block = (min(1024, num_pos), 1, 1)
-        self._get_val_fn(cuda.In(positions), cuda.Out(out_values), cuda.In(tf_matrix), np.float32(scale),
-                         np.int32(num_pos), grid=grid, block=block, texrefs=[self._tex_field])
-        return out_values
+        # copy matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
+        # execute function
+        self._get_val_fn.prepared_call(self._grid, self._block, self._gpu_positions,
+                                       self._gpu_values, self._gpu_tf_matrix, self._scale,
+                                       self._num_pos)
+        # copy results to CPU
+        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        return self._cpu_values
 
-    def gradient(self, positions, tf_matrix=np.eye(4), scale=1.0, delta=0.01):
-        num_pos = positions.shape[0]
-        out_values = np.empty(num_pos, dtype=np.float32)
-        grad_values = np.empty((num_pos, 3), dtype=np.float32)
-        if num_pos == 0:
-            return out_values, grad_values
-        if positions.dtype != np.float32:
-            positions = positions.astype(np.float32)
+    def gradient(self, tf_matrix):
+        """
+            Retrieve grid values and gradients for the given positions.
+            ---------
+            Arguments
+            ---------
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            -------
+            Returns
+            -------
+            values, np array of shape (n,) - interpolated values at the given positions
+                If a position is outside of the grid, the closest value is returned
+            grad, np array of shape (n, 3) - gradients at the given positions. The gradients are w.r.t
+                the x, y, z axis of the frame positions is defined in.
+            WARNING: both values and grad are reused for subsequent calls. You should copy the data, if
+                you intend to keep it.
+        """
+        tf_matrix = np.dot(self._base_tf, tf_matrix)
         if tf_matrix.dtype != np.float32:
             tf_matrix = tf_matrix.astype(np.float32)
-        grid = (int(math.ceil(num_pos / 1024.0)), 1)  # there can be at most 1024 threads per block
-        block = (min(1024, num_pos), 1, 1)
-        self._get_val_grad_fn(cuda.In(positions), cuda.Out(out_values), cuda.Out(grad_values),
-                              cuda.In(tf_matrix), np.float32(scale), np.float32(delta), np.int32(num_pos),
-                              grid=grid, block=block, texrefs=[self._tex_field])
-        return out_values, grad_values
+        # copy matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
+        # execute function
+        self._get_val_grad_fn.prepared_call(self._grid, self._block, self._gpu_positions,
+                                            self._gpu_values, self._gpu_gradients, self._gpu_tf_matrix,
+                                            self._scale, self._delta, self._num_pos)
+        # copy results to CPU
+        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        cuda.memcpy_dtoh(self._cpu_gradients, self._gpu_gradients)
+        return self._cpu_values, self._cpu_gradients
+
+    def chomps_smooth_distance(self, tf_matrix, eps):
+        """
+            Assuming the underlying data structure stores distances, return Chomp's smooth distance
+            for the set positions. The distance function is defined as:
+                        -d(x) + eps / 2             if d(x) < 0.0
+                ds(x) =  1/(2eps)(d(x) - eps)^2      if 0 <= d(x) <= eps
+                        0                           else
+            ---------
+            Arguments
+            ---------
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            -------
+            Returns
+            -------
+            values, np array of shape (n,) - interpolated values at the given positions
+                If a position is outside of the grid, the closest value is returned
+            grad, np array of shape (n, 3) - gradients at the given positions. The gradients are w.r.t
+                the x, y, z axis of the frame positions is defined in.
+            WARNING: both values and grad are reused for subsequent calls. You should copy the data, if
+                you intend to keep it.
+        """
+        tf_matrix = np.dot(self._base_tf, tf_matrix)
+        if tf_matrix.dtype != np.float32:
+            tf_matrix = tf_matrix.astype(np.float32)
+        # copy matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
+        # execute function
+        self._chomp_smooth_val_grad_fn.prepared_call(self._grid, self._block, self._gpu_positions,
+                                                     self._gpu_values, self._gpu_gradients, self._gpu_tf_matrix,
+                                                     self._scale, self._delta, np.float32(eps), self._num_pos)
+        # copy results to CPU
+        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        cuda.memcpy_dtoh(self._cpu_gradients, self._gpu_gradients)
+        return self._cpu_values, self._cpu_gradients

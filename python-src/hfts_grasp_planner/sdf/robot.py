@@ -551,7 +551,7 @@ class RobotBallApproximation(object):
     #         return distances, grad
     #     return self._sdf.get_distances(local_positions) - ball_radii
 
-    def compute_penetration_cost(self, scene_sdf, links, eps=0.005):
+    def compute_penetration_cost(self, scene_sdf, links=None, eps=0.005):
         """
             Compute CHOMP's penetration cost for the robot.
             Assumes active DOFs are set.
@@ -575,20 +575,35 @@ class RobotBallApproximation(object):
         total_value = 0.0
         gradient = np.zeros(self._robot.GetActiveDOF())
         num_colliding_balls = 0
-        # gradient_handles = []
+        # first retrieve all query positions
+        query_positions = []
+        ball_infos = []
+        radii = []
         for link in ball_links:
             ball_info = self._balls[link.GetName()]
             ltf = link.GetTransform()
             local_query_positions = ball_info[:, :3]
-            global_query_positions = np.matmul(local_query_positions, ltf[:3, :3].T) + ltf[:3, 3]
-            distances, cart_grad = scene_sdf.get_distances_grad(global_query_positions)
-            distances -= ball_info[:, 3]
-            smooth_dists, smooth_gradients = utils.chomps_distance(distances, eps, cart_grad)
-            # non-zero gradients
-            non_zero_idx = np.unique(np.nonzero(smooth_gradients)[0])  # rows with non zero gradients
-            total_value += np.sum(smooth_dists[non_zero_idx])
+            offset = len(query_positions)
+            query_positions.extend(np.matmul(local_query_positions, ltf[:3, :3].T) + ltf[:3, 3])
+            ball_infos.append((offset, ball_info))
+            radii.extend(ball_info[:, 3])
+        # query distances and gradients for all balls at the same time to make use of parallelism
+        query_positions = np.array(query_positions)
+        distances, cart_grads = scene_sdf.get_distances_grad(query_positions)
+        distances -= radii  # substract radii
+        smooth_dists, smooth_gradients = utils.chomps_distance(distances, eps, cart_grads)
+        # gradient_handles = []
+        # compute gradients per link
+        for link, (offset, ball_info) in izip(ball_links, ball_infos):
+            # select subsets of positions and distances relevant to this link
+            link_positions = query_positions[offset: offset + ball_info.shape[0]]
+            link_distances = smooth_dists[offset: offset + ball_info.shape[0]]
+            link_gradients = smooth_gradients[offset: offset + ball_info.shape[0]]
+            # find non-zero gradients
+            non_zero_idx = np.unique(np.nonzero(link_gradients)[0])
+            total_value += np.sum(link_distances[non_zero_idx])
             num_colliding_balls += non_zero_idx.shape[0]
-            for sgradient, pos in izip(smooth_gradients[non_zero_idx], global_query_positions[non_zero_idx]):
+            for sgradient, pos in izip(link_gradients[non_zero_idx], link_positions[non_zero_idx]):
                 jacobian = self._robot.CalculateActiveJacobian(link.GetIndex(), pos)
                 inv_jac, rank = utils.compute_pseudo_inverse_rank(jacobian)
                 if rank < 3:
@@ -601,7 +616,7 @@ class RobotBallApproximation(object):
         if num_colliding_balls > 0:
             total_value /= num_colliding_balls
             gradient /= num_colliding_balls
-            self.visualize_balls()
+            # self.visualize_balls()
         else:
             self.hide_balls()
         return total_value, gradient

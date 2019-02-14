@@ -2,8 +2,10 @@ import os
 import operator
 import numpy as np
 from hfts_grasp_planner.utils import inverse_transform
-from hfts_grasp_planner.sdf.cuda_grid import CudaInterpolator
+from hfts_grasp_planner.sdf.cuda_grid import CudaInterpolator, CudaStaticPositionsInterpolator
 from scipy import ndimage
+
+MIN_NUM_POINTS_CUDA = 20
 
 
 class VoxelGrid(object):
@@ -71,7 +73,7 @@ class VoxelGrid(object):
             self._grid.set_additional_data(self._idx, data)
 
     def __init__(self, workspace_aabb,  cell_size=0.02, base_transform=None, dtype=np.float_, b_additional_data=False,
-                 num_cells=None, b_in_slices=False):
+                 num_cells=None, b_in_slices=False, b_use_cuda=False):
         """
             Creates a new voxel grid covering the specified workspace volume.
             @param workspace_aabb - bounding box of the workspace as numpy array of form
@@ -88,6 +90,7 @@ class VoxelGrid(object):
                 other along the z-axis. This only matters for interpolation, where in the True-case interpolation
                 is only performed between cell values that have the same z-index, i.e. bilinear interpolation in
                 the x,y plane. Otherwise, the interpolation is trilinear.
+            b_use_cuda, bool - if True, utilize Cuda-based interpolator.
         """
         self._cell_size = cell_size
         if isinstance(workspace_aabb, tuple):
@@ -118,16 +121,26 @@ class VoxelGrid(object):
         if b_additional_data:
             self._additional_data = np.empty(self._num_cells, dtype=object)
         self._homogeneous_point = np.ones(4)
+        self._b_use_cuda = b_use_cuda
+        self._cuda_static_interpolators = []
         self._init_interpolator()
 
     def __iter__(self):
         return self.get_cell_generator()
 
     def _init_interpolator(self):
-        if self._cells.dtype == np.float_:
-            self._cuda_interpolator = CudaInterpolator(self._cells)
+        """
+            Update Cuda interpolators in case of changes to data.
+        """
+        if self.supports_cuda_queries():
+            self._cuda_interpolator = CudaInterpolator(self._cells, self._b_in_slices)
+            # if we have static interpolators, notify them that data has changed
+            if len(self._cuda_static_interpolators) > 0:
+                for interp in self._cuda_static_interpolators:
+                    interp.reset_data(self._cells)
         else:
             self._cuda_interpolator = None
+            self._cuda_static_interpolators = []
 
     def _fill_border_cells(self):
         """
@@ -156,11 +169,15 @@ class VoxelGrid(object):
             np.save(add_data_file_name, self._additional_data)
 
     @staticmethod
-    def load(file_name, b_restore_transform=False):
+    def load(file_name, b_restore_transform=False, b_use_cuda=False):
         """
             Load a grid from the given file.
-            - :file_name: - as the name suggests
-            - :b_restore_transform: (optional) - If true, the transform is loaded as well, else identity transform is set
+            ---------
+            Arguments
+            ---------
+            file_name: - as the name suggests
+            b_restore_transform: (optional) - If true, the transform is loaded as well, else identity transform is set
+            b_use_cuda: (optional) - If true, enable Cuda-based interpolation
         """
         data_file_name = file_name + '.data.npy'
         add_data_file_name = file_name + '.adddata.npy'
@@ -183,8 +200,15 @@ class VoxelGrid(object):
             grid._transform = np.eye(4)
         if os.path.exists(add_data_file_name):
             grid._additional_data = np.load(add_data_file_name)
+        grid._b_use_cuda = b_use_cuda
         grid._init_interpolator()
         return grid
+
+    def supports_cuda_queries(self):
+        """
+            Return whether Cuda queries are supported.
+        """
+        return self._b_use_cuda and (self._cells.dtype == np.float64 or self._cells.dtype == np.float32)
 
     def get_index_generator(self):
         """
@@ -300,7 +324,8 @@ class VoxelGrid(object):
         # create new grid
         new_grid = VoxelGrid((min_pos + new_extents / 2.0, new_extents),
                              cell_size=self._cell_size, base_transform=np.array(self._transform),
-                             num_cells=new_num_cells)
+                             num_cells=new_num_cells, b_in_slices=self._b_in_slices,
+                             b_use_cuda=self._b_use_cuda)
         # set data of new grid
         assert((new_grid.get_num_cells() == new_num_cells).all())
         new_grid.set_raw_data(self._cells[indices_a[0] + 1:indices_b[0] + 2,
@@ -334,7 +359,7 @@ class VoxelGrid(object):
 
         new_voxel_grid = VoxelGrid(new_workspace, self._cell_size,
                                    num_cells=new_num_cells.astype(int), base_transform=self._transform,
-                                   dtype=self._cells.dtype, b_in_slices=self._b_in_slices)
+                                   dtype=self._cells.dtype, b_in_slices=self._b_in_slices, b_use_cuda=self._b_use_cuda)
         # get raw_data
         new_data = new_voxel_grid.get_raw_data()
         new_data[:, :, :] = fill_value  # just initialize everything with fill value
@@ -516,6 +541,8 @@ class VoxelGrid(object):
             b_global_fame, bool - if True, positions are in global frame and accordingly first
                 transformed into local frame.
         """
+        if positions.shape[0] > MIN_NUM_POINTS_CUDA and self.supports_cuda_queries():
+            return self.get_cell_gradients_pos_cuda(positions, b_global_frame)
         values = np.full((positions.shape[0],), None)
         _, grid_indices, valid_mask = self.map_to_grid_batch(positions, index_type=np.float_,
                                                              b_global_frame=b_global_frame)
@@ -523,13 +550,51 @@ class VoxelGrid(object):
             values[valid_mask] = self.get_cell_values(grid_indices)
         return values
 
+    def get_cell_values_pos_cuda(self, positions, b_global_frame=True):
+        """
+            Just like get_cell_values_pos(..) but utilizes a CUDA accelerated version.
+            -----
+            # TODO currently returns all True for valid flags
+        """
+        assert(self.supports_cuda_queries())
+        tf = np.array(self._inv_transform)
+        if not b_global_frame:
+            tf = np.eye(4)
+        tf[:3, 3] -= self._base_pos
+        values = self._cuda_interpolator.interpolate(positions, tf_matrix=tf,
+                                                     scale=1.0/self._cell_size)
+        return values
+
+    def get_cuda_position_interpolator(self, positions):
+        """
+            Return an object that allows to quickly retrieve values and gradients from this grid
+            for a fixed set of positions that share a common transformation matrix to the world frame.
+            ---------
+            Arguments
+            ---------
+            positions, np.array of shape (n, 3), float - positions to query values for w.r.t to some frame
+                that may change w.r.t the world frame.
+            -------
+            Returns
+            -------
+            CudaStaticPositionsInterpolator
+        """
+        assert(self.supports_cuda_queries())
+        base_tf = np.array(self._inv_transform)
+        base_tf[:3, 3] -= self._base_pos
+        delta = self._cell_size / 4.0
+        scale = 1.0 / self._cell_size
+        self._cuda_static_interpolators.append(CudaStaticPositionsInterpolator(
+            self._cells, positions, base_tf, scale, delta))
+        return self._cuda_static_interpolators[-1]
+
     def get_cell_gradients_pos_cuda(self, positions, b_global_frame=True, b_return_values=True):
         """
             Just like get_cell_gradients_pos(..) but utilizes a CUDA accelerated version.
             -----
-            Assumes all positions are within range and thus does not return a valid flag mask.
+            # TODO currently returns all True for valid flags
         """
-        assert(self._cells.dtype == np.float_)
+        assert(self.supports_cuda_queries())
         tf = np.array(self._inv_transform)
         if not b_global_frame:
             tf = np.eye(4)
@@ -538,9 +603,10 @@ class VoxelGrid(object):
         values, gradients = self._cuda_interpolator.gradient(positions, tf_matrix=tf,
                                                              scale=1.0/self._cell_size, delta=delta)
         # values = self._cuda_interpolator.interpolate(positions, tf_matrix=tf, scale=1.0 / self._cell_size)
+        valid_flags = np.full(positions.shape[0], True)  # TODO change Cuda interpolator to actually return valid flags
         if b_return_values:
-            return values, gradients
-        return gradients
+            return valid_flags, values, gradients
+        return valid_flags, gradients
 
     def get_cell_gradients_pos(self, positions, b_global_frame=True, b_return_values=True):
         """
@@ -562,6 +628,8 @@ class VoxelGrid(object):
         if self._cells.dtype != np.float_:
             raise ValueError("Can not compute gradients for anything else than floats")
         num_points = positions.shape[0]
+        if self._b_use_cuda and num_points > MIN_NUM_POINTS_CUDA:
+            return self.get_cell_gradients_pos_cuda(positions, b_global_frame, b_return_values)
         query_width = 7 if b_return_values else 6
         valid_masks = np.empty((query_width, num_points), dtype=bool)
         grid_indices = np.zeros((query_width, num_points, 3))

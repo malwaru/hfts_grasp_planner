@@ -486,6 +486,14 @@ class RigidBodyOccupancyGrid(object):
         self._cell_volume = pow(cell_size, 3)
         self._total_volume = self._num_occupied_cells * self._cell_volume
         self._locc_positions = self._grid.get_cell_positions(indices_mat, b_center=True, b_global_frame=False)
+        self._cuda_interpolator = None
+
+    def setup_cuda_access(self, scene_sdf):
+        """
+            Configures this class to be able to make use of Cuda accelerated value retrieval from the given
+            scene sdf. This class can always only be used with at most one SceneSDF at a time in combination with Cuda.
+        """
+        self._cuda_interpolator = scene_sdf.get_cuda_interpolator(self._locc_positions)
 
     def sum(self, field, tf=None, default_value=0.0):
         """
@@ -605,15 +613,25 @@ class RigidBodyOccupancyGrid(object):
             tf = self._link.GetTransform()
         if eps is None:
             eps = self._grid.get_cell_size()
-        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
-        if bgradients:
-            distances, dist_gradients = scene_sdf.get_distances_grad(query_pos)
-            return_values, gradients = utils.chomps_distance(distances, eps, dist_gradients)
-            return return_values, gradients, self._locc_positions
+        if self._cuda_interpolator is None:
+            query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+            if bgradients:
+                distances, dist_gradients = scene_sdf.get_distances_grad(query_pos)
+                return_values, gradients = utils.chomps_distance(distances, eps, dist_gradients)
+                return return_values, gradients, self._locc_positions
+            else:
+                distances = scene_sdf.get_distances(query_pos)
+                return_values = utils.chomps_distance(distances, eps)
+                return return_values
         else:
-            distances = scene_sdf.get_distances(query_pos)
-            return_values = utils.chomps_distance(distances, eps)
-            return return_values
+            if bgradients:
+                # distances, dist_gradients = self._cuda_interpolator.gradient(tf)
+                # return_values, gradients = utils.chomps_distance(distances, eps, dist_gradients)
+                return_values, gradients = self._cuda_interpolator.chomps_smooth_distance(tf, eps)
+                return return_values, gradients, self._locc_positions
+            else:
+                distances = self._cuda_interpolator.interpolate(tf)
+                return utils.chomps_distance(distances, eps)
 
     def get_link(self):
         """
