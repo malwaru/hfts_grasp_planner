@@ -486,16 +486,34 @@ class RigidBodyOccupancyGrid(object):
         self._cell_volume = pow(cell_size, 3)
         self._total_volume = self._num_occupied_cells * self._cell_volume
         self._locc_positions = self._grid.get_cell_positions(indices_mat, b_center=True, b_global_frame=False)
-        self._cuda_interpolator = None
+        self._cuda_sdf_interpolator = None
+        self._cuda_interpolators = []
 
-    def setup_cuda_access(self, scene_sdf):
+    def setup_cuda_sdf_access(self, scene_sdf):
         """
             Configures this class to be able to make use of Cuda accelerated value retrieval from the given
             scene sdf. This class can always only be used with at most one SceneSDF at a time in combination with Cuda.
         """
-        self._cuda_interpolator = scene_sdf.get_cuda_interpolator(self._locc_positions)
+        self._cuda_sdf_interpolator = scene_sdf.get_cuda_interpolator(self._locc_positions)
 
-    def sum(self, field, tf=None, default_value=0.0):
+    def setup_cuda_grid_access(self, grid):
+        """
+            Configures this class to be able to make use of Cuda accelerated value
+            retrieval from the given grid. 
+            ---------
+            Arguments
+            ---------
+            grid, VoxelGrid
+            -------
+            Returns
+            -------
+            interpolator id, int - id to identify the cuda interpolator. Provide this id to any of the
+                functions below (that operator on VoxelGrid's) in order to use the cuda interpolator.
+        """
+        self._cuda_interpolators.append(grid.get_cuda_position_interpolator(self._locc_positions))
+        return len(self._cuda_interpolators) - 1
+
+    def sum(self, field, tf=None, default_value=0.0, cuda_id=None):
         """
             Sum up all cell values that are occupied by the link represented by this object.
             ---------
@@ -505,6 +523,8 @@ class RigidBodyOccupancyGrid(object):
             tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
                 is expecting. If None, link.GetTransform is used.
             default_value, float - Value to add if an occupied cell of this link is out of bounds of the field.
+            cuda_id, int - if provided, ignore the value given for field and instead utilize the cuda interpolator
+                with the given id.
             -------
             Returns
             -------
@@ -512,6 +532,9 @@ class RigidBodyOccupancyGrid(object):
         """
         if tf is None:
             tf = self._link.GetTransform()
+        if cuda_id is not None:
+            # TODO what about out of bounds values?
+            return self._cuda_interpolators[cuda_id].sum(tf)
         query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
         _, indices, _ = field.map_to_grid_batch(query_pos, index_type=np.float_)
         if indices is not None:
@@ -519,7 +542,7 @@ class RigidBodyOccupancyGrid(object):
             return np.sum(values_to_sum) + (query_pos.shape[0] - indices.shape[0]) * default_value
         return query_pos.shape[0] * default_value
 
-    def compute_gradients(self, field, tf=None):
+    def compute_gradients(self, field, tf=None, cuda_id=None):
         """
             Compute the gradients at the positions of this grid's cells.
             ---------
@@ -528,6 +551,8 @@ class RigidBodyOccupancyGrid(object):
             field, VoxelGrid - a voxel grid filled with values to compute gradient for
             tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
                 is expecting. If None, link.GetTransform is used.
+            cuda_id, int - if provided, ignore the value given for field and instead utilize the cuda interpolator
+                with the given id.
             -------
             Returns
             -------
@@ -536,6 +561,10 @@ class RigidBodyOccupancyGrid(object):
         """
         if tf is None:
             tf = self._link.GetTransform()
+        if cuda_id is not None:
+            # TODO what about out of bounds values?
+            _, grads = self._cuda_interpolators[cuda_id].gradient(tf)
+            return grads, self._locc_positions
         query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
         rgradients = np.zeros_like(self._locc_positions)
         valid_mask, gradients = field.get_cell_gradients_pos(query_pos, b_return_values=False)
@@ -613,7 +642,7 @@ class RigidBodyOccupancyGrid(object):
             tf = self._link.GetTransform()
         if eps is None:
             eps = self._grid.get_cell_size()
-        if self._cuda_interpolator is None:
+        if self._cuda_sdf_interpolator is None:
             query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
             if bgradients:
                 distances, dist_gradients = scene_sdf.get_distances_grad(query_pos)
@@ -625,12 +654,12 @@ class RigidBodyOccupancyGrid(object):
                 return return_values
         else:
             if bgradients:
-                # distances, dist_gradients = self._cuda_interpolator.gradient(tf)
+                # distances, dist_gradients = self._cuda_sdf_interpolator.gradient(tf)
                 # return_values, gradients = utils.chomps_distance(distances, eps, dist_gradients)
-                return_values, gradients = self._cuda_interpolator.chomps_smooth_distance(tf, eps)
+                return_values, gradients = self._cuda_sdf_interpolator.chomps_smooth_distance(tf, eps)
                 return return_values, gradients, self._locc_positions
             else:
-                distances = self._cuda_interpolator.interpolate(tf)
+                distances = self._cuda_sdf_interpolator.interpolate(tf)
                 return utils.chomps_distance(distances, eps)
 
     def get_link(self):

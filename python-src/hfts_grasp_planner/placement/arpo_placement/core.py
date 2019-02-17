@@ -630,9 +630,10 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # exclude reference point itself TODO does including it make any problems?
             local_contact_points = cache_entry.plcmnt_orientation.local_placement_face[1:]
             global_contact_points = np.matmul(local_contact_points, ref_pose[:3, :3].transpose()) + ref_pose[:3, 3]
-            values = self._contact_point_distances.get_cell_values_pos(global_contact_points)
+            # values = self._contact_point_distances.get_cell_values_pos(global_contact_points)
             # retrieve gradients w.r.t. x, y at contact points
-            valid_flags, cart_gradients = self._contact_point_gradients.get_interpolated_vectors(global_contact_points)
+            # valid_flags, cart_gradients = self._contact_point_gradients.get_interpolated_vectors(global_contact_points)
+            valid_flags, values, cart_gradients = self._contact_point_distances.get_cell_gradients_pos_cuda(global_contact_points)
             if not valid_flags.all():
                 rospy.logerr(
                     "Extracting contact constraint gradients failed. This should not happen!" +
@@ -1193,14 +1194,14 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             in_collision = self.robot.GetEnv().CheckCollision(self.robot) or self.robot.CheckSelfCollision()
             if in_collision:
                 return None
-            _, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
+            # _, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
             # ------ 3. Objective Improvement constraint - objective must be an improvement
             if cache_entry.solution.objective_value < self._last_obj_value:
                 return None
             cart_grad_xi = -self.obj_fn.get_gradient(cache_entry.solution.obj_tf, cache_entry.region_state,
                                                      cache_entry.plcmnt_orientation.inv_reference_tf)
             # ------ 4. Translate cartesian gradients into c-space gradients
-            cart_grad = cart_grad_c + cart_grad_col + cart_grad_xi
+            cart_grad = cart_grad_c + cart_grad_xi  # + cart_grad_col
             extended_cart = np.zeros(6)
             extended_cart[:2] = cart_grad[:2]
             extended_cart[5] = cart_grad[2]

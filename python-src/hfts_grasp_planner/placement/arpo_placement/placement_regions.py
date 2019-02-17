@@ -315,7 +315,7 @@ class PlanarRegionExtractor(object):
         distance_map = grid_mod.VoxelGrid(np.array(surface_grid.get_workspace()),
                                           cell_size=cell_size,
                                           num_cells=np.array(surface_grid.get_num_cells()),
-                                          b_in_slices=True)
+                                          b_in_slices=True, b_use_cuda=True)
         gradient_grid = grid_mod.VectorGrid(np.array(surface_grid.get_workspace()),
                                             cell_size=cell_size,
                                             num_cells=np.array(surface_grid.get_num_cells()),

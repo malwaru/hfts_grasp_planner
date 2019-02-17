@@ -31,7 +31,7 @@ __device__ float read_val(const float3& pos, float scale) {
 
 __device__ float read_val_layered(const float3& pos, float scale) {
     // transform to cell indices and read texture + 1.5 because of padding cells and center of cell
-    int iz = __float2int_rd(pos.z) + 1;
+    int iz = __float2int_rd(scale * pos.z) + 1;
     return tex2DLayered(tex_field_layered, scale * pos.x + 1.5, scale * pos.y + 1.5, iz);
 }
 
@@ -109,27 +109,28 @@ __global__ void get_val_and_grad_layered(const float* const positions, float* ou
                                  const float* const tf_matrix, float scale,
                                  float delta, int num_positions)
 {
-    // TODO implement me
-    // int position_id = blockIdx.x * blockDim.x + threadIdx.x;
-    // // check whether this thread should do anything at all
-    // if (position_id < num_positions) {
-    //     float ltf[12];
-    //     ltf[0] = tf_matrix[0]; ltf[1] = tf_matrix[1]; ltf[2] = tf_matrix[2]; ltf[3] = tf_matrix[3];
-    //     ltf[4] = tf_matrix[4]; ltf[5] = tf_matrix[5]; ltf[6] = tf_matrix[6]; ltf[7] = tf_matrix[7];
-    //     ltf[8] = tf_matrix[8]; ltf[9] = tf_matrix[9]; ltf[10] = tf_matrix[10]; ltf[11] = tf_matrix[11];
-    //     // first transform position to local frame
-    //     float3 pos = make_float3(positions[3 * position_id], positions[3 * position_id + 1], positions[3 * position_id + 2]);
-    //     float3 tpos = transform(pos, ltf);
-    //     // transform gradient direction as well
-    //     float3 xgrad = make_float3(ltf[0], ltf[4], ltf[8]);
-    //     float3 ygrad = make_float3(ltf[1], ltf[5], ltf[9]);
-    //     float3 zgrad = make_float3(ltf[2], ltf[6], ltf[10]);
-    //     // read value and compute gradient
-    //     out_values[position_id] = read_val(tpos, scale);
-    //     out_grads[3 * position_id] = (read_val(tpos + delta * xgrad, scale) - read_val(tpos - delta * xgrad, scale)) / (2.0 * delta);
-    //     out_grads[3 * position_id + 1] = (read_val(tpos + delta * ygrad, scale) - read_val(tpos - delta * ygrad, scale)) / (2.0 * delta);
-    //     out_grads[3 * position_id + 2] = (read_val(tpos + delta * zgrad, scale) - read_val(tpos - delta * zgrad, scale)) / (2.0 * delta);
-    // }
+    int position_id = blockIdx.x * blockDim.x + threadIdx.x;
+    // check whether this thread should do anything at all
+    if (position_id < num_positions) {
+        // fetch transformation matrix from memory TODO: could also load this in local shared memory which would save registers
+        float ltf[12];
+        ltf[0] = tf_matrix[0]; ltf[1] = tf_matrix[1]; ltf[2] = tf_matrix[2]; ltf[3] = tf_matrix[3];
+        ltf[4] = tf_matrix[4]; ltf[5] = tf_matrix[5]; ltf[6] = tf_matrix[6]; ltf[7] = tf_matrix[7];
+        ltf[8] = tf_matrix[8]; ltf[9] = tf_matrix[9]; ltf[10] = tf_matrix[10]; ltf[11] = tf_matrix[11];
+        // first transform position to local frame
+        float3 pos = make_float3(positions[3 * position_id], positions[3 * position_id + 1], positions[3 * position_id + 2]);
+        float3 tpos = transform(pos, ltf);
+        // transform gradient direction as well
+        float3 xgrad = make_float3(ltf[0], ltf[4], ltf[8]);
+        float3 ygrad = make_float3(ltf[1], ltf[5], ltf[9]);
+        float3 zgrad = make_float3(ltf[2], ltf[6], ltf[10]);
+        // read value and compute gradient
+        out_values[position_id] = read_val_layered(tpos, scale);
+        out_grads[3 * position_id] = (read_val_layered(tpos + delta * xgrad, scale) - read_val_layered(tpos - delta * xgrad, scale)) / (2.0 * delta);
+        out_grads[3 * position_id + 1] = (read_val_layered(tpos + delta * ygrad, scale) - read_val_layered(tpos - delta * ygrad, scale)) / (2.0 * delta);
+        // TODO gradient in z direction makes no sense for layered grids
+        out_grads[3 * position_id + 2] = (read_val_layered(tpos + delta * zgrad, scale) - read_val_layered(tpos - delta * zgrad, scale)) / (2.0 * delta);
+    }
 }
 
 __global__ void chomp_smooth_dist_grad(const float* const positions, float* out_values, float* out_grads,

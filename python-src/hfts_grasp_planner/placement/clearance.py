@@ -18,7 +18,7 @@ from hfts_grasp_planner.placement.goal_sampler.interfaces import PlacementObject
 """
 
 
-def compute_clearance_map(occ_grid):
+def compute_clearance_map(occ_grid, buse_cuda=True):
     """
         Compute a clearance map from the given voxel grid.
         ---------
@@ -32,7 +32,8 @@ def compute_clearance_map(occ_grid):
     """
     clearance_map = grid_module.VoxelGrid(np.array(occ_grid.get_workspace()),
                                           num_cells=np.array(occ_grid.get_num_cells()),
-                                          cell_size=occ_grid.get_cell_size())
+                                          cell_size=occ_grid.get_cell_size(),
+                                          b_use_cuda=True)
     clrm_data = clearance_map.get_raw_data()
     occ_data = occ_grid.get_raw_data()
     if occ_data.dtype != bool:
@@ -110,12 +111,13 @@ class ClearanceObjective(PlacementObjective):
             Arguments
             ---------
             occ_grid, OccupancyGrid of target volume
-            body_grid, RigidBodyOccupancyGrid - rigid body occupancy grid as volumetric model of the 
+            body_grid, RigidBodyOccupancyGrid - rigid body occupancy grid as volumetric model of the
                 target object
             b_max, bool - If True, the objective is to maximize clearance, else minimize
         """
         self._clearance_map = compute_clearance_map(occ_grid)
         self._body_grid = body_grid
+        self._cuda_id = self._body_grid.setup_cuda_grid_access(self._clearance_map)
         self._sign = 1.0 if b_max else -1.0
         self._call_count = 0
 
@@ -133,7 +135,7 @@ class ClearanceObjective(PlacementObjective):
         """
         if obj_tf is None:
             return float('-inf')
-        val = self._body_grid.sum(self._clearance_map, obj_tf)
+        val = self._body_grid.sum(None, obj_tf, cuda_id=self._cuda_id)
         self._call_count += 1
         return self._sign * val / self._body_grid.get_num_occupied_cells()
 
@@ -184,7 +186,7 @@ class ClearanceObjective(PlacementObjective):
             -------
             np array of shape (3,) - gradient w.r.t x, y, theta
         """
-        cart_grads, loc_positions = self._body_grid.compute_gradients(self._clearance_map, obj_tf)
+        cart_grads, loc_positions = self._body_grid.compute_gradients(None, obj_tf, cuda_id=self._cuda_id)
         # translate local positions into positions relative to reference pose
         loc_positions = np.dot(loc_positions, to_ref_pose[:3, :3].T) + to_ref_pose[:3, 3]
         # filter zero gradients

@@ -541,8 +541,8 @@ class VoxelGrid(object):
             b_global_fame, bool - if True, positions are in global frame and accordingly first
                 transformed into local frame.
         """
-        if positions.shape[0] > MIN_NUM_POINTS_CUDA and self.supports_cuda_queries():
-            return self.get_cell_gradients_pos_cuda(positions, b_global_frame)
+        if positions.shape[0] > 10 and self.supports_cuda_queries():
+            return self.get_cell_values_pos_cuda(positions, b_global_frame)
         values = np.full((positions.shape[0],), None)
         _, grid_indices, valid_mask = self.map_to_grid_batch(positions, index_type=np.float_,
                                                              b_global_frame=b_global_frame)

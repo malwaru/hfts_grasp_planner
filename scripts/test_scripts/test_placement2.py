@@ -249,7 +249,7 @@ if __name__ == "__main__":
         #     problem_desc['parameters']['occ_tree_cell_size'], target_object.GetLinks()[0])
         obj_occgrid = kinbody_sdf_module.RigidBodyOccupancyGrid(problem_desc['parameters']['occ_tree_cell_size'],
                                                                 target_object.GetLinks()[0])
-        obj_occgrid.setup_cuda_access(scene_sdf)
+        obj_occgrid.setup_cuda_sdf_access(scene_sdf)
         object_data = arpo_placement_mod.ARPORobotBridge.ObjectData(target_object, obj_occgrid)
         # create objective function
         now = time.time()
@@ -289,6 +289,7 @@ if __name__ == "__main__":
         # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])
         # rospy.loginfo("Starting cProfile")
         # cProfile.run("goal_sampler.sample(100, 100)", '/tmp/cprofile_placement')
+        # cProfile.run("plan(motion_planner, target_object, 5)", '/tmp/cprofile_placement')
         # rospy.loginfo("cProfile complete")
         IPython.embed()
     finally:

@@ -1,5 +1,6 @@
 import pycuda.autoinit
 import pycuda.driver as cuda
+import pycuda.gpuarray as gpuarray
 import pycuda.compiler as cucompiler
 import numpy as np
 import os
@@ -118,10 +119,9 @@ class CudaInterpolator(object):
             # get functions
             self._get_val_fn = self._mod.get_function("get_val_layered")
             self._get_val_fn.prepare(("P", "P", "P", np.float32, np.int32), texrefs=[self._tex_field])
-            # TODO implement 
-            # self._get_val_grad_fn = self._mod.get_function("get_val_and_grad_layered")
-            # self._get_val_grad_fn.prepare(("P", "P", "P", "P", np.float32, np.float32, np.int32),
-            #                               texrefs=[self._tex_field])
+            self._get_val_grad_fn = self._mod.get_function("get_val_and_grad_layered")
+            self._get_val_grad_fn.prepare(("P", "P", "P", "P", np.float32, np.float32, np.int32),
+                                          texrefs=[self._tex_field])
         else:
             # allocate data to texture memory
             self._tex_field = self._mod.get_texref('tex_field')
@@ -157,6 +157,7 @@ class CudaInterpolator(object):
             self._gpu_values = cuda.mem_alloc(self._cpu_values.nbytes)
             self._gpu_positions = cuda.mem_alloc(3 * num_pos * 4)
         if bgrads and (self._cpu_grads is None or self._cpu_grads.shape[0] < num_pos):
+            # TODO for layered grids, 3d gradient makes no sense
             self._cpu_grads = np.empty((num_pos, 3), dtype=np.float32)
             self._gpu_grads = cuda.mem_alloc(self._cpu_grads.nbytes)
 
@@ -199,8 +200,8 @@ class CudaInterpolator(object):
                                        self._gpu_positions, self._gpu_values, self._gpu_tf_matrix,
                                        np.float32(scale), np.int32(num_pos))
         # copy result
-        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
-        return self._cpu_values
+        cuda.memcpy_dtoh(self._cpu_values[:num_pos], self._gpu_values)
+        return self._cpu_values[:num_pos]
 
     def gradient(self, positions, tf_matrix=np.eye(4), scale=1.0, delta=0.01):
         """
@@ -242,9 +243,9 @@ class CudaInterpolator(object):
                                        self._gpu_positions, self._gpu_values, self._gpu_grads, self._gpu_tf_matrix,
                                        np.float32(scale), np.float32(delta), np.int32(num_pos))
         # copy result
-        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
-        cuda.memcpy_dtoh(self._cpu_grads, self._gpu_grads)
-        return self._cpu_values, self._cpu_grads
+        cuda.memcpy_dtoh(self._cpu_values[:num_pos], self._gpu_values)
+        cuda.memcpy_dtoh(self._cpu_grads[:num_pos], self._gpu_grads)
+        return self._cpu_values[:num_pos], self._cpu_grads[:num_pos]
 
 
 class CudaStaticPositionsInterpolator(object):
@@ -280,6 +281,7 @@ class CudaStaticPositionsInterpolator(object):
         if data.dtype == np.float64:
             data = data.astype(np.float32)
         assert(data.dtype == np.float32)
+        data = data.transpose().copy()
         self._gpu_data = numpy3d_to_array(data)
         # allocate data to texture memory
         self._tex_field = self._mod.get_texref('tex_field')
@@ -292,7 +294,8 @@ class CudaStaticPositionsInterpolator(object):
         self._gpu_positions = cuda.mem_alloc(positions.nbytes)
         cuda.memcpy_htod(self._gpu_positions, positions)
         # allocate memory for values
-        self._gpu_values = cuda.mem_alloc(num_pos * 4)
+        # self._gpu_values = cuda.mem_alloc(num_pos * 4)
+        self._gpu_values = gpuarray.GPUArray(num_pos, np.float32)
         self._cpu_values = np.empty(num_pos, dtype=np.float32)
         # allocate memory for gradients
         self._gpu_gradients = cuda.mem_alloc(positions.nbytes)
@@ -337,10 +340,11 @@ class CudaStaticPositionsInterpolator(object):
         cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
         # execute function
         self._get_val_fn.prepared_call(self._grid, self._block, self._gpu_positions,
-                                       self._gpu_values, self._gpu_tf_matrix, self._scale,
+                                       self._gpu_values.gpudata, self._gpu_tf_matrix, self._scale,
                                        self._num_pos)
         # copy results to CPU
-        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        # cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        self._gpu_values.get(self._cpu_values)
         return self._cpu_values
 
     def gradient(self, tf_matrix):
@@ -367,12 +371,40 @@ class CudaStaticPositionsInterpolator(object):
         cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
         # execute function
         self._get_val_grad_fn.prepared_call(self._grid, self._block, self._gpu_positions,
-                                            self._gpu_values, self._gpu_gradients, self._gpu_tf_matrix,
+                                            self._gpu_values.gpudata, self._gpu_gradients, self._gpu_tf_matrix,
                                             self._scale, self._delta, self._num_pos)
         # copy results to CPU
-        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        self._gpu_values.get(self._cpu_values)
         cuda.memcpy_dtoh(self._cpu_gradients, self._gpu_gradients)
         return self._cpu_values, self._cpu_gradients
+
+    def sum(self, tf_matrix):
+        """
+            Sum the values lying at the stored positions for the given transformation matrix.
+            ---------
+            Arguments
+            ---------
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            -------
+            Returns
+            -------
+            sum, float - the sum of thes evalues
+        """
+        tf_matrix = np.dot(self._base_tf, tf_matrix)
+        if tf_matrix.dtype != np.float32:
+            tf_matrix = tf_matrix.astype(np.float32)
+        # copy matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
+        # execute function
+        self._get_val_fn.prepared_call(self._grid, self._block, self._gpu_positions,
+                                       self._gpu_values.gpudata, self._gpu_tf_matrix, self._scale,
+                                       self._num_pos)
+        # sum values
+        sum_val = gpuarray.sum(self._gpu_values, np.float32)
+        # extract single value
+        cpu_val = np.zeros(1, dtype=np.float32)
+        sum_val.get(cpu_val)
+        return cpu_val[0]
 
     def chomps_smooth_distance(self, tf_matrix, eps):
         """
@@ -402,9 +434,10 @@ class CudaStaticPositionsInterpolator(object):
         cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
         # execute function
         self._chomp_smooth_val_grad_fn.prepared_call(self._grid, self._block, self._gpu_positions,
-                                                     self._gpu_values, self._gpu_gradients, self._gpu_tf_matrix,
+                                                     self._gpu_values.gpudata, self._gpu_gradients, self._gpu_tf_matrix,
                                                      self._scale, self._delta, np.float32(eps), self._num_pos)
         # copy results to CPU
-        cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        # cuda.memcpy_dtoh(self._cpu_values, self._gpu_values)
+        self._gpu_values.get(self._cpu_values)
         cuda.memcpy_dtoh(self._cpu_gradients, self._gpu_gradients)
         return self._cpu_values, self._cpu_gradients
