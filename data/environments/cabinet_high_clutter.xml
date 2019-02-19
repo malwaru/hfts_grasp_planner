@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/yumi/yumi.xml">
+        <RotationAxis>0 0 1 90</RotationAxis>
+        -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+        <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
+        <Translation>0 0.12 0.1</Translation>
+    </Robot>
+
+    <KinBody name="floor">
+        <Translation>0.0   0.2   -0.48</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>1.2 0.9 0.005</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="base">
+        <!-- <Translation>-0.13   0.0   -0.25</Translation>  -->
+        <Translation>0.0   -0.0375   -0.255</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>0.45 0.275 0.25</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="cabinet">
+        <Translation>0.03866   0.708   -0.46</Translation>
+        <RotationAxis>0 0 1 0</RotationAxis>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../cabinet/cabinet.obj</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="cracker_box">
+        <Translation>0.34572 0.85249 0.3803</Translation>
+        <quat>0.69796 0.71613 0 0</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../cracker_box/textured.dae</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="bowl">
+        <Translation>0.05760 0.7564 0.27739</Translation>
+        <quat>0.07180 0 0 0.99742</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../bowl/textured.dae</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="mustard_bottle">
+        <Translation>0.18783 0.60959 0.28358</Translation>
+        <quat>0.78921 -0.00151 0.00117 -0.61412</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../mustard/textured.dae</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="tomato">
+        <Translation>-0.34848 0.54478 0.2771</Translation>
+        <quat>0.78921 -0.00151 0.00117 -0.61412</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../tomato_soup/textured.dae</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="tuna">
+        <Translation>-0.16895 0.64894 0.36694</Translation>
+        <quat>0.78921 -0.00151 0.00117 -0.61412</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../tuna/textured.dae</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="toblerone">
+        <Translation>-0.01953 0.61184 0.28882</Translation>
+        <quat>0.78424 0.205 0.48575 -0.3271</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../toblerone/toblerone.obj</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+</Environment> 

@@ -1,0 +1,13 @@
+<KinBody name="wine_glass">
+    <Body type="dynamic">
+        <mass type="custom">
+            <total>0.1</total>
+            <com>0 -0.065 0</com>
+        </mass>
+        <Geom type="trimesh">
+            <Data>wine_glass.obj</Data>
+            <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+            <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+        </Geom>
+    </Body>
+</KinBody>

@@ -54,7 +54,7 @@ def resolve_paths(problem_desc, yaml_file):
         cwd = os.getcwd()
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
-    for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'data_path', 'gripper_file', 'grasp_file',
+    for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'target_obj_file', 'gripper_file', 'grasp_file',
                 'robot_occtree', 'robot_occgrid', 'reachability_path', 'robot_ball_desc']:
         if key in problem_desc:
             problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
@@ -82,6 +82,7 @@ def load_grasp(problem_desc):
 def show_solution(sol, target_obj):
     robot = sol.manip.GetRobot()
     robot.SetDOFValues(sol.arm_config, sol.manip.GetArmIndices())
+    robot.SetDOFValues(sol.grasp_config, sol.manip.GetGripperIndices())
     target_obj.SetTransform(sol.obj_tf)
 
 
@@ -147,13 +148,14 @@ if __name__ == "__main__":
     try:
         env = orpy.Environment()
         env.Load(problem_desc['or_env'])
-        # reset object pose, if demanded
-        # if 'initial_obj_pose' in problem_desc:
-        #     tb = env.GetKinBody(problem_desc['target_name'])
-        #     tf = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
-        #     tf[:3, 3] = problem_desc['initial_obj_pose'][:3]
-        #     tb.SetTransform(tf)
-
+        # load target object
+        btarget_found = env.Load(problem_desc['target_obj_file'])
+        if not btarget_found:
+            raise ValueError("Could not load target object. Aborting")
+        # target_obj_name = problem_desc['target_name']
+        target_obj_name = "target_object"
+        # ensure the object has a useful name
+        env.GetBodies()[-1].SetName(target_obj_name)
         scene_occ = None
         try:
             scene_occ = grid_module.VoxelGrid.load(problem_desc['occ_file'])
@@ -175,7 +177,6 @@ if __name__ == "__main__":
             rospy.logerr("There is a script to create one!")
             sys.exit(0)
 
-        target_obj_name = problem_desc['target_name']
         # placement_planner = pp_module.PlacementGoalPlanner(problem_desc['data_path'], env, scene_sdf)
         # placement_volume = (np.array([-0.35, 0.55, 0.6]), np.array([0.23, 0.8, 0.77]))  # on top of shelf
         # placement_volume = (np.array([-0.35, 0.55, 0.42]), np.array([0.53, 0.9, 0.77]))  # all of the shelf
@@ -208,6 +209,7 @@ if __name__ == "__main__":
             # TODO have different grasp poses for each manipulator
             grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
             grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
+            # grasp_pose = inverse_transform(grasp_pose)
             # rmap = rmap_mod.SimpleReachabilityMap(manip, ik_solver)
             # try:
             #     filename = problem_desc["reachability_path"] + '/' + robot.GetName() + '_' + manip.GetName() + '.npy'
@@ -283,8 +285,8 @@ if __name__ == "__main__":
                                                              debug_visualizer=mcts_visualizer)
 
         motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips)
-        traj, goal = plan(motion_planner, target_object, 10)
-        # solutions, num_solutions = goal_sampler.sample(50, 100)
+        # traj, goal = plan(motion_planner, target_object, 10)
+        solutions, num_solutions = goal_sampler.sample(50, 100)
         # probe = env.GetKinBody("probe")
         # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])
         # rospy.loginfo("Starting cProfile")

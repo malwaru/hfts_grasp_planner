@@ -102,7 +102,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._c = self._parameters["c"]
         weights = self._objective.get_constraint_weights()
         self._objective_weight = weights[-1]
-        self._reward_normalizer = np.sum(weights[:-1])
+        self._reward_normalizer = np.sum(weights)
+        self._base_reward = np.sum(weights[:-1])
         self._debug_visualizer = debug_visualizer
         self._root_node = self._create_new_node(None, ())
         self._best_reached_goal = None
@@ -325,7 +326,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         # first, check whether all other non-objective constraints are fullfilled
         b_is_valid = self._validator.is_valid(new_solution, False)
         if b_is_valid:
-            base_reward = 1.0
+            base_reward = self._base_reward
             obj_value = self._objective.evaluate(new_solution)
             if b_impr_obj and self._best_reached_goal is not None:
                 b_improves_obj = obj_value > self._best_reached_goal.objective_value

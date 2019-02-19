@@ -1,0 +1,5 @@
+!_TAG_FILE_SORTED	2	/0=unsorted, 1=sorted, 2=foldcase/
+packages	/home/joshua/projects/placement_planning/src/hfts_grasp_planner/setup.py	/^    packages=['hfts_grasp_planner'],$/;"	v	language:Python
+package_dir	/home/joshua/projects/placement_planning/src/hfts_grasp_planner/setup.py	/^    package_dir={'': 'python-src'},$/;"	v	language:Python
+requires	/home/joshua/projects/placement_planning/src/hfts_grasp_planner/setup.py	/^    requires=['rospy', 'numpy', 'yaml', 'rtree', 'tf', 'stl',$/;"	v	language:Python
+setup_args	/home/joshua/projects/placement_planning/src/hfts_grasp_planner/setup.py	/^setup_args = generate_distutils_setup($/;"	v	language:Python

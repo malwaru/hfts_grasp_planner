@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/yumi/yumi.xml">
+        <RotationAxis>0 0 1 90</RotationAxis>
+        -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+        <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
+        <Translation>0 0 0.96</Translation>
+    </Robot>
+
+    <KinBody name="plane">
+        <Translation>0.0   0.3   0.0</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>1 1.1 0.005</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="base">
+        <!-- <Translation>-0.13   0.0   -0.25</Translation>  -->
+        <Translation>0.0 -0.18 0.42</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>0.2 0.2 0.42</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="shelf">
+        <Translation>0.12   1.05   1.97</Translation>
+        <RotationAxis>1 0 0 -90</RotationAxis>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../shelf/simple_shelf.obj</Data>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="toy_airplane">
+        <Translation>0.20947 0.65314 1.04925</Translation>
+        <quat>0.1249 0 0 -0.99217</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../toy_airplane/textured.dae</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="bunny">
+        <Translation>-0.36367 0.5693 1.10837</Translation>
+        <quat>0.63744 0.61727 0.34102 0.31041</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../bunny/objectModel.ply</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="peg_in_hole">
+        <Translation>-0.14946 0.57274 1.54852</Translation>
+        <quat>0.749 0 0 0.60675</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../peg_in_hole/textured.dae</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+</Environment> 
