@@ -206,10 +206,16 @@ def compute_placement_orientations(body, user_filters=None, min_normal_similarit
     tf_inv = utils.inverse_transform(tf)
     local_com = np.dot(tf_inv[:3, :3], body.GetCenterOfMass()) + tf_inv[:3, 3]
     # retrieve clusters to store placement faces
-    for (normal, vertices) in clusters:
+    for (_, vertices) in clusters:
         plane = np.empty((len(vertices) + 1, 3), dtype=float)
-        plane[0] = normal
         plane[1:] = convex_hull.points[list(vertices)]
+        # compute the normal from all vertices to ensure its not off
+        normalized_vertices = plane[1:] - np.mean(plane[1:], axis=0)
+        _, _, v = np.linalg.svd(normalized_vertices)
+        plane[0] = v[2]
+        # ensure the normal is pointing away from the center of mass
+        if np.dot(local_com - plane[1], plane[0]) > 0.0:
+            plane[0] = -plane[0]
         # filter faces based on object specific filters
         if user_filters:
             acceptances = np.array([uf.accept_plane(plane) for uf in user_filters])
@@ -250,6 +256,8 @@ if __name__ == "__main__":
                 orientation.placement_face[1:], orientation.placement_face[0])
             color = np.random.rand(3)
             handle_mesh = env.drawtrimesh(vertices, indices, color)
+            ref_frame = np.dot(body.GetTransform(), orientation.reference_tf)
+            handle_frame = orpy.misc.DrawAxes(env, ref_frame)
             # handle_com = orpy.misc.DrawCircle(env, orientation.projected_com,
             #                                   orientation.placement_face[0], orientation.com_distance_2d)
             print "Placement plane: ", idx, " Number of vertices: ", len(

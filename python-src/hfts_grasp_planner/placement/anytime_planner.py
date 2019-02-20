@@ -2,6 +2,7 @@ import rospy
 import numpy as np
 import openravepy as orpy
 import hfts_grasp_planner.utils as hfts_utils
+import random
 
 
 class RedirectableOMPLPlanner:
@@ -155,7 +156,7 @@ class RedirectableOMPLPlanner:
             raise RuntimeError("OMPLPlanner function IsSupportingGoalReset returned invalid string: " + return_string)
 
 
-class AnyTimePlacementPlanner:
+class AnyTimePlacementPlanner(object):
     """
         This class implements an integrated anytime placement planner.
         This algorithm combines a PlacementGoalSampler as defined in goal_sampler.interfaces
@@ -336,3 +337,76 @@ class AnyTimePlacementPlanner:
                 self._params[key] = value
             else:
                 rospy.logwarn("Unknown parameter: %s" % key)
+
+
+class DummyPlanner(object):
+    """
+        Dummy placement planner that pretends to plan motions.
+        It samples several goals, and then randomly decides that one of them was reached by a motion planner.
+        Subsequently, the goal sampler is informed about this and queried again.
+    """
+
+    def __init__(self, goal_sampler):
+        self._goal_sampler = goal_sampler
+
+    def plan(self, max_iter, num_goal_samples=10, num_goal_trials=100):
+        """
+            Run pseudo planning.
+            ---------
+            Arguments
+            ---------
+            max_iter, int - number of iterations
+            num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
+            num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
+        """
+        goal_set = {}
+        best_solution = None
+        for _ in range(max_iter):
+            new_goals, _ = self._goal_sampler.sample(num_goal_samples, num_goal_trials, True)
+            goal_set = self._merge_goal_sets(goal_set, new_goals)
+            if len(goal_set) > 0:
+                all_sols = []
+                for (_, sols) in goal_set.iteritems():
+                    all_sols.extend(sols)
+                all_sols = self._filter_goals(all_sols, best_solution)
+                if len(all_sols) > 0:
+                    selected_goal = random.choice(all_sols)
+                    self._goal_sampler.set_reached_goals([selected_goal])
+                    best_solution = selected_goal
+
+    def _merge_goal_sets(self, old_goals, new_goals):
+        """
+            Merge new_goals into old_goals.
+            ---------
+            Arguments
+            ---------
+            old_goals, dict - manip_name -> list of goals
+            new_goals, dict - manip_name -> list of goals
+            -------
+            Returns
+            -------
+            old_goals
+        """
+        for (key, goals) in new_goals.iteritems():
+            if key in old_goals:
+                old_goals[key].extend(goals)
+            else:
+                old_goals[key] = goals
+        return old_goals
+
+    def _filter_goals(self, goals, best_solution):
+        """
+            Filter the given list of goals based on objective value.
+            ---------
+            Arguments
+            ---------
+            goals, list of PlacementGoals
+            best_solution, tuple (traj, PlacementGoal), where PlacementGoal is the best reached so far. The tuple may be None
+            -------
+            Returns
+            -------
+            remaining_goals, list of PlacementGoals (might be empty)
+        """
+        if best_solution is None:
+            return goals
+        return [x for x in goals if x.objective_value > best_solution.objective_value]
