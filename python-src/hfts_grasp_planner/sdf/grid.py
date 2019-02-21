@@ -608,7 +608,7 @@ class VoxelGrid(object):
             return valid_flags, values, gradients
         return valid_flags, gradients
 
-    def get_cell_gradients_pos(self, positions, b_global_frame=True, b_return_values=True):
+    def get_cell_gradients_pos(self, positions, b_global_frame=True, b_return_values=True, b_force_cpu=False):
         """
             Return the gradients and optionally the values at the given positions
             NOTE: This function throws a ValueError if the stored data type is not float.
@@ -628,7 +628,7 @@ class VoxelGrid(object):
         if self._cells.dtype != np.float_:
             raise ValueError("Can not compute gradients for anything else than floats")
         num_points = positions.shape[0]
-        if self._b_use_cuda and num_points > MIN_NUM_POINTS_CUDA:
+        if self._b_use_cuda and num_points > MIN_NUM_POINTS_CUDA and not b_force_cpu:
             return self.get_cell_gradients_pos_cuda(positions, b_global_frame, b_return_values)
         query_width = 7 if b_return_values else 6
         valid_masks = np.empty((query_width, num_points), dtype=bool)

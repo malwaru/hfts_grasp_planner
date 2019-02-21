@@ -130,7 +130,7 @@ class SDF(object):
         """
         return self._grid.get_cuda_position_interpolator(positions)
 
-    def get_distances_grad(self, positions, b_values=True):
+    def get_distances_grad(self, positions, b_values=True, b_force_cpu=False):
         """
             Return distance gradients and optionally shortest distance to obstacles at the given points.
             This method interpolates distances between grid points.
@@ -146,7 +146,7 @@ class SDF(object):
             values(optional), np array of shape (n,) - distances at the query positions if b_values == True
             gradients, np array of shape (n, 3) - gradients at the query positions
         """
-        result = self._grid.get_cell_gradients_pos(positions, b_return_values=b_values)
+        result = self._grid.get_cell_gradients_pos(positions, b_return_values=b_values, b_force_cpu=b_force_cpu)
         # result = self._grid.get_cell_gradients_pos_cuda(positions, b_return_values=b_values)
         if b_values:
             valid_mask, values, gradients = result
