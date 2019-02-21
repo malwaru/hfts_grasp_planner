@@ -12,8 +12,10 @@ import hfts_grasp_planner.placement.so2hierarchy as so2hierarchy
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.placement.goal_sampler.interfaces as placement_interfaces
 """
+    TODO update docs
     This module defines the placement planning interfaces for an
-    Arm-Region-PlacementOrientation(arpo)-hierarchy.
+    # Arm-Region-PlacementOrientation(arpo)-hierarchy.
+    Arm-PlacementOrientation-Region hierarchy.
     An arpo-hierarchy allows to search for an object placement with a dual arm robot.
     On the root level,the hierarchy has as many branches as the robot has arms, i.e.
     it represents the decision which arm to use to place the object.
@@ -29,19 +31,19 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
     """
         Defines an ARPO hierarchy.
         A node in this hierarchy is identified by a key, which is a tuple of ints followed by two more tuples:
-        (a, r, o, subregion_key, so2_key). The integers a, r, o define the arm, region and placement orientation.
+        (a, o, r, subregion_key, so2_key). The integers a, o, r define the arm, placement orientation and region.
         The elements subregion_key and so2_key are themselves tuple of ints representing 1. a subregion of the region r
         and 2. an interval of SO2. A key may be partially defined from left to right. Valid key formats are:
         (,) - root
         (a,) - chosen arm a, nothing else
-        (a, r) - chosen arm a, region r, nothing else
-        (a, r, o, (), ()) - chosen arm a, region r, orientation o, nothing else
-        (a, r, o, subregion_key, so2_key) - subregion_key and so2_key can also be partially defined in the same way.
+        (a, o) - chosen arm a, orientation o, nothing else
+        (a, o, r, (), ()) - chosen arm a, orientation o, region r, nothing else
+        (a, o, r, subregion_key, so2_key) - subregion_key and so2_key can also be partially defined in the same way.
 
         Hierarchy layout:
         1. level: choice of arm
-        2. level: choice of region
-        3. level: choice placement orientation
+        2. level: choice placement orientation
+        3. level: choice of region
         4. - n. level: choice of subregion and SO2 interval
 
         Subregions and SO2 interval:
@@ -98,9 +100,9 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         if len(key) == 0:
             return ((i,) for i in xrange(len(self._manips)))
         elif len(key) == 1:
-            return (key + (i,) for i in xrange(len(self._regions)))
-        elif len(key) == 2:
             return (key + (i,) for i in xrange(len(self._orientations)))
+        elif len(key) == 2:
+            return (key + (i,) for i in xrange(len(self._regions)))
         else:
             if len(key) == 3:
                 subregion_key = ()
@@ -110,7 +112,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
                 # extract sub region key
                 subregion_key = key[3]
                 so2_key = key[4]
-            subregion = self.get_placement_region((key[1], subregion_key))
+            subregion = self.get_placement_region((key[2], subregion_key))
             b_region_leaf = not subregion.has_subregions()
             b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
             if b_region_leaf and b_so2_leaf:
@@ -123,6 +125,57 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
                         for r in xrange(subregion.get_num_subregions()))
             return (key[:3] + (subregion_key + (r,), o) for r in xrange(subregion.get_num_subregions())
                     for o in so2hierarchy.get_key_gen(so2_key, self._so2_branching))
+
+    def get_random_child_key_gen(self, key):
+        """
+            Return a key-generator for the children of the given key that follows a random order.
+            ---------
+            Arguments
+            ---------
+            key, tuple - see class documentation for key description
+            -------
+            Returns
+            -------
+            generator of tuple of int - the generator produces children of the node with key key
+                If there are no children, None is returned
+        """
+        if len(key) == 0:
+            manip_seq = range(len(self._manips))
+            np.random.shuffle(manip_seq)
+            return ((i,) for i in manip_seq)
+        elif len(key) == 1:
+            orient_seq = range(len(self._orientations))
+            np.random.shuffle(orient_seq)
+            return (key + (i,) for i in orient_seq)
+        elif len(key) == 2:
+            reg_seq = range(len(self._regions))
+            np.random.shuffle(reg_seq)
+            return (key + (i,) for i in reg_seq)
+        else:
+            if len(key) == 3:
+                subregion_key = ()
+                so2_key = ()
+            else:
+                assert(len(key) == 5)
+                # extract sub region key
+                subregion_key = key[3]
+                so2_key = key[4]
+            subregion = self.get_placement_region((key[2], subregion_key))
+            b_region_leaf = not subregion.has_subregions()
+            b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
+            if b_region_leaf and b_so2_leaf:
+                return None
+            if b_region_leaf:
+                return (key[:3] + (subregion_key + (0,), o)
+                        for o in so2hierarchy.get_random_key_gen(so2_key, self._so2_branching))
+            sub_seq = range(subregion.get_num_subregions())
+            np.random.shuffle(sub_seq)
+            if b_so2_leaf:
+                return (key[:3] + (subregion_key + (r,), so2_key + (0,)) for r in sub_seq)
+            so2_seq = list(so2hierarchy.get_random_key_gen(so2_key, self._so2_branching))
+            cart_product = list(itertools.product(sub_seq, so2_seq))
+            np.random.shuffle(cart_product)
+            return (key[:3] + (subregion_key + (r,), o) for (r, o) in cart_product)
 
     def get_random_child_key(self, key):
         """
@@ -140,9 +193,9 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         if len(key) == 0:
             return (np.random.randint(0, len(self._manips)),)
         if len(key) == 1:
-            return key + (np.random.randint(0, len(self._regions)),)
-        if len(key) == 2:
             return key + (np.random.randint(0, len(self._orientations)),)
+        if len(key) == 2:
+            return key + (np.random.randint(0, len(self._regions)),)
         # extract sub region key
         if len(key) == 5:
             subregion_key = key[3]
@@ -151,7 +204,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             assert(len(key) == 3)
             subregion_key = ()
             so2_key = ()
-        subregion = self.get_placement_region((key[1], subregion_key))
+        subregion = self.get_placement_region((key[2], subregion_key))
         b_region_leaf = not subregion.has_subregions()
         b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
         if b_region_leaf and b_so2_leaf:
@@ -184,7 +237,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             # extract sub region key
             subregion_key = key[3]
             so2_key = key[4]
-        subregion = self.get_placement_region((key[1], subregion_key))
+        subregion = self.get_placement_region((key[2], subregion_key))
         b_region_leaf = not subregion.has_subregions()
         b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
         return b_region_leaf and b_so2_leaf
@@ -213,7 +266,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             ---------
             Arguments
             ---------
-            base_key, tuple - base key specifying at least (a, r, po)
+            base_key, tuple - base key specifying at least (a, po, r)
             position, np array of shape (3,) - global position
             orientation, float - angle w.r.t to placement region r
             -------
@@ -223,7 +276,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
                 None if the position and orientation do not lie within base_key
         """
         assert(len(base_key) >= 3)
-        region = self._regions[base_key[1]]
+        region = self._regions[base_key[2]]
         if len(base_key) == 5:  # do we have a subregion and sub-so2-interval?
             base_r_sub_key = base_key[3]
             base_so_sub_key = base_key[4]
@@ -252,9 +305,9 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         if len(key) == 0:
             return len(self._manips)
         if len(key) == 1:
-            return len(self._regions)
-        if len(key) == 2:
             return len(self._orientations)
+        if len(key) == 2:
+            return len(self._regions)
         # extract sub region key
         if len(key) == 5:
             subregion_key = key[3]
@@ -263,7 +316,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
             assert(len(key) == 3)
             subregion_key = ()
             so2_key = ()
-        subregion = self.get_placement_region((key[1], subregion_key))
+        subregion = self.get_placement_region((key[2], subregion_key))
         b_region_leaf = not subregion.has_subregions()
         b_so2_leaf = so2hierarchy.is_leaf(so2_key, self._so2_depth)
         if b_region_leaf and b_so2_leaf:
@@ -381,13 +434,13 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         elif len(key) == 1:
             return (self._manips[key[0]],)
         elif len(key) == 2:
-            return (self._manips[key[0]], self._regions[key[1]])
+            return (self._manips[key[0]], self._orientations[key[1]])
         elif len(key) == 3:
-            return (self._manips[key[0]], self._regions[key[1]], self._orientations[key[2]])
+            return (self._manips[key[0]], self._orientations[key[1]], self._regions[key[2]])
         assert(len(key) == 5)
-        subregion = self.get_placement_region((key[1], key[3]))
+        subregion = self.get_placement_region((key[2], key[3]))
         so2region = so2hierarchy.get_interval(key[4][:self._so2_depth], self._so2_branching)
-        return (self._manips[key[0]], self._regions[key[1]], self._orientations[key[2]], subregion, so2region)
+        return (self._manips[key[0]], self._orientations[key[1]], self._regions[key[2]], subregion, so2region)
 
     def get_all_manip_orientations(self):
         """
@@ -787,8 +840,13 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 gradient, np array of shape (3,) - gradient of CHOMP's collision cost for the object
                     w.r.t x, y, theta(ez)
             """
+            # TODO remove
+            dz = np.array([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0.002], [0, 0, 0, 0]])
+            dy = np.array([[0, 0, 0, 0], [0, 0, 0, 0.002], [0, 0, 0, 0], [0, 0, 0, 0]])
+            dx = np.array([[0, 0, 0, 0.002], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+            # TODO until here
             values, cart_grads, loc_positions = self._object_volumetric.compute_obstacle_cost(
-                self._scene_sdf, bgradients=True)
+                self._scene_sdf, tf=cache_entry.solution.obj_tf, bgradients=True)
             # translate local positions into positions relative to reference pose
             to_ref_pose = cache_entry.plcmnt_orientation.inv_reference_tf
             loc_positions = np.dot(loc_positions, to_ref_pose[:3, :3].T) + to_ref_pose[:3, 3]
@@ -826,7 +884,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             manip = cache_entry.solution.manip
             # manip_data = self._manip_data[manip.GetName()]
             _, cart_grads, loc_positions = self._object_volumetric.compute_obstacle_cost(
-                self._scene_sdf, bgradients=True)
+                self._scene_sdf, tf=cache_entry.solution.obj_tf, bgradients=True)
             gradient = np.zeros(manip.GetArmDOF())
             # translate local positions into positions relative to reference pose
             to_ref_pose = cache_entry.plcmnt_orientation.inv_reference_tf
@@ -1262,52 +1320,54 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 cache_entry.solution.arm_config, numpy array of shape (n,) - arm configuration (n DOFs)
             """
             # rospy.logdebug("Running JacobianOptimizer to make solution feasible")
-            q_original = self.robot.GetActiveDOFValues()  # TODO remove
+            q_original = self.robot.GetDOFValues()  # TODO remove
             manip_data = self.manip_data[cache_entry.solution.manip.GetName()]
             lower, upper = manip_data.lower_limits + self.joint_limit_margin, manip_data.upper_limits - self.joint_limit_margin
             manip = manip_data.manip
-            with self.robot:
-                reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
-                manip.SetLocalToolTransform(reference_pose)
-                self.robot.SetActiveDOFs(manip.GetArmIndices())
-                # init jacobian descent
-                q_current = cache_entry.solution.arm_config
-                q_best = np.array(q_current)
-                # compute jacobian
-                cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                if q_grad is not None:
-                    grad_norm = np.linalg.norm(q_grad)
-                else:
-                    grad_norm = 0.0
+        # with self.robot:
+            reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+            manip.SetLocalToolTransform(reference_pose)
+            self.robot.SetActiveDOFs(manip.GetArmIndices())
+            self.robot.SetDOFValues(manip_data.grasp_config, manip.GetGripperIndices())
+            # init jacobian descent
+            q_current = cache_entry.solution.arm_config
+            q_best = np.array(q_current)
+            # compute jacobian
+            cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+            if q_grad is not None:
+                grad_norm = np.linalg.norm(q_grad)
+            else:
+                grad_norm = 0.0
+            b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+            best_cval = cval
+            # iterate as long as the gradient is not zero and we are not beyond limits
+            # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+            for i in xrange(self.max_iterations):
+                if q_grad is None or grad_norm < self.grad_epsilon or not b_in_limits or cval < self.val_epsilon:
+                    break
+                # rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
+                            #    (str(q_current), str(q_grad), grad_norm))
+                q_current -= self.step_size * q_grad / grad_norm  # update q_current
                 b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                best_cval = cval
-                # iterate as long as the gradient is not zero and we are not beyond limits
-                # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
-                for i in xrange(self.max_iterations):
-                    if q_grad is None or grad_norm < self.grad_epsilon or not b_in_limits or cval < self.val_epsilon:
+                if b_in_limits:
+                    # compute gradient at this position + constraint violation
+                    cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                    if cval < best_cval:  # is constraint violation less?
+                        q_best[:] = q_current  # then save q_current
+                        best_cval = cval
+                    if q_grad is not None:  # do we have a gradient?
+                        grad_norm = np.linalg.norm(q_grad)
+                    else:
                         break
-                    # rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
-                                #    (str(q_current), str(q_grad), grad_norm))
-                    q_current -= self.step_size * q_grad / grad_norm  # update q_current
-                    b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                    if b_in_limits:
-                        # compute gradient at this position + constraint violation
-                        cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                        if cval < best_cval:  # is constraint violation less?
-                            q_best[:] = q_current  # then save q_current
-                            best_cval = cval
-                        if q_grad is not None:  # do we have a gradient?
-                            grad_norm = np.linalg.norm(q_grad)
-                        else:
-                            break
                     # else:
                         # rospy.logdebug("Jacobian descent has led to joint limit violation. Aborting")
                 # rospy.logdebug("Jacobian descent finished after %i iterations" % i)
-                # set q_best as arm config in solution
-                self._set_cache_entry_values(cache_entry, q_best, manip_data)
-                manip.SetLocalToolTransform(np.eye(4))
-                self._last_cart_grad = None
-            self.robot.SetActiveDOFValues(q_original)  # TODO remove
+            # set q_best as arm config in solution
+            self._set_cache_entry_values(cache_entry, q_best, manip_data)
+            manip.SetLocalToolTransform(np.eye(4))
+            self._last_cart_grad = None
+            self.robot.SetActiveDOFValues(cache_entry.solution.arm_config)  # TODO remove
+            self.robot.SetDOFValues(q_original)  # TODO remove
             self.robot_data.ball_approx.hide_balls()  # TODO remove
 
         def _set_cache_entry_values(self, cache_entry, q, manip_data):
@@ -1339,8 +1399,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.robot.SetActiveDOFValues(q_current)
             self._set_cache_entry_values(cache_entry, q_current, manip_data)
             # TODO delete
-            # crayola = self.robot.GetEnv().GetKinBody("crayola")
-            # crayola.SetTransform(cache_entry.solution.obj_tf)
+            target_obj = self.robot.GetEnv().GetKinBody("target_object")
+            target_obj.SetTransform(cache_entry.solution.obj_tf)
             # TODO until here
             # violation value
             violation_value = 0.0
@@ -1380,7 +1440,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # ------ 2. Theta constraint - theta needs to be within the selected so2interval
             # We compute no gradient for this constraint, and instead simply abort if we violate it
             if utils.dist_in_range(cache_entry.region_state[2], cache_entry.so2_interval) != 0.0:
-                rospy.logdebug("Jacobian descent failed: Theta is out of so2 interval.")
+                # rospy.logdebug("Jacobian descent failed: Theta is out of so2 interval.")
                 return np.inf, None
             # ------ 3. Stability - all contact points need to be in a placement region (any)
             value, cart_grad_c = self.contact_constraint.compute_cart_gradient(cache_entry, ref_pose)
@@ -1413,7 +1473,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
             col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
                                     np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
-            # col_cart = np.matmul(jacobian, col_grad)
+            col_cart = np.matmul(jacobian, col_grad)
             # rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
             # rospy.logdebug("Arm collision constraint value is " + str(val))
             qgrad += col_grad
@@ -1482,8 +1542,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         assert(len(arpo_info) >= 3)
         manip = arpo_info[0]
         manip_data = self._manip_data[manip.GetName()]
-        region = arpo_info[1]
-        po = arpo_info[2]
+        po = arpo_info[1]
+        region = arpo_info[2]
         so2_interval = np.array([0, 2.0 * np.pi])
         if len(arpo_info) == 5:
             region = arpo_info[3]
@@ -1565,7 +1625,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # the jacobian optimizer may have moved the solution to a different region
             # TODO this should maybe be done within jacobian optimizer
             region_id = self._hierarchy.get_region(reference_point_pose[:3, 3])  
-            cache_entry.key = (cache_entry.key[0], region_id, cache_entry.key[2])
+            cache_entry.key = (cache_entry.key[0], cache_entry.key[1], region_id)
             return cache_entry.solution, arm_configs
         return None, []
 
@@ -1804,7 +1864,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             -------
             Ik solver
         """
-        mkey = (cache_entry.key[0], cache_entry.key[2])
+        mkey = (cache_entry.key[0], cache_entry.key[1])
         # if we already have an ik solver for the combination manip + placement orientation, return it
         if mkey in self._plcmnt_ik_solvers:
             return self._plcmnt_ik_solvers[mkey]

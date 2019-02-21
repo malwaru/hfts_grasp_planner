@@ -104,6 +104,24 @@ def get_key_gen(key, branching_factor):
     return (key + (i,) for i in xrange(branching_factor))
 
 
+def get_random_key_gen(key, branching_factor):
+    """
+        Return a generator for child keys for the given key that follows a random order.
+        ---------
+        Arguments
+        ---------
+        key, tuple of ints - key identifying which cell to get child keys for
+        branching_factor, int - number of cells per layer
+        -------
+        Returns
+        -------
+        key generator that produces the keys of all children of the given key in random order
+    """
+    order = range(branching_factor)
+    np.random.shuffle(order)
+    return (key + (i,) for i in order)
+
+
 def is_leaf(key, depth):
     """
         Return whether the given key is a leaf.

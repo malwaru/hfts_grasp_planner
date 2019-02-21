@@ -40,7 +40,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             # for internal use to remember whether we need to update self.branch_objectives
             self._last_min_obj = -float("inf")
 
-        def update_rec(self, obj_value, base_reward):
+        def update_rec(self, obj_value, base_reward, bLeaf=True):
             """
                 Back-propagate the new rewards.
                 ----------
@@ -50,11 +50,13 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 base_reward, float - the constraint relaxation value of a new solution
             """
             self.num_visits += 1
+            if bLeaf and len(self.solutions) > 0:
+                base_reward = base_reward / len(self.solutions)
             self.acc_rewards += base_reward
             if obj_value is not None:
                 self.branch_objectives.append(obj_value)
             if self.parent is not None:
-                self.parent.update_rec(obj_value, base_reward)
+                self.parent.update_rec(obj_value, base_reward, bLeaf=False)
 
         def update_objectives(self, min_obj, objective_weight, reward_normalizer):
             """
@@ -97,7 +99,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._objective = objective
         self._manip_names = manip_names
         if parameters is None:
-            parameters = {'c': 1.0, 'objective_impr_f': 0.1}
+            parameters = {'c': 0.4, 'objective_impr_f': 0.1}
         self._parameters = parameters
         self._c = self._parameters["c"]
         weights = self._objective.get_constraint_weights()
@@ -299,7 +301,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
 
     def _create_new_node(self, parent, child_key):
         new_node = MCTSPlacementSampler.MCTSNode(child_key, parent)
-        new_node.child_gen = self._hierarchy.get_child_key_gen(new_node.key)
+        # new_node.child_gen = self._hierarchy.get_child_key_gen(new_node.key)
+        new_node.child_gen = self._hierarchy.get_random_child_key_gen(new_node.key)
         new_node.sampleable = self._solution_constructor.can_construct_solution(new_node.key)
         if parent:
             parent.children[child_key] = new_node
@@ -323,6 +326,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         """
         assert(node.sampleable)
         new_solution = self._solution_constructor.construct_solution(node.key, True)
+        node.num_constructions += 1
         # first, check whether all other non-objective constraints are fullfilled
         b_is_valid = self._validator.is_valid(new_solution, False)
         if b_is_valid:
@@ -340,13 +344,23 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 base_reward = 0.0  # leaves do not get a relaxation
         # if the solution is all valid, we credit this to the full subbranch that this solution falls into
         if b_is_valid and b_improves_obj:
-            # add the path to the resulting solution
+            # add the child to the resulting solution
             leaf_key = self._solution_constructor.get_leaf_key(new_solution)
-            self._insert_solution(node, leaf_key, new_solution, True, base_reward)
+            key_path = self._hierarchy.get_path(node.key, leaf_key)
+            if len(key_path) > 0:
+                child_key = key_path[0]
+                if child_key not in node.children:
+                    node.num_new_valid_constr += 1
+                    node.children[child_key] = self._create_new_node(node, child_key)
+                    node.children[child_key].num_constructions += 1
+                    node.children[child_key].num_new_valid_constr += 1
+                node.children[child_key].update_rec(obj_value, base_reward)
+                node.children[child_key].solutions.append(new_solution)
+            # self._insert_solution(node, child_key, new_solution, True, base_reward)
+            # self._insert_solution(node, leaf_key, new_solution, True, base_reward)
             return new_solution
         else:
             # we only count that we sampled this node without success, and add the solution to this node
-            node.num_constructions += 1
             node.update_rec(obj_value, base_reward)
             node.solutions.append(new_solution)
             return None
