@@ -359,10 +359,13 @@ class DummyPlanner(object):
             num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
             num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
         """
+        objectives = []
+        solutions = []
         goal_set = {}
         best_solution = None
         for _ in range(max_iter):
             new_goals, _ = self._goal_sampler.sample(num_goal_samples, num_goal_trials, True)
+            self._check_objective_invariant(new_goals, best_solution)
             goal_set = self._merge_goal_sets(goal_set, new_goals)
             if len(goal_set) > 0:
                 all_sols = []
@@ -373,6 +376,16 @@ class DummyPlanner(object):
                     selected_goal = random.choice(all_sols)
                     self._goal_sampler.set_reached_goals([selected_goal])
                     best_solution = selected_goal
+                    objectives.append(best_solution.objective_value)
+                    solutions.append(best_solution)
+        return objectives, solutions
+
+    def _check_objective_invariant(self, goals, best_sol):
+        if best_sol is None:
+            return
+        for (key, goal_set) in goals.iteritems():
+            for goal in goal_set:
+                assert(goal.objective_value >= best_sol.objective_value)
 
     def _merge_goal_sets(self, old_goals, new_goals):
         """

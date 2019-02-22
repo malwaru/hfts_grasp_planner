@@ -27,24 +27,24 @@ class MCTSVisualizer(object):
         key = make_tuple(msg.data)
         if key in self._nodes_cache:
             node = self._nodes_cache[key]
-            if len(node.solutions) == 0:
+            if len(node.branch_solutions) == 0:
                 rospy.loginfo("[MCTSVisualizer] Node with id %s has no solution associated with it." % str(key))
                 return
             if node == self._prev_selected_node[0]:  # the node was selected before, so go to the next solution
                 solution_id = self._prev_selected_node[1]
-                next_sol_id = (self._prev_selected_node[1] + 1) % len(node.solutions)
+                next_sol_id = (self._prev_selected_node[1] + 1) % len(node.branch_solutions)
                 self._prev_selected_node = (node, next_sol_id)
             else:  # newly selected node
                 solution_id = 0
                 self._prev_selected_node = (node, solution_id)
-            config = node.solutions[solution_id].arm_config  # may still be None!
+            config = node.branch_solutions[solution_id].arm_config  # may still be None!
             rospy.logdebug("[MCTSVisualizer::_ros_callback] Got a request for node %s" % str(key))
             # rospy.logdebug("[MCTSVisualizer::_ros_callback: solution data: %s" % str(node.solutions[solution_id].data))
             rospy.logdebug("[MCTSVisualizer::_ros_callback: solution objective: %s" %
-                           str(node.solutions[solution_id].objective_value))
+                           str(node.branch_solutions[solution_id].objective_value))
             if config is not None and self.robot is not None:
                 rospy.logdebug('[MCTSVisualizer::_ros_callback] Request to show config ' + str(config))
-                self.robot.SetActiveDOFs(node.solutions[solution_id].manip.GetArmIndices())
+                self.robot.SetActiveDOFs(node.branch_solutions[solution_id].manip.GetArmIndices())
                 self.robot.SetActiveDOFValues(config)
                 b_in_collision = self._env.CheckCollision(self.robot)
                 b_self_collision = self.robot.CheckSelfCollision()
@@ -56,7 +56,7 @@ class MCTSVisualizer(object):
                     elif b_self_collision:
                         rospy.logdebug('[MCTSVisualizer::_ros_callback] Configuration is in self-collision.')
             if self.target_obj is not None:
-                obj_pose = node.solutions[solution_id].obj_tf
+                obj_pose = node.branch_solutions[solution_id].obj_tf
                 link = self.target_obj.GetLinks()[0]
                 geom = link.GetGeometries()[0]
                 mesh = geom.GetCollisionMesh()

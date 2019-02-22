@@ -759,37 +759,40 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             """
             cache_entry.barm_collision_free = False
             cache_entry.bobj_collision_free = False
-            if cache_entry.solution.arm_config is None:
-                return False
             manip = cache_entry.solution.manip
             manip_data = self._manip_data[manip.GetName()]
             robot = manip.GetRobot()
             env = robot.GetEnv()
-            with robot:
-                with orpy.KinBodyStateSaver(self._target_obj):
-                    # grab object (sets active manipulator for us)
-                    utils.set_grasp(manip, self._target_obj,
-                                    manip_data.inv_grasp_tf, manip_data.grasp_config)
-                    robot.SetDOFValues(cache_entry.solution.arm_config, manip.GetArmIndices())
-                    col_free = not env.CheckCollision(robot) and not robot.CheckSelfCollision()
-                    if not col_free:  # there is some collision
-                        robot.Enable(False)
-                        # is the object without robot in collision?
-                        cache_entry.bobj_collision_free = not env.CheckCollision(self._target_obj)
-                        robot.Enable(True)
-                        self._target_obj.Enable(False)
-                        # is the robot without object in collision?
-                        cache_entry.barm_collision_free = not env.CheckCollision(
-                            robot) and not robot.CheckSelfCollision()
-                        self._target_obj.Enable(True)
-                        # lastly, make sure the robot isn't colliding with the object
-                        cache_entry.barm_collision_free = cache_entry.barm_collision_free and not env.CheckCollision(
-                            robot, self._target_obj)
-                    else:
-                        cache_entry.barm_collision_free = True
-                        cache_entry.bobj_collision_free = True
-                    # 2. check joint robot object collision
-                    robot.Release(self._target_obj)
+            if cache_entry.solution.arm_config is not None:
+                with robot:
+                    with orpy.KinBodyStateSaver(self._target_obj):
+                        # grab object (sets active manipulator for us)
+                        utils.set_grasp(manip, self._target_obj,
+                                        manip_data.inv_grasp_tf, manip_data.grasp_config)
+                        robot.SetDOFValues(cache_entry.solution.arm_config, manip.GetArmIndices())
+                        col_free = not env.CheckCollision(robot) and not robot.CheckSelfCollision()
+                        if not col_free:  # there is some collision
+                            robot.Enable(False)
+                            # is the object without robot in collision?
+                            cache_entry.bobj_collision_free = not env.CheckCollision(self._target_obj)
+                            robot.Enable(True)
+                            self._target_obj.Enable(False)
+                            # is the robot without object in collision?
+                            cache_entry.barm_collision_free = not env.CheckCollision(
+                                robot) and not robot.CheckSelfCollision()
+                            self._target_obj.Enable(True)
+                            # lastly, make sure the robot isn't colliding with the object
+                            cache_entry.barm_collision_free = cache_entry.barm_collision_free and not env.CheckCollision(
+                                robot, self._target_obj)
+                        else:
+                            cache_entry.barm_collision_free = True
+                            cache_entry.bobj_collision_free = True
+                        # 2. check joint robot object collision
+                        robot.Release(self._target_obj)
+            else:
+                with self._target_obj:
+                    self._target_obj.SetTransform(cache_entry.solution.obj_tf)
+                    cache_entry.bobj_collision_free = not env.CheckCollision(self._target_obj)
             return cache_entry.barm_collision_free and cache_entry.bobj_collision_free
 
         def get_relaxation(self, cache_entry):
@@ -1059,7 +1062,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         def check_objective_improvement(self, cache_entry):
             """
                 Check whether the solution stored in cache entry has a better objective than the best
-                reached so far.
+                reached so far. If there is no objective set, it is worse.
                 ---------
                 Arguments
                 ---------
@@ -1073,7 +1076,10 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 -------
                 True or False
             """
-            cache_entry.bbetter_objective = cache_entry.solution.objective_value > self.best_value
+            if cache_entry.solution.objective_value is not None:
+                cache_entry.bbetter_objective = cache_entry.solution.objective_value > self.best_value
+            else:
+                cache_entry.bbetter_objective = False
             return cache_entry.bbetter_objective
 
         def get_relaxation(self, cache_entry):
@@ -1639,7 +1645,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         """
         self._objective_constraint.best_value = val
 
-    def is_valid(self, solution, b_improve_objective):
+    def is_valid(self, solution, b_improve_objective, b_lazy=True):
         """
             Return whether the given PlacementSolution is valid.
             ---------
@@ -1647,6 +1653,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             ---------
             solution, PlacementSolution - solution to evaluate
             b_improve_objective, bool - If True, the solution has to be better than the current minimal objective.
+            b_lazy, bool - If True, only checks for validity until one constraint is violated and returns,
+                else all constraints are evaluated (and saved in cache_entry)
             -------
             Returns
             -------
@@ -1656,15 +1664,15 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         assert(cache_entry.solution == solution)
         self._call_stats[1] += 1
         # kinematic reachability?
-        if not self._reachability_constraint.check_reachability(cache_entry):
+        if not self._reachability_constraint.check_reachability(cache_entry) and b_lazy:
             # rospy.logdebug("Solution invalid because it's not reachable")
             return False
         # collision free?
-        if not self._collision_constraint.check_collision(cache_entry):
+        if not self._collision_constraint.check_collision(cache_entry) and b_lazy:
             # rospy.logdebug("Solution invalid because it's in collision")
             return False
         # next check whether the object pose is actually a stable placement
-        if not self._contact_constraint.check_contacts(cache_entry):
+        if not self._contact_constraint.check_contacts(cache_entry) and b_lazy:
             # rospy.logdebug("Solution invalid because it's unstable")
             return False
         # finally check whether the objective is an improvement
@@ -1692,13 +1700,23 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             -------
             val, float - relaxation value in [0, 1], or [0, c] with c < 1 if b_incl_obj=False, and b_obj_normalizer=True
         """
+        # first compute normalizer
+        normalizer = self._parameters["weight_arm_col"] + \
+            self._parameters["weight_obj_col"] + self._parameters["weight_contact"]
+        if b_incl_obj or b_obj_normalizer:
+            normalizer += self._parameters["weight_objective"]
+        # check if have binary relaxation
         if self._parameters["relaxation_type"] == "binary":
-            return float(self.is_valid(solution, b_incl_obj))
+            if not b_obj_normalizer or b_incl_obj:
+                return float(self.is_valid(solution, b_incl_obj))
+            else:
+                val = float(self.is_valid(solution, False))
+                return val * (normalizer - self._parameters["weight_objective"])
         # sub-binary or continuous
         cache_entry = self._solutions_cache[solution.key]
         assert(cache_entry.solution == solution)
         self._call_stats[2] += 1
-        self.is_valid(solution, b_incl_obj)  # ensure all validity flags are set
+        self.is_valid(solution, b_incl_obj, b_lazy=False)  # ensure all validity flags are set
         val = 0.0
         if not cache_entry.bkinematically_reachable:  # not a useful solution without an arm configuration
             return 0.0
@@ -1709,7 +1727,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             val += self._parameters["weight_contact"] * float(cache_entry.bstable)
             if b_incl_obj:
                 valid_sol = float(cache_entry.bobj_collision_free) * float(cache_entry.bstable)
-                val += valid_sol * self._parameters["weight_objective"] * float(cache_entry.bimpr_objective)
+                val += valid_sol * self._parameters["weight_objective"] * float(cache_entry.bbetter_objective)
         else:  # compute continuous relaxation
             assert(self._parameters["relaxation_type"] == "continuous")
             contact_val = self._contact_constraint.get_relaxation(cache_entry)
@@ -1724,10 +1742,6 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 valid_sol = float(cache_entry.bobj_collision_free) * float(cache_entry.bstable)
                 val += valid_sol * self._parameters["weight_objective"] * \
                     self._objective_constraint.get_relaxation(cache_entry)
-        normalizer = self._parameters["weight_arm_col"] + \
-            self._parameters["weight_obj_col"] + self._parameters["weight_contact"]
-        if b_incl_obj or b_obj_normalizer:
-            normalizer += self._parameters["weight_objective"]
         return val / normalizer
 
     def get_constraint_weights(self):
