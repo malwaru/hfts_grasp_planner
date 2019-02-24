@@ -437,8 +437,8 @@ def set_grasp(manip, body, inv_grasp_tf, hand_config):
     robot = manip.GetRobot()
     robot.SetActiveManipulator(manip.GetName())
     body.SetTransform(np.dot(manip.GetEndEffectorTransform(), inv_grasp_tf))
-    robot.Grab(body)
     robot.SetDOFValues(hand_config, manip.GetGripperIndices())
+    robot.Grab(body)
 
 
 def retime_traj(ortraj, robot, vel_factor=0.8):
