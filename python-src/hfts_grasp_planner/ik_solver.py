@@ -85,7 +85,7 @@ class IKSolver(object):
                     self._or_arm_ik = None
             return False
 
-    def compute_ik(self, pose, seed=None, **kwargs):
+    def compute_ik(self, pose, seed=None, joint_limit_margin=0.0, **kwargs):
         """
             Compute an inverse kinematics solution for the given pose.
             This function does not check for collisions and the returned solution is only guaranteed to be within joint limits.
@@ -94,6 +94,7 @@ class IKSolver(object):
             ---------
             pose, numpy array of shape (4, 4) - end-effector transformation matrix
             seed, numpy array of shape (q,) - initial arm configuration to search from (q is the #DOFs of the arm)
+            joint_limit_margin, float - minimal distance from joint limits
             further key word arguments:
                 tolerances for ik solver (in target pose frame): bx, by, bz, brx, bry, brz - defaults to small values (only supported with trac_ik)
             -------
@@ -126,7 +127,7 @@ class IKSolver(object):
                 if sol is not None:
                     sol = np.array(sol)
                     in_limits = np.logical_and.reduce(np.logical_and(
-                        sol >= self._lower_limits, sol <= self._upper_limits))
+                        sol >= self._lower_limits + joint_limit_margin, sol <= self._upper_limits - joint_limit_margin))
                     if in_limits:
                         return sol
                     else:
@@ -135,7 +136,7 @@ class IKSolver(object):
             else:
                 raise RuntimeError("Neither IKFast nor TracIK is available. Can not solve IK queries!")
 
-    def compute_collision_free_ik(self, pose, seed=None, **kwargs):
+    def compute_collision_free_ik(self, pose, seed=None, joint_limit_margin=0.0, **kwargs):
         """
             Compute a collision-free inverse kinematics solution for the given pose.
             ---------
@@ -143,6 +144,7 @@ class IKSolver(object):
             ---------
             pose, numpy array of shape (4, 4) - end-effector transformation matrix
             seed, numpy array of shape (q,) - initial arm configuration to search from (q is the #DOFs of the arm)
+            joint_limit_margin, float - minimal distance from joint limits
             further key word arguments:
                 tolerances for ik solver (in target pose frame): bx, by, bz, brx, bry, brz - defaults to small values (only supported with trac_ik)
             -------
@@ -180,7 +182,7 @@ class IKSolver(object):
                     if sol is not None:
                         np_sol = np.array(sol)
                         in_limits = np.logical_and.reduce(np.logical_and(
-                            np_sol >= self._lower_limits, np_sol <= self._upper_limits))
+                            np_sol >= self._lower_limits + joint_limit_margin, np_sol <= self._upper_limits - joint_limit_margin))
                         if in_limits:
                             # with self._robot:
                             self._robot.SetDOFValues(np_sol, dofindices=self._arm_indices)
