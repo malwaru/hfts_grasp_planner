@@ -2,6 +2,7 @@ import rospy
 import numpy as np
 import openravepy as orpy
 import hfts_grasp_planner.utils as hfts_utils
+import time
 import random
 
 
@@ -161,9 +162,14 @@ class AnyTimePlacementPlanner(object):
         This class implements an integrated anytime placement planner.
         This algorithm combines a PlacementGoalSampler as defined in goal_sampler.interfaces
         with an OMPL motion planner.
+        Parameters:
+            num_goal_samples, int  - number of goal samples to query for in every iteration
+            num_goal_iterations, int  - max number of iterations the goal sampler can run in each iteration
+            vel_scale, float - percentage of max velocity
+            mp_timeout, float - computation time each motion planner has in each iteration
     """
 
-    def __init__(self, goal_sampler, manips, mplanner=None, **kwargs):
+    def __init__(self, goal_sampler, manips, mplanner=None, stats_recorder=None, **kwargs):
         """
             Create a new AnyTimePlacementPlanner.
             ---------
@@ -192,15 +198,16 @@ class AnyTimePlacementPlanner(object):
         self._robot = manips[0].GetRobot()
         self.set_parameters(**kwargs)
         self.solutions = []
+        self._stats_recorder = stats_recorder
 
-    def plan(self, max_iter, target_object):
+    def plan(self, timeout, target_object):
         """
             Plan a new solution to a placement. The algorithm plans from the current robot configuration.
             The target volume etc. need to be specified on the goal sampler directly.
             ---------
             Arguments
             ---------
-            max_iter, int - maximum number of iterations to run
+            timeout, float - maximum clock time
             target_object, OpenRAVE Kinbody - the target object to plan the placement for
             # TODO pass terminal condition to let the outside decide when to terminate, i.e. real anytime
             -------
@@ -218,7 +225,9 @@ class AnyTimePlacementPlanner(object):
         for _, planner in self._motion_planners.iteritems():
             planner.setup(grasped_obj=target_object, time_limit=self._params["mp_timeout"])
         # repeatedly query new goals, and plan motions
-        for iter_idx in xrange(max_iter):
+        start_time = time.clock()
+        iter_idx = 0
+        while time.clock() - start_time < timeout:
             rospy.logdebug("Running iteration %i" % iter_idx)
             connected_goals = []  # store goals that we manage to connect to in this iteration
             rospy.logdebug("Sampling %i new goals" % num_goal_samples)
@@ -248,8 +257,11 @@ class AnyTimePlacementPlanner(object):
                             rospy.logdebug("Found new solution - it has objective value %f" %
                                            best_solution[1].objective_value)
                             connected_goals.append(reached_goal)
+                            if self._stats_recorder:
+                                self._stats_recorder.register_new_solution(reached_goal)
             # lastly, inform goal sampler about the goals we reached this round
             self.goal_sampler.set_reached_goals(connected_goals)
+            iter_idx += 1
         if best_solution is not None:
             planner = self._motion_planners[best_solution[1].manip.GetName()]
             planner.simplify(best_solution[0], best_solution[1])
@@ -346,25 +358,32 @@ class DummyPlanner(object):
         Subsequently, the goal sampler is informed about this and queried again.
     """
 
-    def __init__(self, goal_sampler):
+    def __init__(self, goal_sampler, num_goal_samples=10, num_goal_iterations=10, stats_recorder=None):
+        """
+            num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
+            num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
+        """
         self._goal_sampler = goal_sampler
+        self._stats_recorder = stats_recorder
+        self.num_goal_samples = num_goal_samples
+        self.num_goal_iterations = num_goal_iterations
 
-    def plan(self, max_iter, num_goal_samples=10, num_goal_trials=100):
+    def plan(self, timeout, target_object):
         """
             Run pseudo planning.
             ---------
             Arguments
             ---------
-            max_iter, int - number of iterations
-            num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
-            num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
+            timeout, float - maximum clock time
+            target_object, Kinbody - body to place
         """
         objectives = []
         solutions = []
         goal_set = {}
         best_solution = None
-        for _ in range(max_iter):
-            new_goals, _ = self._goal_sampler.sample(num_goal_samples, num_goal_trials, True)
+        start_time = time.clock()
+        while time.clock() - start_time < timeout:
+            new_goals, _ = self._goal_sampler.sample(self.num_goal_samples, self.num_goal_iterations, True)
             self._check_objective_invariant(new_goals, best_solution)
             goal_set = self._merge_goal_sets(goal_set, new_goals)
             if len(goal_set) > 0:
@@ -378,6 +397,9 @@ class DummyPlanner(object):
                     best_solution = selected_goal
                     objectives.append(best_solution.objective_value)
                     solutions.append(best_solution)
+                    if self._stats_recorder:
+                        self._stats_recorder.register_new_solution(selected_goal)
+
         return objectives, solutions
 
     def _check_objective_invariant(self, goals, best_sol):

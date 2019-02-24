@@ -1180,36 +1180,36 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             lower, upper = manip_data.lower_limits + self.joint_limit_margin, manip_data.upper_limits - self.joint_limit_margin
             manip = manip_data.manip
             arm_configs = []
-            # with self.robot:
-            # with self.object_data.kinbody:
-            utils.set_grasp(manip, self.object_data.kinbody, 
-                            manip_data.inv_grasp_tf, manip_data.grasp_config)
-            reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
-            manip.SetLocalToolTransform(reference_pose)
-            self.robot.SetActiveDOFs(manip.GetArmIndices())
-            # init jacobian descent
-            q_current = cache_entry.solution.arm_config
-            # iterate as long as the gradient is not None, zero or we are in collision or out of joint limits
-            # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
-            for _ in xrange(self.max_iterations):
-                in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                if in_limits:
-                    q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                    grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
-                    if q_grad is None or grad_norm < self.grad_epsilon:
-                        break
-                    arm_configs.append(np.array(q_current))
-                    q_current -= self.step_size * q_grad / grad_norm  # update q_current
-                else:
-                    break
-            manip.SetLocalToolTransform(np.eye(4))
-            manip.GetRobot().Release(self.object_data.kinbody)
-            if len(arm_configs) > 1:  # first element is start configuration
-                self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
-                return arm_configs[1:]
-            assert(len(arm_configs) > 0)
-            self._set_cache_entry_values(cache_entry, arm_configs[0], manip_data)
-            return []  # else return empty array
+            with self.robot:
+                with self.object_data.kinbody:
+                    utils.set_grasp(manip, self.object_data.kinbody, 
+                                    manip_data.inv_grasp_tf, manip_data.grasp_config)
+                    reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+                    manip.SetLocalToolTransform(reference_pose)
+                    self.robot.SetActiveDOFs(manip.GetArmIndices())
+                    # init jacobian descent
+                    q_current = cache_entry.solution.arm_config
+                    # iterate as long as the gradient is not None, zero or we are in collision or out of joint limits
+                    # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+                    for _ in xrange(self.max_iterations):
+                        in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                        if in_limits:
+                            q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                            grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
+                            if q_grad is None or grad_norm < self.grad_epsilon:
+                                break
+                            arm_configs.append(np.array(q_current))
+                            q_current -= self.step_size * q_grad / grad_norm  # update q_current
+                        else:
+                            break
+                    manip.SetLocalToolTransform(np.eye(4))
+                    manip.GetRobot().Release(self.object_data.kinbody)
+                    if len(arm_configs) > 1:  # first element is start configuration
+                        self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
+                        return arm_configs[1:]
+                    assert(len(arm_configs) > 0)
+                    self._set_cache_entry_values(cache_entry, arm_configs[0], manip_data)
+                    return []  # else return empty array
 
         def _set_cache_entry_values(self, cache_entry, q, manip_data):
             manip = manip_data.manip
@@ -1291,7 +1291,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             feasible solutions.
         """
 
-        def __init__(self, contact_constraint, collision_constraint, objective_constraint, robot_data,
+        def __init__(self, contact_constraint, collision_constraint, objective_constraint, robot_data, object_data,
                      grad_epsilon=0.01, step_size=0.01, max_iterations=100, joint_limit_margin=1e-4, val_epsilon=1e-4,
                      momentum=0.4):
             """
@@ -1302,6 +1302,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 contact_constraint, ContactConstraint
                 collision_constraint, CollisionConstraint
                 objective_constraint, ObjectiveConstraint TODO
+                robot_data, RobotData
+                object_data, ObjectData
                 grad_epsilon, float - minimal magnitude of cspace gradient
                 step_size, float - multiplier for update step
                 max_iterations, int - maximal number of iterations
@@ -1313,6 +1315,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.collision_constraint = collision_constraint
             self.objective_constraint = objective_constraint
             self.robot_data = robot_data
+            self.object_data = object_data
             self.manip_data = robot_data.manip_data
             self.robot = robot_data.robot
             self.grad_epsilon = grad_epsilon  # minimal magnitude of cspace gradient
@@ -1341,59 +1344,61 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 cache_entry.region_pose
             """
             # rospy.logdebug("Running JacobianOptimizer to make solution feasible")
-            q_original = self.robot.GetDOFValues()  # TODO remove
+            # q_original = self.robot.GetDOFValues()  # TODO remove
             manip_data = self.manip_data[cache_entry.solution.manip.GetName()]
             lower, upper = manip_data.lower_limits + self.joint_limit_margin, manip_data.upper_limits - self.joint_limit_margin
             manip = manip_data.manip
-            # with self.robot:
-            reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
-            manip.SetLocalToolTransform(reference_pose)
-            self.robot.SetActiveDOFs(manip.GetArmIndices())
-            self.robot.SetDOFValues(manip_data.grasp_config, manip.GetGripperIndices())
-            # init jacobian descent
-            q_current = cache_entry.solution.arm_config
-            q_best = np.array(q_current)
-            # compute jacobian
-            cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-            if q_grad is not None:
-                grad_norm = np.linalg.norm(q_grad)
-            else:
-                grad_norm = 0.0
-            b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-            best_cval = cval
-            # iterate as long as the gradient is not zero and we are not beyond limits
-            # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
-            for i in xrange(self.max_iterations):
-                if q_grad is None or grad_norm < self.grad_epsilon or not b_in_limits or cval < self.val_epsilon:
-                    break
-                # rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
-                            #    (str(q_current), str(q_grad), grad_norm))
-                q_current -= self.step_size * q_grad / grad_norm  # update q_current
-                if np.isnan(q_current).any():
-                    rospy.logerr("Encountered nan value in projection function! Debug!!!")
-                    import IPython
-                    IPython.embed()
-                b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                if b_in_limits:
-                    # compute gradient at this position + constraint violation
+            with self.robot:
+                with self.object_data.kinbody:
+                    reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+                    manip.SetLocalToolTransform(reference_pose)
+                    self.robot.SetActiveDOFs(manip.GetArmIndices())
+                    self.robot.SetDOFValues(manip_data.grasp_config, manip.GetGripperIndices())
+                    # init jacobian descent
+                    q_current = cache_entry.solution.arm_config
+                    q_best = np.array(q_current)
+                    # compute jacobian
                     cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                    if cval < best_cval:  # is constraint violation less?
-                        q_best[:] = q_current  # then save q_current
-                        best_cval = cval
-                    if q_grad is not None:  # do we have a gradient?
+                    if q_grad is not None:
                         grad_norm = np.linalg.norm(q_grad)
                     else:
-                        break
-                # else:
-                    # rospy.logdebug("Jacobian descent has led to joint limit violation. Aborting")
-            # rospy.logdebug("Jacobian descent finished after %i iterations" % i)
-            # set q_best as arm config in solution
-            self._set_cache_entry_values(cache_entry, q_best, manip_data)
-            manip.SetLocalToolTransform(np.eye(4))
+                        grad_norm = 0.0
+                    b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                    best_cval = cval
+                    # iterate as long as the gradient is not zero and we are not beyond limits
+                    # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+                    for i in xrange(self.max_iterations):
+                        if q_grad is None or grad_norm < self.grad_epsilon or not b_in_limits or cval < self.val_epsilon:
+                            break
+                        # rospy.logdebug("Updating q_current %s in direction of gradient %s (magnitude %f)" %
+                                    #    (str(q_current), str(q_grad), grad_norm))
+                        q_current -= self.step_size * q_grad / grad_norm  # update q_current
+                        b_in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                        if np.isnan(q_current).any():
+                            rospy.logerr("Encountered nan value in projection function! Debug this!!!")
+                            b_in_limits = False
+                            # import IPython
+                            # IPython.embed()
+                        if b_in_limits:
+                            # compute gradient at this position + constraint violation
+                            cval, q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
+                            if cval < best_cval:  # is constraint violation less?
+                                q_best[:] = q_current  # then save q_current
+                                best_cval = cval
+                            if q_grad is not None:  # do we have a gradient?
+                                grad_norm = np.linalg.norm(q_grad)
+                            else:
+                                break
+                        # else:
+                            # rospy.logdebug("Jacobian descent has led to joint limit violation. Aborting")
+                    # rospy.logdebug("Jacobian descent finished after %i iterations" % i)
+                    # set q_best as arm config in solution
+                    self._set_cache_entry_values(cache_entry, q_best, manip_data)
+                    manip.SetLocalToolTransform(np.eye(4))
             self._last_cart_grad = None
-            self.robot.SetActiveDOFValues(cache_entry.solution.arm_config)  # TODO remove
-            self.robot.SetDOFValues(q_original)  # TODO remove
-            self.robot_data.ball_approx.hide_balls()  # TODO remove
+            # self.robot.SetActiveDOFValues(cache_entry.solution.arm_config)  # TODO remove
+            # self.robot.SetDOFValues(q_original)  # TODO remove
+            # self.robot_data.ball_approx.hide_balls()  # TODO remove
 
         def _set_cache_entry_values(self, cache_entry, q, manip_data):
             manip = manip_data.manip
@@ -1423,10 +1428,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # with self.robot:
             self.robot.SetActiveDOFValues(q_current)
             self._set_cache_entry_values(cache_entry, q_current, manip_data)
-            # TODO delete
-            target_obj = self.robot.GetEnv().GetKinBody("target_object")
+            target_obj = self.object_data.kinbody
             target_obj.SetTransform(cache_entry.solution.obj_tf)
-            # TODO until here
             # violation value
             violation_value = 0.0
             # compute jacobian
@@ -1539,7 +1542,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         self._init_ik_solvers()
         self._jacobian_projection = ARPORobotBridge.JacobianProjection(self._contact_constraint,
                                                                        self._collision_constraint,
-                                                                       self._objective_constraint, self._robot_data,
+                                                                       self._objective_constraint,
+                                                                       self._robot_data, self._object_data,
                                                                        joint_limit_margin=parameters["joint_limit_margin"])
         self._jacobian_optimizer = ARPORobotBridge.JacobianOptimizer(self._contact_constraint,
                                                                      self._collision_constraint,

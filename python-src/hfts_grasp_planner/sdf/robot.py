@@ -89,6 +89,14 @@ class RobotOccupancyGrid(object):
         for link_name, grid in self._occupancy_grids.iteritems():
             grid.save(base_file_name + '.' + link_name)
 
+    def setup_cuda_sdf_access(self, scene_sdf):
+        """
+            Configures this class to be able to make use of Cuda accelerated value retrieval from the given
+            scene sdf. This class can always only be used with at most one SceneSDF at a time in combination with Cuda.
+        """
+        for grid in self._occupancy_grids:
+            grid.setup_cuda_sdf_access(scene_sdf)
+
     def compute_intersection(self, robot_pose, robot_config, scene_sdf, links=None):
         """
             Computes the intersection between the occupancy grids of the robot's links
@@ -617,8 +625,8 @@ class RobotBallApproximation(object):
             total_value /= num_colliding_balls
             gradient /= num_colliding_balls
             # self.visualize_balls()
-        else:
-            self.hide_balls()
+        # else:
+        #     self.hide_balls()
         return total_value, gradient
 
     def visualize_balls(self):

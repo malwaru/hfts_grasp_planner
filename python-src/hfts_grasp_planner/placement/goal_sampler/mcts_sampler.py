@@ -101,7 +101,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self.num_valid_constr = 0
 
     def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, parameters=None,
-                 debug_visualizer=None):
+                 debug_visualizer=None, stats_recorder=None):
         """
             Create new MCTS Sampler.
             ---------
@@ -114,6 +114,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             manip_names, list of string - manipulator names
             parameters(optional), dict - dictionary of parameters, see class description
             debug_visualizer(optional), mcts_visualization.MCTSVisualizer - visualizer for MCTS hierarchy
+            stats_recorder(optional), statsrecording.GoalSamplingStatsRecorder - stats recorder
         """
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
@@ -133,6 +134,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._best_reached_goal = None
         if self._debug_visualizer:
             self._debug_visualizer.add_node(self._root_node)
+        self._stats_recorder = stats_recorder
 
     def sample(self, num_solutions, max_attempts, b_improve_objective=True):
         """
@@ -415,5 +417,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self._debug_visualizer.render(bupdate_data=True)
         if new_solution is not None:
             solutions[new_solution.manip.GetName()].append(new_solution)
+            if self._stats_recorder is not None:
+                self._stats_recorder.register_new_goal(new_solution)
             return 1
         return 0

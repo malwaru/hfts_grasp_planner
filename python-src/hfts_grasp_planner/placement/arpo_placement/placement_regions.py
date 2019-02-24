@@ -90,6 +90,14 @@ class PlanarPlacementRegion(object):
         self.aabb_dist_gradient_field.vectors[0] = grad_x.reshape(shape)
         self.aabb_dist_gradient_field.vectors[1] = grad_y.reshape(shape)
 
+    def clear_subregions(self):
+        """
+            Reset any prior computation done to create subregions. After
+            calling this function, this region will behave exactly the same way as if it had just been
+            created.
+        """
+        self._subregions = None
+
     def get_subregions(self):
         """
             Return a list of subregions of this region.

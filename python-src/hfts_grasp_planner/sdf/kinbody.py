@@ -499,7 +499,7 @@ class RigidBodyOccupancyGrid(object):
     def setup_cuda_grid_access(self, grid):
         """
             Configures this class to be able to make use of Cuda accelerated value
-            retrieval from the given grid. 
+            retrieval from the given grid.
             ---------
             Arguments
             ---------

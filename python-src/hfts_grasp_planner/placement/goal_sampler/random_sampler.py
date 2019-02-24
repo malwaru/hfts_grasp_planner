@@ -10,7 +10,7 @@ import hfts_grasp_planner.utils as utils
 
 class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
     def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, b_go_to_leaf,
-                 b_optimize_constraints, p_descend=0.5):
+                 b_optimize_constraints, p_descend=0.5, stats_recorder=None):
         """
             Create a new RandomPlacementSampler.
             ---------
@@ -27,7 +27,7 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             b_optimize_constraints, bool - If True, tell solution constructor to use projection function to increase the
                 chance to hit a valid solution
             p_descend, float - probability to descend if b_go_to_leaf is False
-
+            stats_recorder(optional), statsrecording.GoalSamplingStatsRecorder - recorder for stats
         """
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
@@ -38,6 +38,7 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._b_go_to_leaf = b_go_to_leaf
         self._boptimize_constraints = b_optimize_constraints
         self._p_descend = p_descend
+        self._stats_recorder = stats_recorder
 
     def sample(self, num_solutions, max_attempts, b_improve_objective=True):
         """
@@ -79,7 +80,10 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 solution.objective_value = self._objective.evaluate(solution)
                 solutions[solution.manip.GetName()].append(solution)
                 num_found_solutions += 1
-        rospy.logdebug("Random sampler made %i attempts to sample %i solutions" % (num_attempts, num_found_solutions))
+                if self._stats_recorder is not None:
+                    self._stats_recorder.register_new_goal(solution)
+        rospy.logdebug("Random sampler made %i attempts to sample %i solutions" %
+                       (num_attempts + 1, num_found_solutions))
         return solutions, num_found_solutions
 
     def set_reached_goals(self, goals):
@@ -90,17 +94,18 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             ---------
             goals, list of PlacementGoals
         """
-        if self._best_reached_goal is not None:
-            ovals = np.empty(len(goals) + 1)
-            ovals[0] = self._best_reached_goal.objective_value
-            ovals[1:] = [g.objective_value for g in goals]
-            best_idx = np.argmax(ovals)
-            if best_idx != 0:
-                self._best_reached_goal = goals[best_idx - 1]
-        else:
-            ovals = np.array([g.objective_value for g in goals])
-            best_idx = np.argmax(ovals)
-            self._best_reached_goal = goals[best_idx]
+        if len(goals) > 0:
+            if self._best_reached_goal is not None:
+                ovals = np.empty(len(goals) + 1)
+                ovals[0] = self._best_reached_goal.objective_value
+                ovals[1:] = [g.objective_value for g in goals]
+                best_idx = np.argmax(ovals)
+                if best_idx != 0:
+                    self._best_reached_goal = goals[best_idx - 1]
+            else:
+                ovals = np.array([g.objective_value for g in goals])
+                best_idx = np.argmax(ovals)
+                self._best_reached_goal = goals[best_idx]
 
     def set_reached_configurations(self, manip, configs):
         """
