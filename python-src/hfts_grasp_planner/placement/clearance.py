@@ -44,9 +44,15 @@ def compute_clearance_map(occ_grid, buse_cuda=True):
     an_arr = np.empty_like(clrm_data)
     clearance_utils.compute_df(inv_occ_data, adj_mask, an_arr)
     clrm_data = an_arr * occ_grid.get_cell_size()
+    # max_distance = np.min(np.array(occ_data.shape[:2]) * occ_grid.get_cell_size()) / 2.0  # TODO what to set here?
+    # clrm_data[clrm_data == np.inf] = max_distance
+    # fix infinite distances by copying bottom layers up
+    for z in range(1, clrm_data.shape[2]):
+        inf_vals = clrm_data[:, :, z] == np.inf
+        if (inf_vals).any():
+            assert(inf_vals.all())
+            clrm_data[:, :, z] = clrm_data[:, :, z - 1]
     clearance_map.set_raw_data(clrm_data)
-    max_distance = np.min(np.array(occ_data.shape[:2]) * occ_grid.get_cell_size()) / 2.0  # TODO what to set here?
-    clrm_data[clrm_data == np.inf] = max_distance
     return clearance_map
 
     #     # run over each layer
