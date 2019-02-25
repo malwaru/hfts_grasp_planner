@@ -1209,8 +1209,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                     if len(arm_configs) > 1:  # first element is start configuration
                         self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
                         return arm_configs[1:]
-                    assert(len(arm_configs) > 0)
-                    self._set_cache_entry_values(cache_entry, arm_configs[0], manip_data)
+                    # we failed in the first iteration, just set it back to what we started from
+                    self._set_cache_entry_values(cache_entry, cache_entry.solution.arm_config, manip_data)
                     return []  # else return empty array
 
         def _set_cache_entry_values(self, cache_entry, q, manip_data):

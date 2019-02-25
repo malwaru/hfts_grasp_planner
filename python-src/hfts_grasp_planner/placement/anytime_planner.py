@@ -94,6 +94,7 @@ class RedirectableOMPLPlanner:
                     # grasp object first
                     hfts_utils.set_grasp(self._manip, self._grasped_obj, inv_grasp_tf, grasp_config)
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
+                    rospy.logdebug("Querying motion planner with %i goals" % goals.shape[0])
                     if not self._bplanner_initialized or not self._supports_goal_reset():
                         self._params.SetGoalConfig(goals.flat)
                         self._ompl_planner.InitPlan(self._robot, self._params)
@@ -207,7 +208,7 @@ class AnyTimePlacementPlanner(object):
             ---------
             Arguments
             ---------
-            timeout, float - maximum clock time
+            timeout, float - maximum time
             target_object, OpenRAVE Kinbody - the target object to plan the placement for
             # TODO pass terminal condition to let the outside decide when to terminate, i.e. real anytime
             -------
@@ -225,9 +226,9 @@ class AnyTimePlacementPlanner(object):
         for _, planner in self._motion_planners.iteritems():
             planner.setup(grasped_obj=target_object, time_limit=self._params["mp_timeout"])
         # repeatedly query new goals, and plan motions
-        start_time = time.clock()
+        start_time = time.time()
         iter_idx = 0
-        while time.clock() - start_time < timeout:
+        while time.time() - start_time < timeout:
             rospy.logdebug("Running iteration %i" % iter_idx)
             connected_goals = []  # store goals that we manage to connect to in this iteration
             rospy.logdebug("Sampling %i new goals" % num_goal_samples)
@@ -251,14 +252,17 @@ class AnyTimePlacementPlanner(object):
                             # by invariant a newly reached goal should always have better objective
                             assert(best_solution is None or
                                    best_solution[1].objective_value < reached_goal.objective_value)
-                            traj, reached_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
-                            self.solutions.append((traj, reached_goal))
-                            best_solution = (traj, reached_goal)
+                            traj, improved_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
+                            self.solutions.append((traj, improved_goal))
+                            best_solution = (traj, improved_goal)
                             rospy.logdebug("Found new solution - it has objective value %f" %
                                            best_solution[1].objective_value)
-                            connected_goals.append(reached_goal)
+                            connected_goals.append(improved_goal)
                             if self._stats_recorder:
+                                # record both reached and improved goal (before and after local optimization)
                                 self._stats_recorder.register_new_solution(reached_goal)
+                                if reached_goal != improved_goal:
+                                    self._stats_recorder.register_new_solution(improved_goal)
             # lastly, inform goal sampler about the goals we reached this round
             self.goal_sampler.set_reached_goals(connected_goals)
             iter_idx += 1
@@ -374,15 +378,15 @@ class DummyPlanner(object):
             ---------
             Arguments
             ---------
-            timeout, float - maximum clock time
+            timeout, float - maximum time
             target_object, Kinbody - body to place
         """
         objectives = []
         solutions = []
         goal_set = {}
         best_solution = None
-        start_time = time.clock()
-        while time.clock() - start_time < timeout:
+        start_time = time.time()
+        while time.time() - start_time < timeout:
             new_goals, _ = self._goal_sampler.sample(self.num_goal_samples, self.num_goal_iterations, True)
             self._check_objective_invariant(new_goals, best_solution)
             goal_set = self._merge_goal_sets(goal_set, new_goals)

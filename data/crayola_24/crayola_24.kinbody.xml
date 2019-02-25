@@ -1,0 +1,13 @@
+<KinBody name="crayola_24">
+    <Body type="dynamic">
+        <!-- <mass type="custom">
+            <total>0.1</total>
+            <com>0 -0.065 0</com>
+        </mass> -->
+        <Geom type="trimesh">
+            <Data>crayola_24_ct.obj</Data>
+            <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+            <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+        </Geom>
+    </Body>
+</KinBody>

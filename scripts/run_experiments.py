@@ -4,18 +4,9 @@ import yaml
 import argparse
 import subprocess
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run placement experiments specified by a list of yaml files")
-    parser.add_argument('yaml_template', type=str, help='Path to a folder containing problem definition templates')
-    # parser.add_argument('options', type=str, help='Path to a yaml file containing parameter options')
-    parser.add_argument('num_runs', type=int, help='Number of runs for each problem')
-    args = parser.parse_args()
-    test_script_path = os.path.abspath(os.path.dirname(__file__)) + "/test_scripts/test_placement2.py"
-    # first read options file
-    # with open(args.options, 'r') as options_file:
-    #     options = yaml.load(options_file)
-    weights = [(0.1, 0.3, 0.3, 0.3), (0.2, 0.2, 0.4, 0.2), (0.25, 0.25, 0.25, 0.25)]
+
+def parameter_tuning_exp(args, test_script_path):
+    weights = [(0.1, 0.3, 0.3, 0.3), (0.2, 0.2, 0.4, 0.2)]
     relax_types = ['sub-binary', 'continuous']
     bodies = ['crayola']
     cs = [0.5, 0.8, 1.0]
@@ -26,22 +17,22 @@ if __name__ == "__main__":
     yaml_instance_filename = yaml_folder + '/yaml_instance.yaml'
     command_list = ["python", test_script_path, yaml_instance_filename, '--num_runs', str(args.num_runs)]
     # run experiments for binary
-    for body in bodies:
-        for c in cs:
-            yaml_instance = yaml_template.replace('<BODY_NAME>', body)
-            yaml_instance = yaml_instance.replace('<RELAX_TYPE>', 'binary')
-            yaml_instance = yaml_instance.replace('<ARM_WEIGHT>', '0.1')
-            yaml_instance = yaml_instance.replace('<OBJ_COL_WEIGHT>', '0.3')
-            yaml_instance = yaml_instance.replace('<CONTACT_WEIGHT>', '0.3')
-            yaml_instance = yaml_instance.replace('<OBJ_WEIGHT>', '0.3')
-            yaml_instance = yaml_instance.replace('<C>', str(c))
-            exp_id = 'binary_' + str(c)
-            yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
-            # dump yaml into same folder as template (because of grasps etc)
-            with open(yaml_instance_filename, 'w') as tmp_yaml_file:
-                tmp_yaml_file.write(yaml_instance)
-            # print "Fake call %s" % str(command_list)
-            subprocess.call(command_list)
+    # for body in bodies:
+    #     for c in cs:
+    #         yaml_instance = yaml_template.replace('<BODY_NAME>', body)
+    #         yaml_instance = yaml_instance.replace('<RELAX_TYPE>', 'binary')
+    #         yaml_instance = yaml_instance.replace('<ARM_WEIGHT>', '0.1')
+    #         yaml_instance = yaml_instance.replace('<OBJ_COL_WEIGHT>', '0.3')
+    #         yaml_instance = yaml_instance.replace('<CONTACT_WEIGHT>', '0.3')
+    #         yaml_instance = yaml_instance.replace('<OBJ_WEIGHT>', '0.3')
+    #         yaml_instance = yaml_instance.replace('<C>', str(c))
+    #         exp_id = 'binary_' + str(c)
+    #         yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+    #         # dump yaml into same folder as template (because of grasps etc)
+    #         with open(yaml_instance_filename, 'w') as tmp_yaml_file:
+    #             tmp_yaml_file.write(yaml_instance)
+    #         # print "Fake call %s" % str(command_list)
+    #         subprocess.call(command_list)
     # run experiments for other relaxation types
     for body in bodies:
         for relax in relax_types:
@@ -54,10 +45,71 @@ if __name__ == "__main__":
                     yaml_instance = yaml_instance.replace('<CONTACT_WEIGHT>', str(ws[2]))
                     yaml_instance = yaml_instance.replace('<OBJ_WEIGHT>', str(ws[3]))
                     yaml_instance = yaml_instance.replace('<C>', str(c))
-                    exp_id = relax + '_' + str(c)
+                    exp_id = relax + '_' + str(ws) + '_' + str(c)
                     yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
                     # dump yaml into same folder as template (because of grasps etc)
                     with open(yaml_instance_filename, 'w') as tmp_yaml_file:
                         tmp_yaml_file.write(yaml_instance)
                     # print "Fake call %s" % str(command_list)
                     subprocess.call(command_list)
+
+
+# IROS_BODIES = ['crayola', 'crayola_24', 'wine_glass', 'scaled_table']
+# IROS_ENVS = ['cabinet_low_clutter', 'cabinet_high_clutter', 'table_low_clutter', 'table_high_clutter']
+IROS_BODIES = ['crayola',  'wine_glass']
+IROS_ENVS = ['cabinet_high_clutter', 'table_low_clutter']
+PLCMNT_VOLUMES = {
+    'cabinet_low_clutter': '[-0.4, 0.45, 0.25, 0.53, 0.87, 0.54]',
+    'cabinet_high_clutter': '[-0.4, 0.45, 0.25, 0.53, 0.87, 0.54]',
+    'table_low_clutter': '[-0.4, 0.29, 0.0, 0.40, 0.78, 0.2]',
+    'table_high_clutter': '[-0.4, 0.29, 0.0, 0.40, 0.78, 0.2]',
+}
+
+
+def iros_exp_baselines(yaml_template):
+    sampler_types = ['random', 'random_afr', 'conservative_random', 'optimistic_random']
+    objectives = ['True', 'False']
+
+    def yaml_gen():
+        # run experiments for other relaxation types
+        for objective in objectives:
+            for env in IROS_ENVS:
+                for body in IROS_BODIES:
+                    for stype in sampler_types:
+                        yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+                        yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
+                        yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+                        yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+                        yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
+                        exp_id = stype
+                        yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+                        yield yaml_instance
+    num_batches = len(sampler_types) * len(IROS_ENVS) * len(IROS_BODIES) * len(objectives)
+    return yaml_gen(), num_batches
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Run placement experiments specified by a list of yaml files")
+    parser.add_argument('yaml_template', type=str, help='Path to a folder containing problem definition templates')
+    # parser.add_argument('options', type=str, help='Path to a yaml file containing parameter options')
+    parser.add_argument('num_runs', type=int, help='Number of runs for each problem')
+    args = parser.parse_args()
+    test_script_path = os.path.abspath(os.path.dirname(__file__)) + "/test_scripts/test_placement2.py"
+    # read template
+    with open(args.yaml_template) as template_file:
+        yaml_template = template_file.read()
+    yaml_folder = os.path.abspath(os.path.dirname(args.yaml_template))
+    yaml_instance_filename = yaml_folder + '/yaml_instance.yaml'
+    command_list = ["python", test_script_path, yaml_instance_filename, '--num_runs', str(args.num_runs)]
+    yaml_gen, num_batches = iros_exp_baselines(yaml_template)
+    for batch_id in xrange(num_batches):
+        try:
+            yaml_instance = yaml_gen.next()
+            with open(yaml_instance_filename, 'w') as tmp_yaml_file:
+                tmp_yaml_file.write(yaml_instance)
+            print "Running batch %i/%i" % (batch_id + 1, num_batches)
+            subprocess.call(command_list)
+        except StopIteration:
+            break
+    print "Experiments finished"
