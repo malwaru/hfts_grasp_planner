@@ -653,14 +653,16 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # TODO I.e. the height variance is larger than the cell size
             # assert((values != float('inf')).all())
             if (values == float('inf')).any():
-                rospy.logwarn("[ContactConstraint] Invalid object pose detected - Projecting to reference point!")
-                contact_points[:, 2] = cache_entry.region_pose[2, 3]
-                values = self._contact_point_distances.get_cell_values_pos(contact_points)
-                assert((values != None).all())
-                if (values == float('inf')).any():
-                    rospy.logerr("[ContactConstraint] 'inf' values encountered after projection! DEBUG!")
-                    import IPython
-                    IPython.embed()
+                rospy.logwarn("[ContactConstraint] Invalid object pose detected - Returning 0.0!")
+                return 0.0
+                # rospy.logwarn("[ContactConstraint] Invalid object pose detected - Projecting to reference point!")
+                # contact_points[:, 2] = cache_entry.region_pose[2, 3]
+                # values = self._contact_point_distances.get_cell_values_pos(contact_points)
+                # assert((values != None).all())
+                # if (values == float('inf')).any():
+                #     rospy.logerr("[ContactConstraint] 'inf' values encountered after projection! DEBUG!")
+                #     import IPython
+                #     IPython.embed()
             # get max distance. Clip it because the signed distance field isn't perfectly accurate
             max_distance = np.clip(np.max(values), 0.0, po.max_contact_pair_distance)
             return 1.0 - max_distance / po.max_contact_pair_distance
