@@ -86,6 +86,7 @@ class PlacementMotionStatsRecorder(object):
     """
         For the overall algorithm, it records the following information whenever a new solution was found:
             - runtime when it was found
+            - sample number
             - objective value
             - global pose (x, y, z, ex, ey, ez)
     """
@@ -101,7 +102,7 @@ class PlacementMotionStatsRecorder(object):
     def register_new_solution(self, sol):
         x, y, z = sol.obj_tf[:3, 3]
         ex, ey, ez = tf_mod.euler_from_matrix(sol.obj_tf)
-        self._stats.append((time.time() - self._start_time, sol.objective_value, x, y, z, ex, ey, ez))
+        self._stats.append((time.time() - self._start_time, sol.sample_num, sol.objective_value, x, y, z, ex, ey, ez))
 
     def save_stats(self, file_name):
         """
@@ -118,6 +119,6 @@ class PlacementMotionStatsRecorder(object):
             os.makedirs(dir_name)
         with open(file_name, 'w') as the_file:
             the_file.write(
-                'runtime,objective,x,y,z,ex,ey,ez\n')
+                'runtime,#samples,objective,x,y,z,ex,ey,ez\n')
             for stat in self._stats:
                 the_file.write(str(stat).replace('(', '').replace(')', '') + '\n')

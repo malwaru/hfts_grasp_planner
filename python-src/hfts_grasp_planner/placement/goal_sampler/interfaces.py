@@ -37,6 +37,7 @@ class PlacementGoalSampler(object):
             self.grasp_tf = grasp_tf
             self.grasp_config = grasp_config
             self.data = data
+            self.sample_num = 0
 
         def copy(self):
             """

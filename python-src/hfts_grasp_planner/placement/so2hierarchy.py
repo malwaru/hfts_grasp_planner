@@ -127,3 +127,11 @@ def is_leaf(key, depth):
         Return whether the given key is a leaf.
     """
     return len(key) >= depth
+
+
+def sample(so2interval):
+    """
+        Return a random sample from the given interval.
+    """
+    val = np.random.random()
+    return so2interval[0] + val * (so2interval[1] - so2interval[0])

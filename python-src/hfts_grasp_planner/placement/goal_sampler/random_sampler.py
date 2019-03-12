@@ -10,7 +10,7 @@ import hfts_grasp_planner.utils as utils
 
 class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
     def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, b_go_to_leaf,
-                 b_optimize_constraints, p_descend=0.5, stats_recorder=None):
+                 b_optimize_constraints, p_descend=0.5, stats_recorder=None, b_local_opt=True):
         """
             Create a new RandomPlacementSampler.
             ---------
@@ -28,6 +28,7 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 chance to hit a valid solution
             p_descend, float - probability to descend if b_go_to_leaf is False
             stats_recorder(optional), statsrecording.GoalSamplingStatsRecorder - recorder for stats
+            b_local_opt(optional), bool - if True, allows to perform local optimization when a solution has been reached, else not
         """
         self._hierarchy = hierarchy
         self._solution_constructor = solution_constructor
@@ -38,6 +39,7 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._b_go_to_leaf = b_go_to_leaf
         self._boptimize_constraints = b_optimize_constraints
         self._p_descend = p_descend
+        self._b_local_opt = b_local_opt
         self._stats_recorder = stats_recorder
 
     def sample(self, num_solutions, max_attempts, b_improve_objective=True):
@@ -134,8 +136,9 @@ class RandomPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             new_goal, PlacementGoal - the new goal that achieves a better objective than goal or goal
                 if improving objective failed
         """
-        new_goal, path = self._solution_constructor.locally_improve(goal)
-        if len(path) > 0:
-            traj = utils.extend_or_traj(traj, path)
-            return traj, new_goal
+        if self._b_local_opt:
+            new_goal, path = self._solution_constructor.locally_improve(goal)
+            if len(path) > 0:
+                traj = utils.extend_or_traj(traj, path)
+                return traj, new_goal
         return traj, goal

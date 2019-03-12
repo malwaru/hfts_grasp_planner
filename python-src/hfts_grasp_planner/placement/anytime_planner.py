@@ -284,6 +284,18 @@ class AnyTimePlacementPlanner(object):
             self._robot.SetDOFVelocityLimits(vel_limits)
         return traj
 
+    def get_solution(self, i, bsimplify=True):
+        """
+            Return the ith trajectory found. Optionally, simplify the solution.
+        """
+        if i >= len(self.solutions):
+            return None, None
+        if bsimplify:
+            planner = self._motion_planners[self.solutions[i][1].manip.GetName()]
+            planner.simplify(self.solutions[i][0], self.solutions[i][1])
+        self.time_traj(self.solutions[i][0])
+        return self.solutions[i]
+
     def _compute_planning_order(self, new_goals):
         """
             Compute an order in which to plan motions, given the newly produced goals.

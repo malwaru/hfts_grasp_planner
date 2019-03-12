@@ -98,6 +98,29 @@ class PlanarPlacementRegion(object):
         """
         self._subregions = None
 
+    def sample(self, b_local=False):
+        """
+            Return a random position within this region.
+            ---------
+            Arguments
+            ---------
+            b_local, bool - If True, return a pose in local frame, else global
+            -------
+            Returns
+            -------
+            pose, np.array shape (4, 4) - contact frame at a random position within this region
+        """
+        idx = np.random.randint(self.x_indices.shape[0])
+        lx = self.x_indices[idx] * self.cell_size
+        ly = self.y_indices[idx] * self.cell_size
+        if b_local:
+            random_tf = np.eye(4)
+            random_tf[:3, 3] = (lx, ly, 0.5 * self.cell_size)
+        else:
+            random_tf = np.array(self.base_tf)
+            random_tf[:3, 3] += np.dot(self.base_tf[:3, :3], np.array((lx, ly, 0.5 * self.cell_size)))
+        return random_tf
+
     def get_subregions(self):
         """
             Return a list of subregions of this region.

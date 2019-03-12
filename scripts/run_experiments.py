@@ -54,20 +54,26 @@ def parameter_tuning_exp(args, test_script_path):
                     subprocess.call(command_list)
 
 
-# IROS_BODIES = ['crayola', 'crayola_24', 'wine_glass', 'scaled_table']
-# IROS_ENVS = ['cabinet_low_clutter', 'cabinet_high_clutter', 'table_low_clutter', 'table_high_clutter']
-IROS_BODIES = ['crayola',  'wine_glass']
-IROS_ENVS = ['cabinet_high_clutter', 'table_low_clutter']
+IROS_BODIES = ['crayola', 'crayola_24', 'wine_glass', 'scaled_table']
+IROS_ENVS = ['cabinet_low_clutter', 'cabinet_high_clutter', 'table_high_clutter']
+# IROS_BODIES = ['crayola',  'wine_glass']
+# IROS_ENVS = ['cabinet_high_clutter', 'table_low_clutter']
+# IROS_ENVS = ['cabinet_high_clutter']
 PLCMNT_VOLUMES = {
     'cabinet_low_clutter': '[-0.4, 0.45, 0.25, 0.53, 0.87, 0.54]',
     'cabinet_high_clutter': '[-0.4, 0.45, 0.25, 0.53, 0.87, 0.54]',
     'table_low_clutter': '[-0.4, 0.29, 0.0, 0.40, 0.78, 0.2]',
     'table_high_clutter': '[-0.4, 0.29, 0.0, 0.40, 0.78, 0.2]',
 }
+C_VALS = {
+    'sub-binary': str(0.8),
+    'binary': str(0.5),
+}
 
 
 def iros_exp_baselines(yaml_template):
-    sampler_types = ['random', 'random_afr', 'conservative_random', 'optimistic_random']
+    # sampler_types = ['random', 'random_no_opt']
+    sampler_types = ['random_no_opt']
     objectives = ['True', 'False']
 
     def yaml_gen():
@@ -88,21 +94,118 @@ def iros_exp_baselines(yaml_template):
     return yaml_gen(), num_batches
 
 
+def iros_mcts_simple(yaml_template):
+    sampler_types = ['simple_mcts_sampler']
+    objectives = ['False', 'True']
+    relax_types = ['sub-binary']
+    # cs = [0.8]
+    cs = [0.5]
+
+    def yaml_gen():
+        for objective in objectives:
+            for env in IROS_ENVS:
+                for body in IROS_BODIES:
+                    for stype in sampler_types:
+                        for rtype in relax_types:
+                            for c in cs:
+                                yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+                                yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
+                                yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+                                yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+                                yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
+                                yaml_instance = yaml_instance.replace('<RELAX_TYPE>', rtype)
+                                yaml_instance = yaml_instance.replace('<C>', str(c))
+                                exp_id = stype + '_' + rtype + '_' + '_' + str(c)
+                                yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+                                yield yaml_instance
+    num_batches = len(sampler_types) * len(IROS_ENVS) * len(IROS_BODIES) * \
+        len(objectives) * len(relax_types) * len(cs)
+    return yaml_gen(), num_batches
+
+
+def iros_even_simpler_mcts(yaml_template):
+    sampler_types = ['simple_mcts_sampler']
+    # objectives = ['False', 'True']
+    objectives = ['True']
+    relax_types = ['sub-binary']
+    # cs = [0.8]
+    cs = [0.5]
+
+    def yaml_gen():
+        for objective in objectives:
+            for env in IROS_ENVS:
+                for body in IROS_BODIES:
+                    for stype in sampler_types:
+                        for rtype in relax_types:
+                            for c in cs:
+                                yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+                                yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
+                                yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+                                yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+                                yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
+                                yaml_instance = yaml_instance.replace('<RELAX_TYPE>', rtype)
+                                yaml_instance = yaml_instance.replace('<C>', str(c))
+                                exp_id = 'paper_mcts' + '_' + rtype + '_' + '_' + str(c)
+                                yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+                                yield yaml_instance
+    num_batches = len(sampler_types) * len(IROS_ENVS) * len(IROS_BODIES) * \
+        len(objectives) * len(relax_types) * len(cs)
+    return yaml_gen(), num_batches
+
+# def iros_mcts(yaml_template):
+#     sampler_types = ['mcts_sampler']
+#     objectives = ['False', 'True']
+#     relax_types = ['binary']
+#     # projection_type = ['None', 'ik', 'jac']
+#     projection_type = ['None']
+#     cs = [0.5, 0.8]
+
+#     def yaml_gen():
+#         for objective in objectives:
+#             for env in IROS_ENVS:
+#                 for body in IROS_BODIES:
+#                     for stype in sampler_types:
+#                         for rtype in relax_types:
+#                             for ptype in projection_type:
+#                                 for c in cs:
+#                                     yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+#                                     yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
+#                                     yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+#                                     yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+#                                     yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
+#                                     yaml_instance = yaml_instance.replace('<RELAX_TYPE>', rtype)
+#                                     yaml_instance = yaml_instance.replace('<C>', str(c))
+#                                     yaml_instance = yaml_instance.replace('<PROJ_TYPE>', ptype)
+#                                     exp_id = stype + '_' + rtype + '_' + ptype
+#                                     yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+#                                     yield yaml_instance
+#     num_batches = len(sampler_types) * len(IROS_ENVS) * len(IROS_BODIES) * \
+#         len(objectives) * len(relax_types) * len(projection_type) * len(cs)
+#     return yaml_gen(), num_batches
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run placement experiments specified by a list of yaml files")
     parser.add_argument('yaml_template', type=str, help='Path to a folder containing problem definition templates')
     # parser.add_argument('options', type=str, help='Path to a yaml file containing parameter options')
     parser.add_argument('num_runs', type=int, help='Number of runs for each problem')
+    parser.add_argument('id', type=int, help='Experiments id')
+    parser.add_argument('offset', type=int, help='Id offset')
     args = parser.parse_args()
     test_script_path = os.path.abspath(os.path.dirname(__file__)) + "/test_scripts/test_placement2.py"
     # read template
     with open(args.yaml_template) as template_file:
         yaml_template = template_file.read()
     yaml_folder = os.path.abspath(os.path.dirname(args.yaml_template))
-    yaml_instance_filename = yaml_folder + '/yaml_instance.yaml'
-    command_list = ["python", test_script_path, yaml_instance_filename, '--num_runs', str(args.num_runs)]
-    yaml_gen, num_batches = iros_exp_baselines(yaml_template)
+    yaml_instance_filename = yaml_folder + '/yaml_instance' + str(args.id) + '.yaml'
+    command_list = ["python", test_script_path, yaml_instance_filename,
+                    '--num_runs', str(args.num_runs), '--offset', str(args.offset)]
+    # yaml_gen, num_batches = iros_exp_baselines(yaml_template)
+    # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
+    # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
+    # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
+    yaml_gen, num_batches = iros_even_simpler_mcts(yaml_template)
     for batch_id in xrange(num_batches):
         try:
             yaml_instance = yaml_gen.next()

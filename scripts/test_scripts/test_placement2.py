@@ -9,7 +9,8 @@ import numpy as np
 import cProfile
 import openravepy as orpy
 # import hfts_grasp_planner.placement
-from hfts_grasp_planner.utils import is_dynamic_body, inverse_transform, get_manipulator_links, set_grasp
+from hfts_grasp_planner.utils import (is_dynamic_body, inverse_transform, get_manipulator_links,
+                                      set_grasp, set_body_color, set_body_alpha, get_tf_interpolation)
 import hfts_grasp_planner.sdf.grid as grid_module
 import hfts_grasp_planner.ik_solver as ik_module
 import hfts_grasp_planner.sdf.core as sdf_module
@@ -21,6 +22,7 @@ import hfts_grasp_planner.placement.arpo_placement.core as arpo_placement_mod
 import hfts_grasp_planner.placement.arpo_placement.statsrecording as statsrecording
 import hfts_grasp_planner.placement.goal_sampler.random_sampler as rnd_sampler_mod
 import hfts_grasp_planner.placement.goal_sampler.mcts_sampler as mcts_sampler_mod
+import hfts_grasp_planner.placement.goal_sampler.simple_mcts_sampler as simple_mcts_sampler_mod
 import hfts_grasp_planner.placement.goal_sampler.mcts_visualization as mcts_visualizer_mod
 import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
 import hfts_grasp_planner.placement.reachability as rmap_mod
@@ -118,16 +120,88 @@ def or_motion_planner(sol, manip_data, target_obj):
     robot.Release(target_obj)
 
 
+
+def camera_slide(viewer, goal_tf, duration, fps=25):
+    num_steps = duration * fps
+    for tf in get_tf_interpolation(viewer.GetCameraTransform(), goal_tf, num_steps):
+        viewer.SetCamera(tf)
+        time.sleep(1.0 / float(fps))
+
+
+def camera_slide_list(viewer, tfs, duration, delays=None, fps=25):
+    travel_dist = 0.0
+    dist_segments = []
+    last_tf = viewer.GetCameraTransform()
+    for tf in tfs:
+        dist_segments.append(np.linalg.norm(last_tf[:3, 3] - tf[:3, 3]))
+        travel_dist += dist_segments[-1]
+        last_tf = tf
+    speed = travel_dist / duration
+    if delays is None:
+        delays = len(tfs) * [0.0]
+    for tf, delay, seg in zip(tfs, delays, dist_segments):
+        seg_duration = seg / speed
+        camera_slide(viewer, tf, seg_duration, fps=fps)
+        last_tf = viewer.GetCameraTransform()
+        time.sleep(delay)
+
+
+def show_ghost_traj(ghost, traj, goal, target_obj, vel_scale=0.4):
+    dofs = goal.manip.GetArmDOF()
+    ghost.SetActiveDOFs(goal.manip.GetArmIndices())
+    ghost_traj = orpy.RaveCreateTrajectory(ghost.GetEnv(), '')
+    ghost_traj.Init(ghost.GetActiveConfigurationSpecification('linear'))
+    for widx in xrange(traj.GetNumWaypoints()):
+        ghost_traj.Insert(widx, traj.GetWaypoint(widx)[:dofs])
+    # time trajectory
+    vel_limits = ghost.GetDOFVelocityLimits()
+    ghost.SetDOFVelocityLimits(vel_scale * vel_limits)
+    orpy.planningutils.RetimeTrajectory(ghost_traj, hastimestamps=False)
+    ghost.SetDOFVelocityLimits(vel_limits)
+    ghost_manip = ghost.GetManipulator(goal.manip.GetName())
+    set_grasp(ghost_manip, target_obj, inverse_transform(goal.grasp_tf), goal.grasp_config)
+    ghost.GetController().SetPath(ghost_traj)
+    ghost.WaitForController(0)
+    ghost.Release(target_obj)
+
+
 def show_traj(robot, traj, goal, target_obj):
     # first attach target obj to manipulator
-    target_obj.SetTransform(np.dot(goal.manip.GetEndEffectorTransform(), inverse_transform(goal.grasp_tf)))
-    robot.SetActiveManipulator(goal.manip.GetName())
-    robot.Grab(target_obj)
+    set_grasp(goal.manip, target_obj, inverse_transform(goal.grasp_tf), goal.grasp_config)
     # now plan
     robot.GetController().SetPath(traj)
     robot.WaitForController(0)
     # release object again
     robot.Release(target_obj)
+
+
+def show_all_trajs(ghost, robot, mplanner, ghost_obj, target_obj, vel_scale=0.4):
+    start_config = robot.GetDOFValues()
+    for i in range(len(motion_planner.solutions) - 1):
+        traj, goal = motion_planner.get_solution(i)
+        ghost.SetDOFValues(start_config)
+        show_ghost_traj(ghost, traj, goal, ghost_obj, vel_scale=vel_scale)
+
+    ghost.SetVisible(False)
+    ghost_obj.SetVisible(False)
+    traj, goal = motion_planner.get_solution(len(motion_planner.solutions) - 1)
+    show_traj(robot, traj, goal, target_obj)
+    time.sleep(0.2)
+    ghost.SetDOFValues(start_config)
+    robot.SetDOFValues(start_config)
+    ghost.SetVisible(True)
+    ghost_obj.SetVisible(True)
+
+
+def side_transition(goal_tf, cabinet, duration, fps=30):
+    num_steps = duration * fps
+    alpha_vals = np.linspace(1.0, 0.2, num_steps)
+    alpha_t = 0
+    for tf in get_tf_interpolation(viewer.GetCameraTransform(), goal_tf, num_steps):
+        set_body_alpha(cabinet, alpha_vals[alpha_t])
+        viewer.SetCamera(tf)
+        time.sleep(1.0 / float(fps))
+        alpha_t += 1
 
 
 def plan(planner, body, it):
@@ -137,7 +211,7 @@ def plan(planner, body, it):
     return traj, goal
 
 
-def plan_for_stats(num_iterations, robot_data, object_data, scene_sdf, regions, orientations, 
+def plan_for_stats(num_iterations, offset, robot_data, object_data, scene_sdf, regions, orientations, 
                    objective_fn, global_region_info, problem_desc):
     manips = robot_data.robot.GetManipulators()
     parameters = problem_desc['parameters']
@@ -158,10 +232,19 @@ def plan_for_stats(num_iterations, robot_data, object_data, scene_sdf, regions, 
                                                                  [manip.GetName() for manip in manips],
                                                                  parameters=parameters,
                                                                  stats_recorder=goal_stats)
+        elif parameters["sampler_type"] == "simple_mcts_sampler":
+            goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+                                                                              [manip.GetName() for manip in manips],
+                                                                              parameters=parameters,
+                                                                              stats_recorder=goal_stats)
         elif parameters["sampler_type"] == "random":
             goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
                                                                   manip.GetName() for manip in manips], True, False,
                                                                   stats_recorder=goal_stats)
+        elif parameters["sampler_type"] == "random_no_opt":
+            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+                                                                  manip.GetName() for manip in manips], True, False,
+                                                                  stats_recorder=goal_stats, b_local_opt=False)
         elif parameters["sampler_type"] == "random_proj":
             goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
                                                                   [manip.GetName() for manip in manips], True, True,
@@ -190,10 +273,10 @@ def plan_for_stats(num_iterations, robot_data, object_data, scene_sdf, regions, 
                                                                   stats_recorder=planner_stats)
         goal_stats.reset()
         planner_stats.reset()
-        rospy.loginfo("Running trial %i/%i" % (idx, num_iterations))
+        rospy.loginfo("Running trial %i/%i using %s" % (idx, num_iterations, type(goal_sampler).__name__))
         _, _ = planner.plan(problem_desc["time_limit"], object_data.kinbody)
-        goal_stats.save_stats(problem_desc["goal_stats_file"] + "_" + str(idx) + ".csv")
-        planner_stats.save_stats(problem_desc["plan_stats_file"] + "_" + str(idx) + ".csv")
+        goal_stats.save_stats(problem_desc["goal_stats_file"] + "_" + str(idx + offset) + ".csv")
+        planner_stats.save_stats(problem_desc["plan_stats_file"] + "_" + str(idx + offset) + ".csv")
 
 if __name__ == "__main__":
     # NOTE If the OpenRAVE viewer is created too early, nothing works! Collision checks may be incorrect!
@@ -201,6 +284,7 @@ if __name__ == "__main__":
     parser.add_argument('problem_desc', help="Path to a yaml file specifying what world, robot to use etc.", type=str)
     parser.add_argument('--debug', help="If provided, run in debug mode", action="store_true")
     parser.add_argument('--num_runs', help="Number of executions", type=int, default=1)
+    parser.add_argument('--offset', help="Offset for file names when running multiple runs", type=int, default=0)
     parser.add_argument('--show_gui', help="Flag whether to show GUI or not", action="store_true")
     parser.add_argument('--show_plcmnt_volume', help="If provided, visualize placement volume", action="store_true")
     parser.add_argument('--show_sdf_volume', help="If provided, visualize sdf volume", action="store_true")
@@ -260,7 +344,7 @@ if __name__ == "__main__":
         # extract placement regions
         gpu_kit = plcmnt_regions_mod.PlanarRegionExtractor()
         surface_grid, labels, num_regions, regions = gpu_kit.extract_planar_regions(
-            occ_target_volume, max_region_size=np.max((placement_volume[1] - placement_volume[0])[:2]))
+            occ_target_volume, max_region_size=0.3)
         if num_regions == 0:
             print "No placement regions found"
             sys.exit(0)
@@ -349,32 +433,69 @@ if __name__ == "__main__":
                 # handles = visualize_occupancy_grid(env, surface_grid, color=np.array([1.0, 0.0, 0.0, 0.2]))
                 handles.extend(plcmnt_regions_mod.visualize_plcmnt_regions(
                     env, regions, height=occ_target_volume.get_cell_size(), level=2))
+                # make target object green
+                set_body_color(target_object, np.array([0.0, 0.5, 0.0]))
+                # create a ghost robot (for video)
+                # robot_ghost = orpy.RaveCreateRobot(env, '')
+                # robot_ghost.Clone(robot, 0)
+                # robot_ghost.SetName("robot_ghost")
+                # set_body_alpha(robot_ghost, 0.3)
+                # robot_ghost.Enable(False)
+                # env.AddRobot(robot_ghost)
+                # create a ghost target obj
+                # target_ghost = orpy.RaveCreateKinBody(env, '')
+                # target_ghost.Clone(target_object, 0)
+                # target_ghost.SetName("ghost_traget_object")
+                # set_body_alpha(target_ghost, 0.4)
+                # target_ghost.Enable(False)
+                # env.AddKinBody(target_ghost)
+                cam_tf = np.array([[-0.9999906 , -0.00261649, -0.00345688,  0.00483596],
+                                   [ 0.00313553,  0.11418095, -0.99345502,  1.61701882],
+                                   [ 0.00299408, -0.99345652, -0.11417167,  0.52455425],
+                                   [ 0.        ,  0.        ,  0.        ,  1.        ]])
+                # cam_tf = np.array([[ 0.99836227, -0.00712139,  0.05676323,  0.01027336],
+                #                    [-0.04739557, -0.6586312 ,  0.75097177, -0.25150079],
+                #                    [ 0.03203807, -0.7524322 , -0.65789007,  1.15394711],
+                #                    [ 0.        ,  0.        ,  0.        ,  1.        ]])
+                viewer = env.GetViewer()
+                viewer.SetCamera(cam_tf)
+                
             # goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
-            #                                                         manip.GetName() for manip in manips], False, True, 0.5)
-            goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
-                                                                 [manip.GetName() for manip in manips],
-                                                                 debug_visualizer=mcts_visualizer,
-                                                                 parameters=problem_desc["parameters"])
+            #                                                       manip.GetName() for manip in manips], True, False)
+            # goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            #                                                      [manip.GetName() for manip in manips],
+            #                                                      debug_visualizer=mcts_visualizer,
+            #                                                      parameters=problem_desc["parameters"])
+            goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+                                                                              [manip.GetName() for manip in manips],
+                                                                              debug_visualizer=mcts_visualizer,
+                                                                              parameters=problem_desc["parameters"])
 
+            planner_stats = statsrecording.PlacementMotionStatsRecorder()
             motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips,
                                                                          num_goal_samples=parameters["num_goal_samples"],
                                                                          num_goal_iterations=parameters["num_goal_iterations"],
-                                                                         mp_timeout=parameters["mp_timeout"])
+                                                                         mp_timeout=parameters["mp_timeout"],
+                                                                         stats_recorder=planner_stats)
             dummy_planner = anytime_planner_mod.DummyPlanner(goal_sampler, num_goal_samples=parameters["num_goal_samples"],
                                                              num_goal_iterations=parameters["num_goal_iterations"])
-            traj, goal = plan(motion_planner, target_object, 60)
-            # solutions, num_solutions = goal_sampler.sample(100, 100)
-            # objectives, solutions = dummy_planner.plan(10, target_object)
+            real_time = time.time()
+            clock_time = time.clock()
+            # traj, goal = plan(motion_planner, target_object, 120)
+            # solutions, num_solutions = goal_sampler.sample(1, 10)
+            # objectives, solutions = dummy_planner.plan(20, target_object)
             # print objectives
             # probe = env.GetKinBody("probe")
             # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])
             # rospy.loginfo("Starting cProfile")
             # cProfile.run("goal_sampler.sample(100, 100)", '/tmp/cprofile_placement')
+            # solutions, num_solutions = goal_sampler.sample(100, 10)
+            # print "Took %f realtime, %f clocktime" % (time.time() - real_time, time.clock() - clock_time)
             # cProfile.run("plan(motion_planner, target_object, 5)", '/tmp/cprofile_placement')
             # rospy.loginfo("cProfile complete")
             IPython.embed()
         else:
-            plan_for_stats(args.num_runs, robot_data, object_data, scene_sdf, regions, orientations,
+            plan_for_stats(args.num_runs, args.offset, robot_data, object_data, scene_sdf, regions, orientations,
                            obj_fn, global_region_info, problem_desc) 
     finally:
         orpy.RaveDestroy()

@@ -1500,17 +1500,17 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             extended_cart[5] = cart_grad[2]
             qgrad = np.matmul(inv_jac, extended_cart)
             # ------ 7. Arm collision constraint - arm must not be in collision
-            val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
-            col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
-                                    np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
-            col_cart = np.matmul(jacobian, col_grad)
+            # val, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
+            # col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
+            #                         np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
+            # col_cart = np.matmul(jacobian, col_grad)
             # rospy.logdebug("Arm collision gradient: %s. Results in Cartesian motion: %s " % (str(col_grad), col_cart))
             # rospy.logdebug("Arm collision constraint value is " + str(val))
-            qgrad += col_grad
-            violation_value += val
+            # qgrad += col_grad
+            # violation_value += val
             # remove any motion that changes the base orientation/z height of the object
-            jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
-            qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
+            # jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
+            # qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
             return violation_value, qgrad
 
     def __init__(self, arpo_hierarchy, robot_data, object_data,
@@ -1553,6 +1553,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                                                                      self._object_data,
                                                                      joint_limit_margin=parameters["joint_limit_margin"])
         self._parameters = parameters
+        self._use_jacobian_proj = parameters["proj_type"] == "jac"
 
     def construct_solution(self, key, b_optimize_constraints=False):
         """
@@ -1594,10 +1595,12 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self._optimize_constraints(sol_cache_entry)
         else:
             # compute object and end-effector pose
-            self._compute_object_pose(sol_cache_entry)
+            self._compute_object_pose(sol_cache_entry, b_random=True)
             # compute arm configuration
-            sol_cache_entry.solution.arm_config = manip_data.ik_solver.compute_ik(sol_cache_entry.eef_tf)
+            sol_cache_entry.solution.arm_config = manip_data.ik_solver.compute_ik(sol_cache_entry.eef_tf,
+                                                                                  joint_limit_margin=self._parameters['joint_limit_margin'])
         self._call_stats[0] += 1
+        new_solution.sample_num = self._call_stats[0]
         return new_solution
 
     def can_construct_solution(self, key):
@@ -1659,6 +1662,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # TODO this should maybe be done within jacobian optimizer
             region_id = self._hierarchy.get_region(reference_point_pose[:3, 3])  
             cache_entry.key = (cache_entry.key[0], cache_entry.key[1], region_id)
+            if region_id is None: # TODO this is a bug
+                return None, []
             return cache_entry.solution, arm_configs
         return None, []
 
@@ -1825,7 +1830,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self._call_stats[3] = 0
         return val
 
-    def _compute_object_pose(self, cache_entry):
+    def _compute_object_pose(self, cache_entry, b_random=False):
         """
             Compute an object pose for the solution in cache_entry.
             ---------
@@ -1833,6 +1838,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             ---------
             cache_entry, SolutionCacheEntry - The following fields are required to be intialized:
                 manip, region, plcmnt_orientation, so2_interval, solution
+            b_random, bool - if True, randomly sample object pose from region and so2-interval, else
+                select determenistic representative
             ------------
             Side effects
             ------------
@@ -1840,12 +1847,25 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             cache_entry.eef_tf, numpy array of shape (4, 4) - pose of the end-effector is stored here
         """
         manip_data = self._manip_data[cache_entry.solution.manip.GetName()]
-        center_angle = (cache_entry.so2_interval[1] + cache_entry.so2_interval[0]) / 2.0  # rotation around local z axis
-        # compute default object pose
-        cache_entry.solution.obj_tf = np.dot(cache_entry.region.contact_tf, np.dot(tf_mod.rotation_matrix(
-            center_angle, [0., 0., 1]), cache_entry.plcmnt_orientation.inv_reference_tf))
-        # compute default end-effector tf
+        if b_random:
+            angle = so2hierarchy.sample(cache_entry.so2_interval)
+            # compute region pose
+            cache_entry.region_pose = np.dot(cache_entry.region.sample(b_local=True),
+                                             tf_mod.rotation_matrix(angle, [0., 0., 1]))
+            contact_tf = np.dot(cache_entry.region.base_tf, cache_entry.region_pose)
+        else:
+            angle = (cache_entry.so2_interval[1] + cache_entry.so2_interval[0]) / 2.0  # rotation around local z axis
+            contact_tf = np.dot(cache_entry.region.contact_tf, tf_mod.rotation_matrix(angle, [0., 0., 1]))
+            cache_entry.region_pose = tf_mod.rotation_matrix(angle, [0., 0., 1])
+            cache_entry.region_pose[:2, 3] = cache_entry.region.contact_xy
+            cache_entry.region_pose[3, 3] = cache_entry.region.cell_size * 0.5
+        # compute object pose
+        cache_entry.solution.obj_tf = np.dot(contact_tf, cache_entry.plcmnt_orientation.inv_reference_tf)
+        # compute end-effector tf
         cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)
+        # set region state
+        cache_entry.region_state = (cache_entry.region_pose[0, 3], cache_entry.region_pose[1, 3], angle)
+
 
     def _optimize_constraints(self, cache_entry):
         """
@@ -1878,7 +1898,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         arm_config = plcmnt_ik_solver.compute_ik(target_pose, joint_limit_margin=self._parameters["joint_limit_margin"],
                                                  bx=position_extents[0], by=position_extents[1],
                                                  bz=position_extents[2]/4.0, brz=angle_range / 2.0)
-        if arm_config is not None:
+        if arm_config is not None and self._use_jacobian_proj:
             cache_entry.solution.arm_config = arm_config
             # rospy.logdebug("Trac-IK found an intial ik-solution for placement region.")
             self._jacobian_projection.project(cache_entry)
@@ -1887,9 +1907,23 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 self._robot_data.robot.SetDOFValues(cache_entry.solution.arm_config, manip_data.manip.GetArmIndices())
                 cache_entry.eef_tf = manip_data.manip.GetEndEffectorTransform()
                 cache_entry.solution.obj_tf = np.dot(cache_entry.eef_tf, manip_data.inv_grasp_tf)
+        elif arm_config is not None:
+            # set cache entries from arm configuration
+            with self._robot_data.robot:
+                cache_entry.solution.arm_config = arm_config
+                self._robot_data.robot.SetDOFValues(cache_entry.solution.arm_config, manip_data.manip.GetArmIndices())
+                manip = cache_entry.solution.manip
+                cache_entry.eef_tf = manip.GetEndEffector().GetTransform()
+                cache_entry.solution.obj_tf = np.matmul(cache_entry.eef_tf,
+                                                        manip_data.inv_grasp_tf)
+                ref_pose = np.dot(cache_entry.solution.obj_tf, cache_entry.plcmnt_orientation.reference_tf)
+                cache_entry.region_pose = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
+                _, _, ez = tf_mod.euler_from_matrix(cache_entry.region_pose)
+                theta = utils.normalize_radian(ez)
+                cache_entry.region_state = (cache_entry.region_pose[0, 3], cache_entry.region_pose[1, 3], theta)
         else:
             # rospy.logdebug("Trac-IK FAILED to compute initial solution. Setting default object tf.")
-            self._compute_object_pose(cache_entry)
+            self._compute_object_pose(cache_entry, b_random=False)
 
     def _get_plcmnt_ik_solver(self, cache_entry):
         """

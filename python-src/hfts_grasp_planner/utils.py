@@ -725,6 +725,67 @@ def compute_grasp_stability(grasp_contacts, mu, com=None, face_n=8):
     return min(offsets)
 
 
+def set_body_color(body, color):
+    """
+        Set the color of the given kinbody for visualization.
+        ---------
+        Arguments
+        ---------
+        body, OpenRAVE kinbody - kinbody to set color for (all links and geometries)
+        color, np array of shape (3,) or (4,) - [r, g, b, a=1], with all values in range [0, 1]
+    """
+    links = body.GetLinks()
+    for link in links:
+        geoms = link.GetGeometries()
+        for geom in geoms:
+            geom.SetDiffuseColor(color[:3])
+            geom.SetAmbientColor(color[:3])
+            if color.shape[0] == 4:
+                geom.SetTransparency(1.0 - color[3])
+
+
+def set_body_alpha(body, alpha):
+    """
+        Set the alpha of the given kinbody for visualization.
+        ---------
+        Arguments
+        ---------
+        body, OpenRAVE kinbody - kinbody to set alpha for (all links and geometries)
+        alpha, float - alpha value between 0, 1
+    """
+    links = body.GetLinks()
+    for link in links:
+        geoms = link.GetGeometries()
+        for geom in geoms:
+            geom.SetTransparency(1.0 - alpha)
+
+
+def get_tf_interpolation(start_tf, end_tf, num_steps):
+    """
+        Return a generator producing 4x4 transformation matrices interpolating
+        between start_tf and end_tf.
+        ---------
+        Arguments
+        ---------
+        start_tf, np.array of shape (4, 4) - start transformation
+        end_tf, np.array of shape (4, 4) - end transformation
+        num_steps, int - number of interpolation steps
+        -------
+        Returns
+        -------
+        generator producing np array of shape (4,4) that are interpolated between start and end
+    """
+    t_steps = np.linspace(0, 1, num_steps)
+    delta_pos = end_tf[:3, 3] - start_tf[:3, 3]
+    start_quat = orpy.quatFromRotationMatrix(start_tf)
+    end_quat = orpy.quatFromRotationMatrix(end_tf)
+    for t in t_steps:
+        quat = orpy.quatSlerp(start_quat, end_quat, t, True)  # no clue what the bool is good for
+        tf = orpy.matrixFromQuat(quat)
+        tf[:3, 3] = start_tf[:3, 3] + t * delta_pos
+        yield tf
+
+
 class OpenRAVEDrawer:
     def __init__(self, or_env, robot, debug):
         """

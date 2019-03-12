@@ -1,5 +1,9 @@
 <Robot name="Yumi">
     <KinBody>
+        <adjacent>yumi_link_5_l gripper_l_base</adjacent>
+        <adjacent>yumi_link_5_l yumi_link_7_l</adjacent>
+        <adjacent>yumi_link_5_r gripper_r_base</adjacent>
+        <adjacent>yumi_link_5_r yumi_link_7_r</adjacent>
         <Body name="yumi_body" type="dynamic">
             <!-- <offsetfrom>robotiq_socket</offsetfrom> -->
             <Translation> 0 0 0</Translation>
@@ -7,7 +11,10 @@
             <quat>1.0 0.0 0.0 0.0</quat>
             <Geom type="trimesh">
                 <render>meshes/body.stl</render>
+                <!-- <render>meshes/coarse/body.stl</render> -->
                 <collision>meshes/coarse/body.stl</collision>
+                <diffusecolor>0.8 0.8 0.8</diffusecolor>
+                <ambientcolor>0.8 0.8 0.8</ambientcolor>
             </Geom>
         </Body>
         <!-- Right arm -->
@@ -17,7 +24,10 @@
             <quat>0.21925458 -0.40779636 0.31428983 -0.82876502</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_1.stl</Render>
+                <!-- <render>meshes/coarse/link_1.stl</render> -->
                 <collision>meshes/coarse/link_1.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_2_r" type="dynamic">
@@ -26,7 +36,10 @@
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_2.stl</Render>
+                <!-- <render>meshes/coarse/link_2.stl</render> -->
                 <collision>meshes/coarse/link_2.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_3_r" type="dynamic">
@@ -35,7 +48,10 @@
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_3.stl</Render>
+                <!-- <render>meshes/coarse/link_3.stl</render> -->
                 <collision>meshes/coarse/link_3.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_4_r" type="dynamic">
@@ -44,7 +60,10 @@
             <quat>0.5 0.5 -0.5 0.5</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_4.stl</Render>
+                <!-- <render>meshes/coarse/link_4.stl</render> -->
                 <collision>meshes/coarse/link_4.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_5_r" type="dynamic">
@@ -53,7 +72,10 @@
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_5.stl</Render>
+                <!-- <render>meshes/coarse/link_5.stl</render> -->
                 <collision>meshes/coarse/link_5.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_6_r" type="dynamic">
@@ -62,7 +84,10 @@
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_6.stl</Render>
+                <!-- <render>meshes/coarse/link_6.stl</render> -->
                 <collision>meshes/coarse/link_6.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_7_r" type="dynamic">
@@ -71,7 +96,10 @@
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_7.stl</Render>
+                <!-- <render>meshes/coarse/link_7.stl</render> -->
                 <collision>meshes/coarse/link_7.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <!-- ==================== Right arm joints ==================== -->
@@ -91,7 +119,7 @@
             <limits>-2.50454747661 0.759218224618</limits>
             <maxvel>3.14159265359</maxvel>
         </Joint>
-        <Joint name="yumi_joint_7_r" type="hinge" enable="true">  <!-- the weird naming is correct -->
+        <Joint name="yumi_joint_7_r" type="hinge" enable="true">            <!-- the weird naming is correct -->
             <Body>yumi_link_2_r</Body>
             <Body>yumi_link_3_r</Body>
             <offsetfrom>yumi_link_3_r</offsetfrom>
@@ -99,7 +127,7 @@
             <limits>-2.94087978961 2.94087978961</limits>
             <maxvel>3.14159265359</maxvel>
         </Joint>
-        <Joint name="yumi_joint_3_r" type="hinge" enable="true">  
+        <Joint name="yumi_joint_3_r" type="hinge" enable="true">
             <Body>yumi_link_3_r</Body>
             <Body>yumi_link_4_r</Body>
             <offsetfrom>yumi_link_4_r</offsetfrom>
@@ -123,7 +151,7 @@
             <limits>-1.53588974176 2.40855436775</limits>
             <maxvel>6.98131700798</maxvel>
         </Joint>
-        <Joint name="yumi_joint_6_r" type="hinge" enable="true"> 
+        <Joint name="yumi_joint_6_r" type="hinge" enable="true">
             <Body>yumi_link_6_r</Body>
             <Body>yumi_link_7_r</Body>
             <offsetfrom>yumi_link_7_r</offsetfrom>
@@ -138,7 +166,10 @@
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
                 <Render>meshes/gripper/base.stl</Render>
+                <!-- <render>meshes/gripper/coarse/base.stl</render> -->
                 <collision>meshes/gripper/coarse/base.stl</collision>
+                <diffusecolor>0.8 0.8 0.8</diffusecolor>
+                <ambientcolor>0.8 0.8 0.8</ambientcolor>
             </Geom>
         </Body>
         <Body name="gripper_r_finger_r" type="dynamic">
@@ -147,7 +178,10 @@
             <quat>1 0 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/gripper/finger.stl</Render>
+                <!-- <render>meshes/gripper/coarse/finger.stl</render> -->
                 <collision>meshes/gripper/coarse/finger.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="gripper_r_finger_l" type="dynamic">
@@ -156,16 +190,19 @@
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
                 <Render>meshes/gripper/finger.stl</Render>
+                <!-- <render>meshes/gripper/coarse/finger.stl</render> -->
                 <collision>meshes/gripper/coarse/finger.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <!-- Right hand joints -->
-        <Joint name="yumi_link_7_r_joint" type="hinge" enable="false"> 
+        <Joint name="yumi_link_7_r_joint" type="hinge" enable="false">
             <Body>yumi_link_7_r</Body>
             <Body>gripper_r_base</Body>
             <limits>0 0</limits>
         </Joint>
-        <Joint name="gripper_r_joint" type="slider" enable="true"> 
+        <Joint name="gripper_r_joint" type="slider" enable="true">
             <Body>gripper_r_base</Body>
             <Body>gripper_r_finger_r</Body>
             <offsetfrom>gripper_r_finger_r</offsetfrom>
@@ -173,8 +210,7 @@
             <limits>0 0.025</limits>
             <maxvel>2</maxvel>
         </Joint>
-        <Joint name="gripper_r_joint_m" type="slider" enable="false"
-            mimic_pos="gripper_r_joint" mimic_vel="|gripper_r_joint 1"> 
+        <Joint name="gripper_r_joint_m" type="slider" enable="false" mimic_pos="gripper_r_joint" mimic_vel="|gripper_r_joint 1">
             <Body>gripper_r_base</Body>
             <Body>gripper_r_finger_l</Body>
             <offsetfrom>gripper_r_finger_l</offsetfrom>
@@ -189,7 +225,10 @@
             <quat>0.21763236  0.40848028  0.31343673  0.82917877</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_1.stl</Render>
+                <!-- <render>meshes/coarse/link_1.stl</render> -->
                 <collision>meshes/coarse/link_1.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_2_l" type="dynamic">
@@ -198,7 +237,10 @@
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_2.stl</Render>
+                <!-- <render>meshes/coarse/link_2.stl</render> -->
                 <collision>meshes/coarse/link_2.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_3_l" type="dynamic">
@@ -207,7 +249,10 @@
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_3.stl</Render>
+                <!-- <render>meshes/coarse/link_3.stl</render> -->
                 <collision>meshes/coarse/link_3.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_4_l" type="dynamic">
@@ -216,7 +261,10 @@
             <quat>0.5 0.5 -0.5 0.5</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_4.stl</Render>
+                <!-- <render>meshes/coarse/link_4.stl</render> -->
                 <collision>meshes/coarse/link_4.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_5_l" type="dynamic">
@@ -225,7 +273,10 @@
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_5.stl</Render>
+                <!-- <render>meshes/coarse/link_5.stl</render> -->
                 <collision>meshes/coarse/link_5.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_6_l" type="dynamic">
@@ -234,7 +285,10 @@
             <quat>0.70710678 0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_6.stl</Render>
+                <!-- <render>meshes/coarse/link_6.stl</render> -->
                 <collision>meshes/coarse/link_6.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="yumi_link_7_l" type="dynamic">
@@ -243,7 +297,10 @@
             <quat>0.70710678 -0.70710678 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/link_7.stl</Render>
+                <!-- <render>meshes/coarse/link_7.stl</render> -->
                 <collision>meshes/coarse/link_7.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <!-- ==================== Left arm joints ==================== -->
@@ -263,7 +320,7 @@
             <limits>-2.50454747661 0.759218224618</limits>
             <maxvel>3.14159265359</maxvel>
         </Joint>
-        <Joint name="yumi_joint_7_l" type="hinge" enable="true">  <!-- the weird naming is correct -->
+        <Joint name="yumi_joint_7_l" type="hinge" enable="true">            <!-- the weird naming is correct -->
             <Body>yumi_link_2_l</Body>
             <Body>yumi_link_3_l</Body>
             <offsetfrom>yumi_link_3_l</offsetfrom>
@@ -271,7 +328,7 @@
             <limits>-2.94087978961 2.94087978961</limits>
             <maxvel>3.14159265359</maxvel>
         </Joint>
-        <Joint name="yumi_joint_3_l" type="hinge" enable="true">  
+        <Joint name="yumi_joint_3_l" type="hinge" enable="true">
             <Body>yumi_link_3_l</Body>
             <Body>yumi_link_4_l</Body>
             <offsetfrom>yumi_link_4_l</offsetfrom>
@@ -295,7 +352,7 @@
             <limits>-1.53588974176 2.40855436775</limits>
             <maxvel>6.98131700798</maxvel>
         </Joint>
-        <Joint name="yumi_joint_6_l" type="hinge" enable="true"> 
+        <Joint name="yumi_joint_6_l" type="hinge" enable="true">
             <Body>yumi_link_6_l</Body>
             <Body>yumi_link_7_l</Body>
             <offsetfrom>yumi_link_7_l</offsetfrom>
@@ -310,7 +367,10 @@
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
                 <Render>meshes/gripper/base.stl</Render>
+                <!-- <render>meshes/gripper/coarse/base.stl</render> -->
                 <collision>meshes/gripper/coarse/base.stl</collision>
+                <diffusecolor>0.8 0.8 0.8</diffusecolor>
+                <ambientcolor>0.8 0.8 0.8</ambientcolor>
             </Geom>
         </Body>
         <Body name="gripper_l_finger_r" type="dynamic">
@@ -319,7 +379,10 @@
             <quat>1 0 0 0</quat>
             <Geom type="trimesh">
                 <Render>meshes/gripper/finger.stl</Render>
+                <!-- <render>meshes/gripper/coarse/finger.stl</render> -->
                 <collision>meshes/gripper/coarse/finger.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <Body name="gripper_l_finger_l" type="dynamic">
@@ -328,16 +391,19 @@
             <quat>0 0 0 1</quat>
             <Geom type="trimesh">
                 <Render>meshes/gripper/finger.stl</Render>
+                <!-- <render>meshes/gripper/coarse/finger.stl</render> -->
                 <collision>meshes/gripper/coarse/finger.stl</collision>
+                <diffusecolor>0.5 0.5 0.5</diffusecolor>
+                <ambientcolor>0.5 0.5 0.5</ambientcolor>
             </Geom>
         </Body>
         <!-- Right hand joints -->
-        <Joint name="yumi_link_7_l_joint" type="hinge" enable="false"> 
+        <Joint name="yumi_link_7_l_joint" type="hinge" enable="false">
             <Body>yumi_link_7_l</Body>
             <Body>gripper_l_base</Body>
             <limits>0 0</limits>
         </Joint>
-        <Joint name="gripper_l_joint" type="slider" enable="true"> 
+        <Joint name="gripper_l_joint" type="slider" enable="true">
             <Body>gripper_l_base</Body>
             <Body>gripper_l_finger_r</Body>
             <offsetfrom>gripper_l_finger_r</offsetfrom>
@@ -345,8 +411,7 @@
             <limits>0 0.025</limits>
             <maxvel>2</maxvel>
         </Joint>
-        <Joint name="gripper_l_joint_m" type="slider" enable="false"
-            mimic_pos="gripper_l_joint" mimic_vel="|gripper_l_joint 1"> 
+        <Joint name="gripper_l_joint_m" type="slider" enable="false" mimic_pos="gripper_l_joint" mimic_vel="|gripper_l_joint 1">
             <Body>gripper_l_base</Body>
             <Body>gripper_l_finger_l</Body>
             <offsetfrom>gripper_l_finger_l</offsetfrom>
@@ -354,20 +419,20 @@
             <limits>0 0.025</limits>
             <maxvel>2</maxvel>
         </Joint>
-    <jointvalues>-1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0</jointvalues>
-</KinBody>
-<manipulator name="right_arm_with_gripper">
-    <base>yumi_body</base>
-    <effector>gripper_r_base</effector>
-    <joints>gripper_r_joint</joints>
-    <closingdirection>1</closingdirection>
-    <direction>1 0 0</direction>
-</manipulator>
-<manipulator name="left_arm_with_gripper">
-    <base>yumi_body</base>
-    <effector>gripper_l_base</effector>
-    <joints>gripper_l_joint</joints>
-    <closingdirection>1</closingdirection>
-    <direction>1 0 0</direction>
-</manipulator>
+        <jointvalues>-1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0</jointvalues>
+    </KinBody>
+    <manipulator name="right_arm_with_gripper">
+        <base>yumi_body</base>
+        <effector>gripper_r_base</effector>
+        <joints>gripper_r_joint</joints>
+        <closingdirection>1</closingdirection>
+        <direction>0 0 1</direction>
+    </manipulator>
+    <manipulator name="left_arm_with_gripper">
+        <base>yumi_body</base>
+        <effector>gripper_l_base</effector>
+        <joints>gripper_l_joint</joints>
+        <closingdirection>1</closingdirection>
+        <direction>0 0 1</direction>
+    </manipulator>
 </Robot>

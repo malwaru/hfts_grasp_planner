@@ -13,7 +13,7 @@ import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
 
 
-class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
+class SimpleMCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
     class MCTSNode(object):
         """
             Stores node-cache information for Monte Carlo Tree search.
@@ -23,6 +23,8 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             """
                 Create a new MCTSNode for the hierarchy node with the given key.
             """
+            self.num_constructions = 0
+            self.num_new_valid_constr = 0
             self.key = key  # hierarchy key
             self.sampleable = False
             self.solutions = []  # list of all solutions that were created for this particular node
@@ -31,26 +33,13 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self.children = {}
             self.parent = parent
             # members for uct scores
-            self.branch_objectives = []  # stores all objective values found in this branch
             self.acc_rewards = 0.0  # stores sum of all rewards (excluding objective value based reward)
-            self.normalized_obj_reward = 0.0  # reward stemming from objectives in this branch
             self.num_visits = 0  # number of times visited (number of times a reward was observed in this branch)
-            self.num_explore_visits = 0  # modified visit count for exploration score
-            # the number of times a valid solution was constructed in this branch (updated when min objective changes)
-            self.num_valid_branch_constr = 0
-            # values for resample arm
-            self.num_constructions = 0  # number of times we constructed a solution from THIS node (excluding children)
-            # number of times a valid solution was constructed from this node (updated when min objective changes)
-            self.num_valid_constr = 0
-            self.num_new_valid_constr = 0  # number of times constructing a solution from THIS node led to a new valid leaf
-            self.num_self_explore_visits = 0  # number of times this node can be resampled for free after objective changed
             # other members
             self.last_uct_value = 0.0  # for debug purposes
             self.last_fup_value = 0.0  # for debug purposes
-            # for internal use to remember whether we need to update self.branch_objectives and others
-            self._last_min_obj = -float("inf")
 
-        def update_rec(self, new_solution, base_reward, bvalid):
+        def update_rec(self, new_solution, base_reward):
             """
                 Back-propagate the new rewards.
                 ----------
@@ -58,47 +47,12 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 ----------
                 new_solution, PlacementSolution - new placement solution
                 base_reward, float - the constraint relaxation value of a new solution
-                bvalid, bool - if True, signals that the solution is feasible and improves on the objective
             """
             self.num_visits += 1
-            self.num_explore_visits += 1
             self.acc_rewards += base_reward
             self.branch_solutions.append(new_solution)
-            self.num_valid_branch_constr += bvalid
-            if new_solution.objective_value is not None:
-                self.branch_objectives.append(new_solution.objective_value)
             if self.parent is not None:
-                self.parent.update_rec(new_solution, base_reward, bvalid)
-
-        def update_objectives(self, min_obj, objective_weight, reward_normalizer):
-            """
-                Update the branch objectives list, given that the minimal objective is now min_obj.
-                As a result the list self.branch_objectives only contains values > min_obj and it is sorted.
-                If min_obj is less than or equal to a value this function has called before with, this is a no-op.
-                Additionally, the number of visits is reset to max(1, self.num_visits - self.num_valid_branch_constr)
-                and self.num_valid_branch_constr is reset to 0 afterwards.
-                ---------
-                Arguments
-                ---------
-                min_obj, float - minimal objective
-                objective_weight, float - weight of the objective reward
-                reward_normalizer, float - normalizer for objective reward
-            """
-            if min_obj <= self._last_min_obj:
-                return
-            # recompute branch ratings based on the objectives that we have -> this can only decrease the exploitation part of uct
-            self.branch_objectives.sort()
-            i = bisect.bisect(self.branch_objectives, min_obj)
-            self.branch_objectives = self.branch_objectives[i:]
-            self._last_min_obj = min_obj
-            self.normalized_obj_reward = len(self.branch_objectives) * objective_weight / reward_normalizer
-            # we want to encourage re-exploration of branches that contain valid solutions as we might be able to
-            # improve on the objective from those. For this, we increase the exploration term if there were valid samples in this branch
-            # we do this by reducing the visit count used in the exploration term in ucb1
-            self.num_explore_visits = max(self.num_explore_visits - self.num_valid_branch_constr, 1)
-            self.num_valid_branch_constr = 0
-            self.num_self_explore_visits = max(self.num_self_explore_visits - self.num_valid_constr, 1)
-            self.num_valid_constr = 0
+                self.parent.update_rec(new_solution, base_reward)
 
     def __init__(self, hierarchy, solution_constructor, validator, objective, manip_names, parameters=None,
                  debug_visualizer=None, stats_recorder=None):
@@ -122,14 +76,10 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         self._objective = objective
         self._manip_names = manip_names
         if parameters is None:
-            parameters = {'c': 0.5, 'objective_impr_f': 0.1, 'use_proj': True}
+            parameters = {'c': 0.5, 'use_proj': True}
         self._parameters = parameters
         self._c = self._parameters["c"]
         self._b_use_projection = self._parameters["proj_type"] != "None"
-        weights = self._objective.get_constraint_weights()
-        self._objective_weight = weights[-1]
-        self._reward_normalizer = np.sum(weights)
-        self._base_reward = np.sum(weights[:-1])
         self._debug_visualizer = debug_visualizer
         self._root_node = self._create_new_node(None, ())
         self._best_reached_goal = None
@@ -221,18 +171,18 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             traj = utils.extend_or_traj(traj, path)
             # add new_goal to mcts hierarchy
             leaf_key = self._solution_constructor.get_leaf_key(new_goal)
-            self._insert_solution(self._root_node, leaf_key, new_goal, True, 1.0)
+            self._insert_solution(self._root_node, leaf_key, new_goal, 1.0)
             return traj, new_goal
         return traj, goal
 
-    def _insert_solution(self, start_node, key, solution, bvalid, reward):
+    def _insert_solution(self, start_node, key, solution, reward):
         """
-            Add the given solution to the node with given key. If the node is not in the hierarchy yet, 
+            Add the given solution to the node with given key. If the node is not in the hierarchy yet,
             it is created.
             -------
             Returns
             -------
-            b_new_sol, bool - True if the solution falls into a new branch of the hierarchy, or 
+            b_new_sol, bool - True if the solution falls into a new branch of the hierarchy, or
                 belongs to a leaf that has been reached before
         """
         b_new_sol = False
@@ -248,65 +198,44 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
                 b_new_sol = True
                 node = self._create_new_node(node, ckey)
         # add solution and propagate reward up
-        node.update_rec(solution, reward, True)
+        node.update_rec(solution, reward)
         return b_new_sol
 
-    def _compute_uct_resample_fup(self, node, bcompute_fup):
+    def _compute_uct_fup(self, node, bcompute_fup):
         """
-            Compute uct, resample and fup scores for the given node.
+            Compute uct, and fup scores for the given node.
             The uct scores are UCB1 scores for the children of the given node.
-            The resample score is a score denoting whether the current node should be resampled.
             THe fup score denotes whether a child of the given node should be selected to forcibly be selected.
             ---------
             Arguments
             ---------
             node, MCTSNode - node to compute scores for
-            bcompute_fup, bool - if True compute resample and fup score, else return -np.inf for both
+            bcompute_fup, bool - if True compute fup score, else return -np.inf for both
             -------
             Returns
             -------
             scores, np.array of float - UCB scores (might be empty) of children
-            resample_score, float - resample score for sampling this node for the nth time
             fup, float - fup score of the node
         """
-        resample_score = -np.inf
         fup_score = -np.inf
         uct_scores = np.array([])
         log_visits = 0 if node.num_visits == 0 else np.log(node.num_visits)
-        assert(not node.sampleable or node.num_constructions > 0)
+        assert(not node.sampleable or node.num_visits > 0)
         # compute uct scores, if there are children
         if len(node.children):
             children = node.children.values()
             acc_rewards = np.array([child.acc_rewards for child in children])
-            if self._best_reached_goal is not None:
-                bobjv = self._best_reached_goal.objective_value
-                for child in children:
-                    child.update_objectives(bobjv - self._parameters["objective_impr_f"] * abs(bobjv),
-                                            self._objective_weight, self._reward_normalizer)
-            obj_rewards = np.array([child.normalized_obj_reward for child in children])
-            acc_rewards += obj_rewards
             visits = np.array([child.num_visits for child in node.children.values()])
             avg_rewards = acc_rewards / visits
-            expl_visits = np.array([child.num_explore_visits for child in node.children.values()])
-            uct_scores = avg_rewards + self._c * np.sqrt(2.0 * log_visits / expl_visits)
+            uct_scores = avg_rewards + self._c * np.sqrt(2.0 * log_visits / visits)
 
-        # compute fup and resample_score if requested
+        # compute fup score if requested
         if bcompute_fup:
-            # can we resample? We can if we use the projection function and the node is sampleable
-            if node.sampleable and self._b_use_projection:
-                assert(node.num_visits > 0)
-                # if node.num_visits == 0:  # if have never visited this node, definitely sample
-                # return uct_scores, np.inf, fup_score
-                fup_score = self._c * np.sqrt(2.0 * log_visits / (1 + len(node.children)))
-                # compute resample score
-                resample_score = node.num_new_valid_constr / node.num_constructions + \
-                    self._c * np.sqrt(2.0 * log_visits / node.num_self_explore_visits)
-            else:  # fup is the only option to add new children
-                if len(node.children):
-                    fup_score = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * log_visits / len(node.children))
-                else:
-                    fup_score = np.inf
-        return uct_scores, resample_score, fup_score
+            if len(node.children):
+                fup_score = np.mean(avg_rewards) + self._c * np.sqrt(2.0 * log_visits / len(node.children))
+            else:
+                fup_score = np.inf
+        return uct_scores, fup_score
 
     def _pull_fup_arm(self, node):
         """
@@ -328,7 +257,7 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         return self._create_new_node(node, new_child_key)
 
     def _create_new_node(self, parent, child_key):
-        new_node = MCTSPlacementSampler.MCTSNode(child_key, parent)
+        new_node = SimpleMCTSPlacementSampler.MCTSNode(child_key, parent)
         # new_node.child_gen = self._hierarchy.get_child_key_gen(new_node.key)
         new_node.child_gen = self._hierarchy.get_random_child_key_gen(new_node.key)
         new_node.sampleable = self._solution_constructor.can_construct_solution(new_node.key)
@@ -355,8 +284,6 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         assert(node.sampleable)
         bnode_is_leaf = self._hierarchy.is_leaf(node.key)
         new_solution = self._solution_constructor.construct_solution(node.key, self._b_use_projection)
-        node.num_constructions += 1
-        node.num_self_explore_visits += 1
         node.solutions.append(new_solution)
         # first, check whether all other non-objective constraints are fullfilled
         b_is_valid = self._validator.is_valid(new_solution, False)
@@ -371,20 +298,35 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             b_improves_obj = False
 
         if b_is_valid and b_improves_obj:
-            reward = self._base_reward
+            reward = 1.0
             # if the solution is all valid, we credit this to the full subbranch that this solution falls into
             leaf_key = self._solution_constructor.get_leaf_key(new_solution)
-            b_new_solution = self._insert_solution(node, leaf_key, new_solution, True, reward)
-            node.num_new_valid_constr += b_new_solution
-            node.num_valid_constr += 1
+            self._insert_solution(node, leaf_key, new_solution, reward)
             return new_solution
-        elif node.num_constructions == 1 and not bnode_is_leaf:  # constructing from this non-leaf for the first time?
-            reward = self._validator.get_constraint_relaxation(new_solution, True)
+        elif node.num_visits == 0 and not bnode_is_leaf:  # constructing from this non-leaf for the first time?
+            reward = self._solution_constructor.get_constraint_relaxation(new_solution, True)
         else:
             reward = 0.0
         # if we got here, the solution is not valid, and we only report the reward
-        node.update_rec(new_solution, reward, False)
+        node.update_rec(new_solution, reward)
         return None
+
+    def _monte_carlo_rollout(self, node, b_impr_obj):
+        child_key = node.key
+        # descend in the hierarchy to a leaf
+        while child_key is not None:
+            key = child_key
+            child_key = self._hierarchy.get_random_child_key(key)
+        solution = self._solution_constructor.construct_solution(key, False)
+        bvalid = self._validator.is_valid(solution, b_impr_obj)
+        if bvalid:
+            reward = 1.0
+        elif self._hierarchy.is_leaf(node.key):
+            reward = 0.0
+        else:
+            reward = self._solution_constructor.get_constraint_relaxation(solution, True)
+        node.update_rec(solution, reward)
+        return solution if bvalid else None
 
     def _run_mcts(self, solutions, b_impr_obj):
         """
@@ -392,29 +334,25 @@ class MCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         """
         current_node = self._root_node
         # descend in hierarchy until we reach the first unsampled sampleable node
-        while not current_node.sampleable or current_node.num_constructions > 0:
+        while not current_node.sampleable or (current_node.num_visits > 0 and not self._hierarchy.is_leaf(current_node.key)):
             # get arms
             b_compute_fup = self._hierarchy.get_num_children(current_node.key) > len(current_node.children)
-            # uct_scores = scores of children, resample_score = self sample score, fup_score = select child node score
-            uct_scores, resample_score, fup_score = self._compute_uct_resample_fup(current_node, b_compute_fup)
+            uct_scores, fup_score = self._compute_uct_fup(current_node, b_compute_fup)
             # get best performing arm
             best_choice = np.argmax(uct_scores) if len(uct_scores) > 0 else None
             # decide whether to move down in mct or add a new child to mct
-            if best_choice is None or max(resample_score, fup_score) >= uct_scores[best_choice]:
-                if resample_score < fup_score:
-                    # if we decide to add a new child, choose this child as new current node
-                    assert(self._hierarchy.get_num_children(current_node.key) > len(current_node.children))
-                    current_node = self._pull_fup_arm(current_node)
-                else:
-                    # we decided to sample current node itself again, break so that we sample current_node
-                    break
+            if best_choice is None or fup_score >= uct_scores[best_choice]:
+                # if we decide to add a new child, choose this child as new current node
+                assert(self._hierarchy.get_num_children(current_node.key) > len(current_node.children))
+                current_node = self._pull_fup_arm(current_node)
             else:
                 # choose child with best uct score
                 current_node = current_node.children.values()[best_choice]
         assert(current_node.sampleable)
         # sample it: compute a new solution, propagate result up
         # this is equal to a Monte Carlo rollout + backpropagation
-        new_solution = self._sample(current_node, b_impr_obj)
+        # new_solution = self._sample(current_node, b_impr_obj)
+        new_solution = self._monte_carlo_rollout(current_node, b_impr_obj)
         if self._debug_visualizer:
             self._debug_visualizer.render(bupdate_data=True)
         if new_solution is not None:
