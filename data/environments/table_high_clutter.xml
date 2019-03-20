@@ -12,8 +12,8 @@
         <Body type="static">
             <Geom type="box">
                 <extents>1 0.9 0.005</extents>
-                <diffuseColor>.6 .6 .6</diffuseColor>
-                <ambientColor>0.6 0.6 0.6</ambientColor>
+                <diffuseColor>.3 .3 .3</diffuseColor>
+                <ambientColor>0.4 0.4 0.4</ambientColor>
             </Geom>
         </Body>
     </KinBody>
