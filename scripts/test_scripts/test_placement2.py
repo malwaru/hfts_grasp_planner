@@ -1,3 +1,4 @@
+#! /usr/bin/python
 import IPython
 import sys
 import os
