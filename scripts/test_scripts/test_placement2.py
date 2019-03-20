@@ -17,10 +17,10 @@ import hfts_grasp_planner.ik_solver as ik_module
 import hfts_grasp_planner.sdf.core as sdf_module
 import hfts_grasp_planner.sdf.robot as robot_sdf_module
 import hfts_grasp_planner.sdf.kinbody as kinbody_sdf_module
-import hfts_grasp_planner.placement.arpo_placement.placement_orientations as plcmnt_orientations_mod
-import hfts_grasp_planner.placement.arpo_placement.placement_regions as plcmnt_regions_mod
-import hfts_grasp_planner.placement.arpo_placement.core as arpo_placement_mod
-import hfts_grasp_planner.placement.arpo_placement.statsrecording as statsrecording
+import hfts_grasp_planner.placement.afr_placement.placement_orientations as plcmnt_orientations_mod
+import hfts_grasp_planner.placement.afr_placement.placement_regions as plcmnt_regions_mod
+import hfts_grasp_planner.placement.afr_placement.core as afr_placement_mod
+import hfts_grasp_planner.placement.afr_placement.statsrecording as statsrecording
 import hfts_grasp_planner.placement.goal_sampler.random_sampler as rnd_sampler_mod
 import hfts_grasp_planner.placement.goal_sampler.mcts_sampler as mcts_sampler_mod
 import hfts_grasp_planner.placement.goal_sampler.simple_mcts_sampler as simple_mcts_sampler_mod
@@ -219,47 +219,47 @@ def plan_for_stats(num_iterations, offset, robot_data, object_data, scene_sdf, r
     for idx in xrange(num_iterations):
         for r in regions:
             r.clear_subregions()
-        # create arpo hierarchy and bridge
-        hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
-        arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
-                                                         object_data=object_data, objective_fn=obj_fn,
-                                                         global_region_info=global_region_info, scene_sdf=scene_sdf,
-                                                         parameters=parameters)
+        # create afr hierarchy and bridge
+        hierarchy = afr_placement_mod.AFRHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
+        afr_bridge = afr_placement_mod.AFRRobotBridge(afr_hierarchy=hierarchy, robot_data=robot_data,
+                                                      object_data=object_data, objective_fn=obj_fn,
+                                                      global_region_info=global_region_info, scene_sdf=scene_sdf,
+                                                      parameters=parameters)
         # create stats recorder
-        goal_stats = statsrecording.GoalSamplingStatsRecorder(arpo_bridge, arpo_bridge, arpo_bridge)
+        goal_stats = statsrecording.GoalSamplingStatsRecorder(afr_bridge, afr_bridge, afr_bridge)
         planner_stats = statsrecording.PlacementMotionStatsRecorder()
         if parameters["sampler_type"] == "mcts_sampler":
-            goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, 
+            goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge, 
                                                                  [manip.GetName() for manip in manips],
                                                                  parameters=parameters,
                                                                  stats_recorder=goal_stats)
         elif parameters["sampler_type"] == "simple_mcts_sampler":
-            goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
                                                                               [manip.GetName() for manip in manips],
                                                                               parameters=parameters,
                                                                               stats_recorder=goal_stats)
         elif parameters["sampler_type"] == "random":
-            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge, [
                                                                   manip.GetName() for manip in manips], True, False,
                                                                   stats_recorder=goal_stats)
         elif parameters["sampler_type"] == "random_no_opt":
-            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge, [
                                                                   manip.GetName() for manip in manips], True, False,
                                                                   stats_recorder=goal_stats, b_local_opt=False)
         elif parameters["sampler_type"] == "random_proj":
-            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
                                                                   [manip.GetName() for manip in manips], True, True,
                                                                   stats_recorder=goal_stats)
         elif parameters["sampler_type"] == "random_afr":
-            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
                                                                   [manip.GetName() for manip in manips], True, True, 0.5,
                                                                   stats_recorder=goal_stats)
         elif parameters["sampler_type"] == "conservative_random":
-            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
                                                                   [manip.GetName() for manip in manips], False, True, 0.1,
                                                                   stats_recorder=goal_stats)
         elif parameters["sampler_type"] == "optimistic_random":
-            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
                                                                   [manip.GetName() for manip in manips], False, True, 0.9,
                                                                   stats_recorder=goal_stats)
         if parameters["motion_planner"] == "fake":
@@ -370,7 +370,7 @@ if __name__ == "__main__":
             # except IOError:
             #     rospy.logerr("Could not load reachability map for %s from file %s. Please provide one!" % (manip.GetName(), filename))
             #     sys.exit(1)
-            manip_data[manip.GetName()] = arpo_placement_mod.ARPORobotBridge.ManipulatorData(
+            manip_data[manip.GetName()] = afr_placement_mod.AFRRobotBridge.ManipulatorData(
                 manip, ik_solver, None, grasp_pose, problem_desc['grasp_config'])
             manip_links = [link.GetName() for link in get_manipulator_links(manip)]
             # remove base link - it does not move so
@@ -398,14 +398,14 @@ if __name__ == "__main__":
         urdf_content = None
         with open(problem_desc['urdf_file'], 'r') as urdf_file:
             urdf_content = urdf_file.read()
-        robot_data = arpo_placement_mod.ARPORobotBridge.RobotData(robot, robot_occgrid, manip_data, urdf_content, robot_ball_approx)
+        robot_data = afr_placement_mod.AFRRobotBridge.RobotData(robot, robot_occgrid, manip_data, urdf_content, robot_ball_approx)
         # create object data
         # obj_octree = kinbody_sdf_module.OccupancyOctree(
         #     problem_desc['parameters']['occ_tree_cell_size'], target_object.GetLinks()[0])
         obj_occgrid = kinbody_sdf_module.RigidBodyOccupancyGrid(problem_desc['parameters']['occ_tree_cell_size'],
                                                                 target_object.GetLinks()[0])
         obj_occgrid.setup_cuda_sdf_access(scene_sdf)
-        object_data = arpo_placement_mod.ARPORobotBridge.ObjectData(target_object, obj_occgrid)
+        object_data = afr_placement_mod.AFRRobotBridge.ObjectData(target_object, obj_occgrid)
         # create objective function
         now = time.time()
         obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
@@ -420,12 +420,12 @@ if __name__ == "__main__":
             mcts_visualizer = None
         if args.num_runs == 1:
             parameters = problem_desc["parameters"]
-            # create arpo hierarchy
-            hierarchy = arpo_placement_mod.ARPOHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
-            arpo_bridge = arpo_placement_mod.ARPORobotBridge(arpo_hierarchy=hierarchy, robot_data=robot_data,
-                                                             object_data=object_data, objective_fn=obj_fn,
-                                                             global_region_info=global_region_info, scene_sdf=scene_sdf,
-                                                             parameters=parameters)
+            # create afr hierarchy
+            hierarchy = afr_placement_mod.AFRHierarchy(manips, regions, orientations, so2_depth=4, so2_branching=4)
+            afr_bridge = afr_placement_mod.AFRRobotBridge(afr_hierarchy=hierarchy, robot_data=robot_data,
+                                                          object_data=object_data, objective_fn=obj_fn,
+                                                          global_region_info=global_region_info, scene_sdf=scene_sdf,
+                                                          parameters=parameters)
             # visualize placement regions
             if args.show_gui:
                 env.SetViewer('qtcoin')  # WARNING: IK solvers also need to be created before setting the viewer
@@ -461,13 +461,13 @@ if __name__ == "__main__":
                 viewer = env.GetViewer()
                 viewer.SetCamera(cam_tf)
                 
-            # goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge, [
+            # goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge, [
             #                                                       manip.GetName() for manip in manips], True, False)
-            # goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            # goal_sampler = mcts_sampler_mod.MCTSPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
             #                                                      [manip.GetName() for manip in manips],
             #                                                      debug_visualizer=mcts_visualizer,
             #                                                      parameters=problem_desc["parameters"])
-            goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, arpo_bridge, arpo_bridge, arpo_bridge,
+            goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
                                                                               [manip.GetName() for manip in manips],
                                                                               debug_visualizer=mcts_visualizer,
                                                                               parameters=problem_desc["parameters"])

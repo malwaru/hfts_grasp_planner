@@ -111,7 +111,7 @@ class PlacementGoalSampler(object):
 
 
 class PlacementHierarchy(object):
-    # TODO define an interface that allows exchanging arpo hierarchy easily?
+    # TODO define an interface that allows exchanging afr hierarchy easily?
     @abstractmethod
     def get_child_key_gen(self, key):
         """

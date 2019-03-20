@@ -5,7 +5,7 @@ import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 """
     This module contains the definition of a Monte-Carlo-tree-search-based placement
-    goal sampler. The MCTS sampler operates on an arpo_hierarchy and attempts to smartly
+    goal sampler. The MCTS sampler operates on an afr_hierarchy and attempts to smartly
     balance between sampling in parts of the hierarchy that are feasible and those that
     are unexplored yet. The sampler can be applied to incrementally optimize an objective
     function by informing it about reached solutions. Subsequent sampling calls will only return

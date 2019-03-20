@@ -4,7 +4,7 @@ import hfts_grasp_planner.placement.goal_sampler.interfaces as plcmnt_interfaces
 import hfts_grasp_planner.utils as utils
 """
     This module contains the definition of a naive placement goal sampler - purely random sampler.
-    The random sampler samples an arpo_hierarchy uniformly at random.
+    The random sampler samples an afr_hierarchy uniformly at random.
 """
 
 

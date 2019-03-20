@@ -6,7 +6,7 @@ import itertools
 import collections
 import hfts_grasp_planner.placement.optimization as optimization
 import hfts_grasp_planner.external.transformations as transformations
-import hfts_grasp_planner.placement.arpo_placement.placement_orientations as po_mod
+import hfts_grasp_planner.placement.afr_placement.placement_orientations as po_mod
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.placement.leafstage as leafstage
 import hfts_grasp_planner.placement.chull_utils as chull_utils

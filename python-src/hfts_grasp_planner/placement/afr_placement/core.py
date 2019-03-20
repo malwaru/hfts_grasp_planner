@@ -12,24 +12,21 @@ import hfts_grasp_planner.placement.so2hierarchy as so2hierarchy
 import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
 import hfts_grasp_planner.placement.goal_sampler.interfaces as placement_interfaces
 """
-    TODO update docs
-    This module defines the placement planning interfaces for an
-    # Arm-Region-PlacementOrientation(arpo)-hierarchy.
-    Arm-PlacementOrientation-Region hierarchy.
-    An arpo-hierarchy allows to search for an object placement with a dual arm robot.
+    This module defines the placement planning interfaces for an Arm-Face-Region hierarchy.
+    An afr-hierarchy allows to search for an object placement with a dual arm robot.
     On the root level,the hierarchy has as many branches as the robot has arms, i.e.
     it represents the decision which arm to use to place the object.
-    On the second level, the hierarchy has as many branches as there are placement regions
+    On the second level, it has as many branches as there are placement faces (orientations) for the object.
+    On the third level, the hierarchy has as many branches as there are placement regions
     in the target volume.
-    On the third level, it has as many branches as there are placement orientations for the object.
     Subsequent hierarchy levels arise from a subdivison of the SE(2) state space of the object
     in a particular region for the chosen placement orientation.
 """
 
 
-class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
+class AFRHierarchy(placement_interfaces.PlacementHierarchy):
     """
-        Defines an ARPO hierarchy.
+        Defines an ARF hierarchy.
         A node in this hierarchy is identified by a key, which is a tuple of ints followed by two more tuples:
         (a, o, r, subregion_key, so2_key). The integers a, o, r define the arm, placement orientation and region.
         The elements subregion_key and so2_key are themselves tuple of ints representing 1. a subregion of the region r
@@ -68,7 +65,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
 
     def __init__(self, manipulators, regions, orientations, so2_depth, so2_branching=4):
         """
-            Create a new ARPO hierarchy.
+            Create a new AFR hierarchy.
             ---------
             Arguments
             ---------
@@ -420,7 +417,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         region = self._regions[region_key[0]]
         return region.get_subregion(region_key[1])
 
-    def get_arpo_information(self, key):
+    def get_afr_information(self, key):
         """
             Return the arm, region, placement orientation, subregion and so2 interval represented
             by the given key.
@@ -445,7 +442,7 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
     def get_all_manip_orientations(self):
         """
             Returns a generator of all possible combinations of manipulators and placement orientations.
-            ---- Used by ARPORobotBridge to initialize IK solvers ----
+            ---- Used by AFRRobotBridge to initialize IK solvers ----
             -------
             Returns
             -------
@@ -455,12 +452,12 @@ class ARPOHierarchy(placement_interfaces.PlacementHierarchy):
         return itertools.product(enumerate(self._manips), enumerate(self._orientations))
 
 
-class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
+class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                       placement_interfaces.PlacementValidator,
                       placement_interfaces.PlacementObjective):
     """
-        An ARPORobotBridge serves as the central interface for a placement planner
-        operating on the ARPOHierarchy. The ARPORobotBridge fulfills multiple functionalities
+        An AFRRobotBridge serves as the central interface for a placement planner
+        operating on the AFRHierarchy. The AFRRobotBridge fulfills multiple functionalities
         including a solution constructor, validator and objective function. The reason
         this class provides all these different functions together is that this way
         we can cache a lot at a single location.
@@ -545,8 +542,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         """
 
         def __init__(self, key, region, plcmnt_orientation, so2_interval, solution):
-            self.key = key  # arpo hierarchy key (the one it was created for)
-            # leaf arpo hierarchy key (the lowest element in the tree this solution could come from)
+            self.key = key  # afr hierarchy key (the one it was created for)
+            # leaf afr hierarchy key (the lowest element in the tree this solution could come from)
             self.leaf_key = None
             self.solution = solution  # PlacementGoal
             self.region = region  # PlacementRegion from key
@@ -565,7 +562,7 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.region_state = None  # (x, y, theta) within region
 
         def copy(self):
-            new_entry = ARPORobotBridge.SolutionCacheEntry(self.key, self.region, self.plcmnt_orientation,
+            new_entry = AFRRobotBridge.SolutionCacheEntry(self.key, self.region, self.plcmnt_orientation,
                                                            np.array(self.so2_interval), self.solution.copy())
             new_entry.eef_tf = None if self.eef_tf is None else np.array(new_entry.eef_tf)
             new_entry.bkinematically_reachable = self.bkinematically_reachable
@@ -730,8 +727,8 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 ---------
                 Arguments
                 ---------
-                object_data, ARPORobotBridge.ObjectData - information about the object
-                robot_data, ARPORobotBridge.RobotData - information about the robot
+                object_data, AFRRobotBridge.ObjectData - information about the object
+                robot_data, AFRRobotBridge.RobotData - information about the robot
                 scene_sdf, sdf.core.SceneSDF - signed distance field of the scene
                     to compute intersection, i.e. constraint relaxation
                 max_robot_intersection, float - determines maximum percentage to which the robot
@@ -1513,15 +1510,15 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
             # qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
             return violation_value, qgrad
 
-    def __init__(self, arpo_hierarchy, robot_data, object_data,
+    def __init__(self, afr_hierarchy, robot_data, object_data,
                  objective_fn, global_region_info, scene_sdf,
                  parameters):
         """
-            Create a new ARPORobotBridge
+            Create a new AFRRobotBridge
             ---------
             Arguments
             ---------
-            arpo_hierarchy, ARPOHierarchy - arpo hierarchy to create solutions for
+            afr_hierarchy, AFRHierarchy - afr hierarchy to create solutions for
             robot_data, RobotData - struct that stores robot information including ManipulatorData for each manipulator
             object_data, ObjectData - struct that stores object information
             objective_fn, ??? - TODO
@@ -1529,25 +1526,25 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
                 contact points may be located, as well as gradients
             parameters, dict - dictionary with parameters. See class description.
         """
-        self._hierarchy = arpo_hierarchy
+        self._hierarchy = afr_hierarchy
         self._robot_data = robot_data
         self._manip_data = robot_data.manip_data  # shortcut to manipulator data
         self._objective_fn = objective_fn
         self._object_data = object_data
-        self._contact_constraint = ARPORobotBridge.ContactConstraint(global_region_info)
-        self._collision_constraint = ARPORobotBridge.CollisionConstraint(object_data, robot_data, scene_sdf)
-        self._reachability_constraint = ARPORobotBridge.ReachabilityConstraint(robot_data, True)
-        self._objective_constraint = ARPORobotBridge.ObjectiveImprovementConstraint(objective_fn, parameters['eps_xi'])
+        self._contact_constraint = AFRRobotBridge.ContactConstraint(global_region_info)
+        self._collision_constraint = AFRRobotBridge.CollisionConstraint(object_data, robot_data, scene_sdf)
+        self._reachability_constraint = AFRRobotBridge.ReachabilityConstraint(robot_data, True)
+        self._objective_constraint = AFRRobotBridge.ObjectiveImprovementConstraint(objective_fn, parameters['eps_xi'])
         self._solutions_cache = []  # array of SolutionCacheEntry objects
         self._call_stats = np.array([0, 0, 0, 0])  # num sol constructions, is_valid, get_relaxation, evaluate
         self._plcmnt_ik_solvers = {}  # maps (manip_id, placement_orientation_id) to a trac_ik solver
         self._init_ik_solvers()
-        self._jacobian_projection = ARPORobotBridge.JacobianProjection(self._contact_constraint,
+        self._jacobian_projection = AFRRobotBridge.JacobianProjection(self._contact_constraint,
                                                                        self._collision_constraint,
                                                                        self._objective_constraint,
                                                                        self._robot_data, self._object_data,
                                                                        joint_limit_margin=parameters["joint_limit_margin"])
-        self._jacobian_optimizer = ARPORobotBridge.JacobianOptimizer(self._contact_constraint,
+        self._jacobian_optimizer = AFRRobotBridge.JacobianOptimizer(self._contact_constraint,
                                                                      self._collision_constraint,
                                                                      objective_fn, self._robot_data,
                                                                      self._object_data,
@@ -1572,22 +1569,22 @@ class ARPORobotBridge(placement_interfaces.PlacementGoalConstructor,
         if len(key) < self._hierarchy.get_minimum_depth_for_construction():
             raise ValueError("Could not construct solution for the given key: " + str(key) +
                              " This key is describing a node too high up in the hierarchy")
-        arpo_info = self._hierarchy.get_arpo_information(key)
-        assert(len(arpo_info) >= 3)
-        manip = arpo_info[0]
+        afr_info = self._hierarchy.get_afr_information(key)
+        assert(len(afr_info) >= 3)
+        manip = afr_info[0]
         manip_data = self._manip_data[manip.GetName()]
-        po = arpo_info[1]
-        region = arpo_info[2]
+        po = afr_info[1]
+        region = afr_info[2]
         so2_interval = np.array([0, 2.0 * np.pi])
-        if len(arpo_info) == 5:
-            region = arpo_info[3]
-            so2_interval = arpo_info[4]
+        if len(afr_info) == 5:
+            region = afr_info[3]
+            so2_interval = afr_info[4]
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
             grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
         # create a cache entry for this solution
-        sol_cache_entry = ARPORobotBridge.SolutionCacheEntry(
+        sol_cache_entry = AFRRobotBridge.SolutionCacheEntry(
             key=key, region=region, plcmnt_orientation=po, so2_interval=so2_interval, solution=new_solution)
         self._solutions_cache.append(sol_cache_entry)
         if b_optimize_constraints:
