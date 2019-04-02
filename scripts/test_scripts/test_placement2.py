@@ -26,7 +26,7 @@ import hfts_grasp_planner.placement.goal_sampler.mcts_sampler as mcts_sampler_mo
 import hfts_grasp_planner.placement.goal_sampler.simple_mcts_sampler as simple_mcts_sampler_mod
 import hfts_grasp_planner.placement.goal_sampler.mcts_visualization as mcts_visualizer_mod
 import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
-import hfts_grasp_planner.placement.reachability as rmap_mod
+# import hfts_grasp_planner.placement.reachability as rmap_mod
 import hfts_grasp_planner.placement.clearance as clearance_mod
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
 

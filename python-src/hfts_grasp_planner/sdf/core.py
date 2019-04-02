@@ -9,7 +9,6 @@ import rospy
 import os
 import operator
 import itertools
-import skfmm
 import numpy as np
 import openravepy as orpy
 from itertools import izip, product
@@ -315,15 +314,6 @@ class SDFBuilder(object):
                 distance to the closest obstacle surface point
         """
         # the grid is a binary collision map: 1 - collision, 0 - no collision
-        # before calling skfmm we need to transform this map
-        # raw_grid = grid.get_raw_data()
-        # raw_grid *= -2.0
-        # raw_grid += 1.0
-        # min_value = grid.get_min_value()
-        # if min_value > 0:  # there is no collision
-        #     raw_grid[:, :, :] = float('Inf')
-        # else:
-        #     grid.set_raw_data(skfmm.distance(raw_grid, dx=grid.get_cell_size()))
         raw_grid = grid.get_raw_data()
         inverse_collision_map = np.invert(raw_grid)
         # compute the distances to surface of collision space
