@@ -442,7 +442,7 @@ if __name__ == "__main__":
         obj_occgrid = kinbody_sdf_module.RigidBodyOccupancyGrid(problem_desc['parameters']['occ_tree_cell_size'],
                                                                 target_object.GetLinks()[0])
         obj_occgrid.setup_cuda_sdf_access(scene_sdf)
-        object_data = afr_placement_mod.AFRRobotBridge.ObjectData(target_object, obj_occgrid)
+        object_data = afr_placement_mod.AFRRobotBridge.ObjectData(target_object, obj_occgrid, dmg)
         # create objective function
         now = time.time()
         obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,

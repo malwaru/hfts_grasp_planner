@@ -483,9 +483,10 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             an instance of sdf.kinbody.OccupancyTree or sdf.kinbody.RigidBodyOccupancyGrid
         """
 
-        def __init__(self, kinbody, occtree):
+        def __init__(self, kinbody, occtree, dmg):
             self.kinbody = kinbody
             self.volumetric_model = occtree
+            self.dmg = dmg
 
     class RobotData(object):
         """
@@ -1510,6 +1511,21 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
             return violation_value, qgrad
 
+    def GraspSearcher(object):
+        '''
+        Searches for feasible grasp solutions within the DMG
+        '''
+
+        def __init__(self, object_data):
+            self.dmg = object_data.dmg
+            pass
+
+        def compute_collision_free_grasp(self, pose, arm):
+            '''
+            Searches for grasps given the object pose and arm config
+            '''
+            pass
+
     def __init__(self, afr_hierarchy, robot_data, object_data,
                  objective_fn, global_region_info, scene_sdf,
                  parameters):
@@ -1551,6 +1567,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                                                                      joint_limit_margin=parameters["joint_limit_margin"])
         self._parameters = parameters
         self._use_jacobian_proj = parameters["proj_type"] == "jac"
+        self._grasp_searcher = GraspSearcher(object_data)
 
     def construct_solution(self, key, b_optimize_constraints=False):
         """
@@ -1599,8 +1616,6 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # assert(col_free)
             if sol_cache_entry.solution.arm_config is not None and not col_free:
                 print("collisions found")
-                import IPython
-                IPython.embed()
             elif sol_cache_entry.solution.arm_config is not None:
                 print("collisions FREE IK found")
         
