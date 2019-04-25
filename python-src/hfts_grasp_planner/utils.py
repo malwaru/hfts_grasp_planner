@@ -785,6 +785,37 @@ def get_tf_interpolation(start_tf, end_tf, num_steps):
         tf[:3, 3] = start_tf[:3, 3] + t * delta_pos
         yield tf
 
+def get_tf_gripper(gripper, finger_offsets=np.array([0.0, 0.0065, 0.0837])):
+    """
+        Return a center transform of graspable point in the gripper 
+        ---------
+        Arguments
+        ---------
+        gripper, Robot gripper object from openrave
+        finger_offsets, np array (x,y,z) offset of the fingers from the gripper base 
+        -------
+        Returns
+        -------
+        produces np array of shape (4,4) of the gripper at graspable point
+    """
+
+    # Get base transforms of both fingers
+    transform_base_finger_l = gripper.GetInternalHierarchyLeftTransform()
+    transform_base_finger_r = gripper.GetInternalHierarchyRightTransform()
+    
+    # Center translation of finger transforms
+    center_trans = np.divide(np.add(transform_base_finger_l[:3,3], transform_base_finger_r[:3,3]) ,2.0)
+
+    # Add offsets
+    center_trans = np.add(center_trans, finger_offsets)
+
+    gripper_transform = np.zeros(16).reshape(4,4)
+    gripper_transform[3][3] = 1
+    gripper_transform[:3,:3] = np.array([ [1,0,0], [0,1,0], [0,0,1] ])
+    gripper_transform[:3,3] = center_trans
+
+    return gripper_transform
+
 
 class OpenRAVEDrawer:
     def __init__(self, or_env, robot, debug):

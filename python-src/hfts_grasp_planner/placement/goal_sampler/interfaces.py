@@ -38,7 +38,10 @@ class PlacementGoalSampler(object):
             self.grasp_config = grasp_config
             self.data = data
             self.sample_num = 0
-
+        
+        def get_arm_config(self):
+            return self.arm_config
+        
         def copy(self):
             """
                 Construct a copy of this goal. All elements that are unique to this goal, e.g. arm configuration,

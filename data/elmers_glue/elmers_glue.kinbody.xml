@@ -1,10 +1,10 @@
 <KinBody name="elmers_washable_no_run_school_glue">
   <Body type="dynamic">
     <Geom type="trimesh">
-      <Data>elmers_washable_no_run_school_glue.ply</Data>
-      <Render>elmers_washable_no_run_school_glue.ply</Render>
+      <Data>glue.stl 0.001</Data>
+      <Render>glue.stl 0.001</Render>
       <transparency>0</transparency>
     </Geom>      
   </Body>
-  <rotationmat>0 0 -1 -1 0 0 0 1 0</rotationmat>
+  <!-- <rotationmat>0 0 -1 -1 0 0 0 1 0</rotationmat> -->
 </KinBody>

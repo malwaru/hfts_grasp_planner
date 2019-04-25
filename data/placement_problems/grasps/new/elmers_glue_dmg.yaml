@@ -1,0 +1,5 @@
+- grasp_config: [0.015522018161398976]
+  dmg_node: !!python/tuple [62,0]
+  dmg_angle: null
+  # dmg_node: !!python/tuple [130,0]
+  # dmg_angle: 300

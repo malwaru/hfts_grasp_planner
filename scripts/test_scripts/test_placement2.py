@@ -11,7 +11,7 @@ import cProfile
 import openravepy as orpy
 # import hfts_grasp_planner.placement
 from hfts_grasp_planner.utils import (is_dynamic_body, inverse_transform, get_manipulator_links,
-                                      set_grasp, set_body_color, set_body_alpha, get_tf_interpolation)
+                                      set_grasp, set_body_color, set_body_alpha, get_tf_interpolation, get_tf_gripper)
 import hfts_grasp_planner.sdf.grid as grid_module
 import hfts_grasp_planner.ik_solver as ik_module
 import hfts_grasp_planner.sdf.core as sdf_module
@@ -29,6 +29,8 @@ import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
 # import hfts_grasp_planner.placement.reachability as rmap_mod
 import hfts_grasp_planner.placement.clearance as clearance_mod
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
+# from hfts_grasp_planner.dmg.dmg_class import DexterousManipulationGraph as DMG
+# from transformations import compose_matrix
 
 
 def draw_volume(env, volume):
@@ -58,6 +60,10 @@ def resolve_paths(problem_desc, yaml_file):
         cwd = os.getcwd()
         global_yaml = cwd + '/' + global_yaml
     head, _ = os.path.split(global_yaml)
+    # for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'target_obj_file', 'gripper_file', 'grasp_file',
+    #             'robot_occtree', 'robot_occgrid', 'reachability_path', 'robot_ball_desc',
+    #             'target_object_stl', 'graph_file', 'nodes_position_file', 'nodes_component_file',
+    #             'component_normal_file', 'nodes_angle_file', 'supervoxel_component_file']:
     for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'target_obj_file', 'gripper_file', 'grasp_file',
                 'robot_occtree', 'robot_occgrid', 'reachability_path', 'robot_ball_desc']:
         if key in problem_desc:
@@ -75,12 +81,14 @@ def load_grasp(problem_desc):
         else:
             grasp_id = 0
         problem_desc['grasp_pose'] = grasp_yaml[grasp_id]['grasp_pose']
+
         # grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
         # grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
         # grasp_pose = utils.inverse_transform(grasp_pose)
         # problem_desc['grasp_pose'][:3] = grasp_pose[:3, 3]
         # problem_desc['grasp_pose'][3:] = orpy.quatFromRotationMatrix(grasp_pose)
         problem_desc['grasp_config'] = grasp_yaml[grasp_id]['grasp_config']
+        # problem_desc['dmg_node'] = grasp_yaml[grasp_id]['dmg_node']
 
 
 def show_solution(sol, target_obj):
@@ -211,6 +219,12 @@ def plan(planner, body, it):
     print "Planning took %fs" % (time.time() - now)
     return traj, goal
 
+# def get_grasp(dmg_node, robot, dmg):
+#     grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
+#     object_tf = dmg.make_transform_matrix(dmg_node)
+#     return inverse_transform(np.dot(grasp_tf, inverse_transform(object_tf)))
+#     # return np.dot(grasp_tf, inverse_transform(object_tf))
+
 
 def plan_for_stats(num_iterations, offset, robot_data, object_data, scene_sdf, regions, orientations, 
                    objective_fn, global_region_info, problem_desc):
@@ -299,6 +313,17 @@ if __name__ == "__main__":
         load_grasp(problem_desc)
 
     try:
+
+        # Load DMG files
+        # dmg = DMG()
+        # dmg.set_object_shape_file(problem_desc['target_object_stl'])
+        # dmg.read_graph(problem_desc['graph_file'])
+        # dmg.read_nodes(problem_desc['nodes_position_file'])
+        # dmg.read_node_to_component(problem_desc['nodes_component_file'])
+        # dmg.read_component_to_normal(problem_desc['component_normal_file'])
+        # dmg.read_node_to_angles(problem_desc['nodes_angle_file'])
+        # dmg.read_supervoxel_angle_to_angular_component(problem_desc['supervoxel_component_file'])
+
         env = orpy.Environment()
         env.Load(problem_desc['or_env'])
         # load target object
@@ -357,11 +382,23 @@ if __name__ == "__main__":
         link_names = []
         manip_data = {}
         manips = robot.GetManipulators()
+
+        # Just use one manipulator
+        # To use both, comment the pop() statement
+        # manips.pop()
+        
         for manip in manips:
             ik_solver = ik_module.IKSolver(manip, problem_desc['urdf_file'])
+            
             # TODO have different grasp poses for each manipulator
             grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
             grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
+
+            # DMG node to grasp_pose
+            # initial_dmg_node = problem_desc["dmg_node"]
+            # grasp_pose = get_grasp(initial_dmg_node, robot, dmg)
+            
+
             # grasp_pose = inverse_transform(grasp_pose)
             # rmap = rmap_mod.SimpleReachabilityMap(manip, ik_solver)
             # try:
@@ -494,6 +531,106 @@ if __name__ == "__main__":
             # print "Took %f realtime, %f clocktime" % (time.time() - real_time, time.clock() - clock_time)
             # cProfile.run("plan(motion_planner, target_object, 5)", '/tmp/cprofile_placement')
             # rospy.loginfo("cProfile complete")
+
+            #Rizwan
+            # from copy import deepcopy
+            # import math
+            # grasp_pose2 = deepcopy(grasp_pose)
+
+            # Node (52,0)
+            # T = np.array([ 0.015657 , -0.0210361, -0.013972 ])
+            # T2 = np.array([ 0.0187194 , -0.0280397 ,  0.00791634])
+            # zero_axis = np.array([0.999843 , 0.0, 0.0177472])
+            # normal = np.array([-0.0176726, -0.0916115,  0.995638 ])
+            # Tm = [ (T[0]+T2[0])/2.0, (T[1]+T2[1])/2.0, (T[2]+T2[2])/2.0 ]
+            # R2 = 180.0 # Note: Original angle 0 
+
+            # # Node (82,0)
+            # # T = np.array([-0.0187902,  0.0390576, -0.0112461])
+            # # T2 = np.array([-0.0205926,  0.0310959,  0.0121499])
+            # # zero_axis = np.array([0.999843 , 0.0, 0.0177472])
+            # # normal = np.array([-0.0176726, -0.0916115,  0.995638 ])
+            # # Tm = [ (T[0]+T2[0])/2.0, (T[1]+T2[1])/2.0, (T[2]+T2[2])/2.0 ]
+            # # R2 = 100.0-180.0 # Note: Original angle 100
+
+            # #rotate the zero angle axis by the angle
+            # theta = R2*math.pi/180.0
+            # Rot = np.array([ [1,0,0], [0, math.cos(theta), -math.sin(theta) ], [0, math.sin(theta), math.cos(theta)] ])
+            # #get the axis-angle matrix 
+            # rrt = np.outer(normal, normal)
+            # Sr = np.array([[0, -normal[2], normal[1]], [normal[2], 0, -normal[0]], [-normal[1], normal[0], 0]])
+            # R = rrt + (np.identity(3) - rrt)*math.cos(theta) + Sr*math.sin(theta)
+            # iR = np.array([ [1,0,0], [0,0,-1], [0,1,0] ] )
+            # # R = np.dot(iR,R)
+            
+            # finger_axis = 1.0*np.dot(R, zero_axis)
+            # finger_axis = finger_axis/np.linalg.norm(finger_axis)
+            # M = np.array([normal,  zero_axis, np.cross(normal,zero_axis)])
+            # M = np.dot(M, Rot)
+            # R = np.dot(iR , M)
+
+            # # A = compose_matrix(translate=[0,0,0], angles=R)
+            # A = deepcopy(grasp_pose)
+            # A[0][:3] = R[0]
+            # A[1][:3] = R[1]
+            # A[2][:3] = R[2]
+            # # A[0][:3] = [1.0,0.0,0.0]
+            # # A[1][:3] = [0.0,1.0,0.0]
+            # # A[2][:3] = [0.0,0.0,1.0]
+            # A[0][3] = Tm[0]
+            # A[1][3] = Tm[1]
+            # A[2][3] = Tm[2]
+            # # A[0][3] = 0.0
+            # # A[1][3] = 0.0
+            # # A[2][3] = 0.0
+
+            # gripper_r = robot.GetJoint('gripper_r_joint')
+            # eTcl = gripper_r.GetInternalHierarchyLeftTransform()
+            # eTcr = gripper_r.GetInternalHierarchyRightTransform()
+            
+            # # Center of finger transforms
+            # eTcX = (eTcl[0][3] + eTcr[0][3])/2.0
+            # eTcY = (eTcl[1][3] + eTcr[1][3])/2.0
+            # eTcZ = (eTcl[2][3] + eTcr[2][3])/2.0
+
+            # def angle_test(X):            
+            #     # Finger offsets
+            #     eTc = deepcopy(eTcr)
+            #     eTc[0][3] = X[0]
+            #     eTc[1][3] = X[1]
+            #     eTc[2][3] = X[2]
+            #     # eTc[0][3] = 0.0
+            #     # eTc[1][3] = eTcY + 0.04
+            #     # eTc[2][3] = eTcZ + 0.04
+            #     eTc[0][:3] = [1,0,0]
+            #     eTc[1][:3] = [0,1,0]
+            #     eTc[2][:3] = [0,0,1]
+
+            #     grasp_pose2 = np.dot(eTc, inverse_transform(A) )
+            #     target_object.SetTransform(np.dot(manip.GetEndEffectorTransform(), grasp_pose2 ))
+
+            # approx1 = [eTcX + 0.0, eTcY + 0.0065, eTcZ + 0.0837]
+            # approx2 = [eTcX, eTcY, eTcZ]
+            # angle_test(approx1)
+            # target_object.SetTransform(np.dot(manip.GetEndEffectorTransform(), inverse_transform(A) ))
+
+            # grasp_pose2[0][:3] = A[0][:3]
+            # grasp_pose2[1][:3] = A[1][:3]
+            # grasp_pose2[2][:3] = A[2][:3]
+            # grasp_pose2[0][3] = T[0]
+            # grasp_pose2[1][3] = T[1]
+            # grasp_pose2[2][3] = T[2]
+            # grasp_pose2[0] = [0.4719952, -0.5889378, -0.6560280, -0.1227483]
+            # grasp_pose2[1] = [0.0307596, -0.7326781,  0.6798798, 0.02869511]
+            # grasp_pose2[2] = [-0.8810643, -0.3410792, -0.3277051, -0.01849286]
+            # inv_grasp = inverse_transform(grasp_pose2)
+
+            # grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
+            # object_tf = dmg.make_transform_matrix((82,0))
+            # grasp_pose2 = np.dot(grasp_tf, inverse_transform(object_tf))
+            # target_object.SetTransform(np.dot(manip.GetEndEffectorTransform(), grasp_pose2 ))
+
+            # tarj, goal = plan(motion_planner, target_object, 10)
             IPython.embed()
         else:
             plan_for_stats(args.num_runs, args.offset, robot_data, object_data, scene_sdf, regions, orientations,

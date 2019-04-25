@@ -1,12 +1,11 @@
-or_env: ../environments/table_high_clutter.xml
+or_env: ../environments/table_low_clutter.xml
 urdf_file: ../../models/yumi/yumi.urdf
-gripper_file: ../../models/yumi/yumi_gripper_l.robot.xml
-sdf_file: ../sdfs/table_high_clutter
-occ_file: ../occupancy_grids/table_high_clutter
-robot_occtree: ../robot_occtrees/Yumi
-robot_occgrid: ../robot_occgrids/Yumi
+gripper_file: ../../models/yumi/yumi_gripper_r.robot.xml
+sdf_file: ../../generated/sdfs/table_low_clutter
+occ_file: ../../generated/occupancy_grids/table_low_clutter
+robot_occtree: ../../generated/robot_occtrees/Yumi
+robot_occgrid: ../../generated/robot_occgrids/Yumi
 robot_ball_desc: ../../models/yumi/ball_description.yaml
-reachability_path: ../gnat_reachability/
 data_path: ../
 urdf_path: object/
 robot_name: Yumi
@@ -16,10 +15,10 @@ robot_name: Yumi
 # grasp_file: grasps/new/scaled_table.yaml
 # target_obj_file: ../pencil_basket/pencil_basket.kinbody.xml
 # grasp_file: grasps/new/pencil_basket.yaml
-# target_obj_file: ../elmers_glue/elmers_glue.kinbody.xml
-# grasp_file: grasps/new/elmers_glue.yaml
-target_obj_file: ../crayola_24/crayola_24.kinbody.xml
-grasp_file: grasps/new/crayola_24.yaml
+target_obj_file: ../elmers_glue/elmers_glue.kinbody.xml
+grasp_file: grasps/new/elmers_glue.yaml
+# target_obj_file: ../crayola_24/crayola_24.kinbody.xml
+# grasp_file: grasps/new/crayola_24_test.yaml
 # target_obj_file: ../crayola/crayola.kinbody.xml
 # grasp_file: grasps/new/crayola.yaml
 # target_obj_file: ../wine_glass/wine_glass.kinbody.xml
@@ -46,4 +45,4 @@ parameters:
   mp_timeout: 5.0
   sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random
   motion_planner: real
-  proj_type: None
+  proj_type: jac
