@@ -1511,19 +1511,92 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
             return violation_value, qgrad
 
-    def GraspSearcher(object):
+    class GraspSearcher(object):
         '''
         Searches for feasible grasp solutions within the DMG
         '''
 
         def __init__(self, object_data):
-            self.dmg = object_data.dmg
-            pass
+            self.object_data = object_data
+            self.current_node = self.object_data.dmg.get_current_node()
+            self.current_angle = self.object_data.dmg.get_current_angle()
 
-        def compute_collision_free_grasp(self, pose, arm):
+        def search_for_new_grasp(self, manip_data, cache_entry, joint_limit_margin):
+            start = self.current_node
+            todo = [(start, [start])]
+            while len(todo) < len(self.object_data.dmg._adjacency_list.keys()):
+                node, visited = todo.pop( 0 )
+                for next_node in self.object_data.dmg._adjacency_list[node]:
+                    if next_node in visited:
+                        continue
+                    else:
+                        todo.append( (next_node, visited + [next_node]) )
+                        angle_list = self.object_data.dmg._node_to_angles[next_node]
+                        for next_angle in angle_list:
+                            grasp_tf = utils.get_tf_gripper(gripper=manip_data.manip.GetRobot().GetJoint('gripper_r_joint'))
+                            object_tf = self.object_data.dmg.make_transform_matrix(next_node, next_angle)
+                            manip_data.grasp_tf = utils.inverse_transform(np.dot(grasp_tf, utils.inverse_transform(object_tf)))
+
+                            self.object_data.kinbody.SetTransform(np.dot(manip_data.manip.GetEndEffectorTransform(), 
+                                                            utils.inverse_transform(manip_data.grasp_tf) ))
+                            self.compute_object_pose(cache_entry, manip_data)
+                            ik_solution, col_free = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
+                                                                                                joint_limit_margin=joint_limit_margin)
+                            if ik_solution is not None and not col_free:
+                                continue
+                            else:
+                                print("collisions FREE IK found after search")
+                                self.current_node = next_node
+                                self.current_angle = next_angle
+                                self.object_data.dmg.set_current_node(next_node)
+                                self.object_data.dmg.set_current_angle(next_angle)
+                                return ik_solution
+            return None
+        
+        def compute_collision_free_grasp(self, cache_entry, manip_data, joint_limit_margin):
             '''
             Searches for grasps given the object pose and arm config
             '''
+
+            self.object_data.kinbody.SetTransform(np.dot(manip_data.manip.GetEndEffectorTransform(), 
+                                                            utils.inverse_transform(manip_data.grasp_tf) ))
+            self.compute_object_pose(cache_entry, manip_data)
+            ik_solution, col_free = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
+                                                                                  joint_limit_margin=joint_limit_margin)
+            
+            # assert(col_free)
+            if ik_solution is not None and not col_free:
+                print("collisions found")
+                searched_ik = self.search_for_new_grasp(manip_data, cache_entry, joint_limit_margin)
+                if searched_ik is None:
+                    print("IK NOT found after search")
+                    return ik_solution
+                else:
+                    return searched_ik
+            else:
+                print("collisions FREE IK available")
+                return ik_solution
+
+        def compute_object_pose(self, cache_entry, manip_data, b_random=True):
+            
+            if b_random:
+                angle = so2hierarchy.sample(cache_entry.so2_interval)
+                # compute region pose
+                cache_entry.region_pose = np.dot(cache_entry.region.sample(b_local=True),
+                                                tf_mod.rotation_matrix(angle, [0., 0., 1]))
+                contact_tf = np.dot(cache_entry.region.base_tf, cache_entry.region_pose)
+            else:
+                angle = (cache_entry.so2_interval[1] + cache_entry.so2_interval[0]) / 2.0  # rotation around local z axis
+                contact_tf = np.dot(cache_entry.region.contact_tf, tf_mod.rotation_matrix(angle, [0., 0., 1]))
+                cache_entry.region_pose = tf_mod.rotation_matrix(angle, [0., 0., 1])
+                cache_entry.region_pose[:2, 3] = cache_entry.region.contact_xy
+                cache_entry.region_pose[3, 3] = cache_entry.region.cell_size * 0.5
+            # compute object pose
+            cache_entry.solution.obj_tf = np.dot(contact_tf, cache_entry.plcmnt_orientation.inv_reference_tf)
+            # compute end-effector tf
+            cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)
+            # set region state
+            cache_entry.region_state = (cache_entry.region_pose[0, 3], cache_entry.region_pose[1, 3], angle)
             pass
 
     def __init__(self, afr_hierarchy, robot_data, object_data,
@@ -1567,7 +1640,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                                                                      joint_limit_margin=parameters["joint_limit_margin"])
         self._parameters = parameters
         self._use_jacobian_proj = parameters["proj_type"] == "jac"
-        self._grasp_searcher = GraspSearcher(object_data)
+        self._grasp_searcher = AFRRobotBridge.GraspSearcher(object_data=self._object_data)
 
     def construct_solution(self, key, b_optimize_constraints=False):
         """
@@ -1608,16 +1681,20 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # compute object pose and arm configuration jointly
             self._optimize_constraints(sol_cache_entry)
         else:
-            # compute object and end-effector pose
-            self._compute_object_pose(sol_cache_entry, b_random=True)
-            # compute arm configuration
-            sol_cache_entry.solution.arm_config, col_free = manip_data.ik_solver.compute_collision_free_ik(sol_cache_entry.eef_tf,
-                                                                                  joint_limit_margin=self._parameters['joint_limit_margin'])
-            # assert(col_free)
-            if sol_cache_entry.solution.arm_config is not None and not col_free:
-                print("collisions found")
-            elif sol_cache_entry.solution.arm_config is not None:
-                print("collisions FREE IK found")
+            # # compute object and end-effector pose
+            # self._compute_object_pose(sol_cache_entry, b_random=True)
+            # # compute arm configuration
+            # sol_cache_entry.solution.arm_config, col_free = manip_data.ik_solver.compute_collision_free_ik(sol_cache_entry.eef_tf,
+            #                                                                       joint_limit_margin=self._parameters['joint_limit_margin'])
+            # # assert(col_free)
+            # if sol_cache_entry.solution.arm_config is not None and not col_free:
+            #     print("collisions found")
+            # elif sol_cache_entry.solution.arm_config is not None:
+            #     print("collisions FREE IK found")
+            manip_data = self._manip_data[sol_cache_entry.solution.manip.GetName()]
+            sol_cache_entry.solution.arm_config = self._grasp_searcher.compute_collision_free_grasp(sol_cache_entry, manip_data,
+                                                                        self._parameters['joint_limit_margin'])
+            new_solution.grasp_tf = manip_data.grasp_tf
         
         self._call_stats[0] += 1
         new_solution.sample_num = self._call_stats[0]

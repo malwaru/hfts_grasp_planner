@@ -396,6 +396,8 @@ if __name__ == "__main__":
             # DMG node to grasp_pose
             initial_dmg_node = problem_desc["dmg_node"]
             initial_dmg_angle = problem_desc["dmg_angle"]
+            dmg.set_current_node(initial_dmg_node)
+            dmg.set_current_angle(initial_dmg_angle)
             grasp_pose = get_grasp(initial_dmg_node, initial_dmg_angle, robot, dmg)
             
 

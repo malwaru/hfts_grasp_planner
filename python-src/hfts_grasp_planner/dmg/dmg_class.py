@@ -30,6 +30,29 @@ class DexterousManipulationGraph():
 
         #length of the gripper's finger 
         self._finger_length = 0.04 #Yumi's finger
+        self.current_node = None
+        self.current_angle = None
+
+    def set_current_node(self, node):
+        self.current_node = node
+
+    def get_current_node(self):
+        if self.current_node is None:
+            print("Current DMG Node not set")
+            assert(not self.current_node is None)
+        else:
+            return self.current_node
+
+    def set_current_angle(self, angle):
+        self.current_angle = angle
+
+    def get_current_angle(self):
+        if self.current_angle is None:
+            assert(not self.current_node is None)
+            print("Current DMG Angle not set, taking default")
+            self.current_angle = self._node_to_angles[self.current_node][0]
+        return self.current_angle
+        
 
     def set_object_shape_file(self, filename):
         '''read the object shape file'''
