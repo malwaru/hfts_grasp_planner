@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from stl import mesh
 from mpl_toolkits import mplot3d
 import scipy.spatial
+from collections import defaultdict
 
 class DexterousManipulationGraph():
     """class to read a DMG from files and do basic search"""
@@ -360,19 +361,170 @@ class DexterousManipulationGraph():
 
         return matrix
 
+    def create_node_angle_pairs(self, node_list):
+        ''' 
+        Converts a list of nodes into node angle pairs
+        i.e ((x,y), angle)
+        '''
+        pair_list = list()
+        for node in node_list:
+            angles = self._node_to_angles[node]
+            for angle in angles:
+                pair_list.append( (node, angle) )
+        return pair_list
+
+    def _run_bfs_on_nodes(self, reference_node):
+        ''' 
+        Runs BFS over the self._adjacency_list
+        Essentially serializing the nodes starting from reference_node 
+        '''
+        start = reference_node
+
+        # keep track of all visited nodes
+        explored = []
+        # keep track of nodes to be checked
+        queue = [start]
     
+        # keep looping until there are nodes still to be checked
+        while queue:
+            # pop shallowest node (first node) from queue
+            node = queue.pop(0)
+            if node not in explored:
+                # add node to list of checked nodes
+                explored.append(node)
+                neighbours = self._adjacency_list[node]
+    
+                # add neighbours of node to queue
+                for neighbour in neighbours:
+                    queue.append(neighbour)
+        return explored
 
-    # def get_object_grasp_transform(self, grasp_node, gripper_transform):
-    #     '''
-    #     Gets the object transform w.r.t the robot gripper
-    #     grasp_node: A node from _adjacency_list
-    #     gripper_transform: np array of shape (4,4) of gripper transform
-
-    #     returns: np array of shape (4,4) of the object transformation 
-    #     '''
+    def create_grasp_order(self, reference_node, reference_angle=None, max_depth=1, to_matrix=True):
+        ''' 
+        Creates a list of search order for the possible grasps, giving priority to node switch over angles
+        reference_node: the node from _adjecancy_list
+        target_angle: one of the possible angles in degrees from _node_to_angles list of reference_node
+        '''
         
-    #     object_transform = self.make_transform_matrix(grasp_node)
-    #     return np.dot(gripper_transform, object_transform)
+        assert(reference_node in self._adjacency_list.keys())
+        assert(max_depth>0)
+
+        # Get a BFS list of all nodes
+        node_list = self._run_bfs_on_nodes(reference_node)
+
+        # The final grasp order
+        grasp_order = []
+
+        # For each node, create a list based on adjacency angles
+        for i in range(len(node_list)):
+            node = node_list[i]
+            angles = np.array(self._node_to_angles[node])
+            if (not reference_angle is None) and (reference_angle in angles):
+                angles = np.roll(angles, -np.where(angles==reference_angle)[0])
+
+            #Get the neighbours of the node
+            neighbours =  node_list[i+1:i+max_depth]
+
+            # Append node that is suitable to switch
+            for angle in angles:
+                grasp_data = (node, angle)
+                if not grasp_data in grasp_order:
+                    grasp_order.append(grasp_data)
+                 
+                for neighbour in neighbours:
+                    if angle in self._node_to_angles[neighbour]:
+                        new_grasp_data = (neighbour, angle)
+                        if new_grasp_data in grasp_order:
+                            continue
+                        else:
+                            grasp_order.append(new_grasp_data)
+        
+        
+        # Convert Each grasp in grasp order to transformation matrix
+        if to_matrix:
+            grasp_order_matrix = []
+            for grasp_data in grasp_order:
+                assert(len(grasp_data) == 2)
+                node = grasp_data[0]
+                angle = grasp_data[1]
+                grasp_order_matrix.append(self.make_transform_matrix(node, angle))
+            return grasp_order_matrix
+        else:
+            return grasp_order
+
+    def run_dijsktra(self, reference_node, reference_angle=None, angle_weight=1.0, to_matrix=True):
+        ''' 
+        Creates a list of search order for the possible grasps, using dijsktra algorithm
+        reference_node: the node from _adjecancy_list
+        reference_angle: one of the possible angles in degrees from _node_to_angles list of reference_node
+        angle_weight: positive value, prioritizing angle over position.
+        '''
+
+        assert(reference_node in self._adjacency_list.keys())
+        if reference_angle is None:
+            reference_angle = self._node_to_angles[reference_node][0]
+
+        # Create Graph
+        edges = defaultdict(list)
+        distances = {}
+
+        #for the distance between the nodes, for now use simple Euclidian distance
+        def nodes_distance(node1, node2):
+            point1 = np.array(self._node_to_position[node1])
+            point2 = np.array(self._node_to_position[node2])
+            return np.linalg.norm(point1-point2)
+
+        def add_edge(from_node, to_node, distance):
+            edges[from_node].append(to_node)
+            edges[to_node].append(from_node)
+            distances[(from_node, to_node)] = distance
+
+        node_list = self._run_bfs_on_nodes(reference_node)
+        nodes = set( self.create_node_angle_pairs(node_list) )
+        for node in nodes:
+            for next_node in nodes:
+                if not next_node is node and next_node[0] in self._adjacency_list[node[0]]:
+                    add_edge(node, next_node, 
+                            nodes_distance(node[0], next_node[0]) + (angle_weight*abs(node[1]-next_node[1])) )
+        
+        # Dijkestra Start
+        visited = { (reference_node, reference_angle) : 0}
+        path = {}
+
+        while nodes: 
+            min_node = None
+            for node in nodes:
+                if node in visited:
+                    if min_node is None:
+                        min_node = node
+                    elif visited[node] < visited[min_node]:
+                        min_node = node
+
+            if min_node is None:
+                break
+
+            nodes.remove(min_node)
+            current_weight = visited[min_node]
+
+            for edge in edges[min_node]:
+                weight = current_weight + distances[(min_node, edge)]
+                if edge not in visited or weight < visited[edge]:
+                    visited[edge] = weight
+                    path[edge] = min_node
+
+        grasp_order = sorted(visited, key=visited.get)
+
+        # Convert Each grasp in grasp order to transformation matrix
+        if to_matrix:
+            grasp_order_matrix = []
+            for grasp_data in grasp_order:
+                assert(len(grasp_data) == 2)
+                node = grasp_data[0]
+                angle = grasp_data[1]
+                grasp_order_matrix.append(self.make_transform_matrix(node, angle))
+            return grasp_order_matrix
+        else:
+            return grasp_order
 
     def plot_graph(self):
         '''Use to visualize the shape and the graph'''

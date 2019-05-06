@@ -88,6 +88,7 @@ def load_grasp(problem_desc):
         problem_desc['grasp_config'] = grasp_yaml[grasp_id]['grasp_config']
         problem_desc['dmg_node'] = grasp_yaml[grasp_id]['dmg_node']
         problem_desc['dmg_angle'] = grasp_yaml[grasp_id]['dmg_angle']
+        problem_desc['angle_weight'] = grasp_yaml[grasp_id]['angle_weight']
 
 
 def show_solution(sol, target_obj):
@@ -385,6 +386,10 @@ if __name__ == "__main__":
         # Just use one manipulator
         # To use both, comment the pop() statement
         manips.pop()
+
+        # Get DMG Data
+        initial_dmg_node = problem_desc["dmg_node"]
+        initial_dmg_angle = problem_desc["dmg_angle"]
         
         for manip in manips:
             ik_solver = ik_module.IKSolver(manip, problem_desc['urdf_file'])
@@ -394,8 +399,6 @@ if __name__ == "__main__":
             # grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
 
             # DMG node to grasp_pose
-            initial_dmg_node = problem_desc["dmg_node"]
-            initial_dmg_angle = problem_desc["dmg_angle"]
             dmg.set_current_node(initial_dmg_node)
             dmg.set_current_angle(initial_dmg_angle)
             grasp_pose = get_grasp(initial_dmg_node, initial_dmg_angle, robot, dmg)
@@ -444,7 +447,12 @@ if __name__ == "__main__":
         obj_occgrid = kinbody_sdf_module.RigidBodyOccupancyGrid(problem_desc['parameters']['occ_tree_cell_size'],
                                                                 target_object.GetLinks()[0])
         obj_occgrid.setup_cuda_sdf_access(scene_sdf)
-        object_data = afr_placement_mod.AFRRobotBridge.ObjectData(target_object, obj_occgrid, dmg)
+
+        #Get DMG Grasp Order
+        # grasp_order = dmg.create_grasp_order(initial_dmg_node, initial_dmg_angle, max_depth=5)
+        grasp_order = dmg.run_dijsktra(initial_dmg_node, initial_dmg_angle, angle_weight=problem_desc['angle_weight'])
+
+        object_data = afr_placement_mod.AFRRobotBridge.ObjectData(target_object, obj_occgrid, dmg, grasp_order)
         # create objective function
         now = time.time()
         obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,

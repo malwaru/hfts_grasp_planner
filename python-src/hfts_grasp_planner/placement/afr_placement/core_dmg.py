@@ -483,10 +483,11 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             an instance of sdf.kinbody.OccupancyTree or sdf.kinbody.RigidBodyOccupancyGrid
         """
 
-        def __init__(self, kinbody, occtree, dmg):
+        def __init__(self, kinbody, occtree, dmg, grasp_order):
             self.kinbody = kinbody
             self.volumetric_model = occtree
             self.dmg = dmg
+            self.grasp_order = grasp_order
 
     class RobotData(object):
         """
@@ -1558,24 +1559,34 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             Searches for grasps given the object pose and arm config
             '''
 
-            self.object_data.kinbody.SetTransform(np.dot(manip_data.manip.GetEndEffectorTransform(), 
-                                                            utils.inverse_transform(manip_data.grasp_tf) ))
-            self.compute_object_pose(cache_entry, manip_data)
-            ik_solution, col_free = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
+            grasp_tf = utils.get_tf_gripper(gripper=manip_data.manip.GetRobot().GetJoint('gripper_r_joint'))
+            for object_tf in self.object_data.grasp_order:
+                manip_data.grasp_tf = utils.inverse_transform(np.dot(grasp_tf, utils.inverse_transform(object_tf)))
+
+                self.object_data.kinbody.SetTransform(np.dot(manip_data.manip.GetEndEffectorTransform(), 
+                                                                utils.inverse_transform(manip_data.grasp_tf) ))
+                self.compute_object_pose(cache_entry, manip_data)
+                ik_solution, col_free = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
                                                                                   joint_limit_margin=joint_limit_margin)
+                if ik_solution is not None and not col_free:
+                    continue
+                else:
+                    return ik_solution
+
+            raise ValueError("Could not find collition free solution")
             
             # assert(col_free)
-            if ik_solution is not None and not col_free:
-                print("collisions found")
-                searched_ik = self.search_for_new_grasp(manip_data, cache_entry, joint_limit_margin)
-                if searched_ik is None:
-                    print("IK NOT found after search")
-                    return ik_solution
-                else:
-                    return searched_ik
-            else:
-                print("collisions FREE IK available")
-                return ik_solution
+            # if ik_solution is not None and not col_free:
+            #     print("collisions found")
+            #     searched_ik = self.search_for_new_grasp(manip_data, cache_entry, joint_limit_margin)
+            #     if searched_ik is None:
+            #         print("IK NOT found after search")
+            #         return ik_solution
+            #     else:
+            #         return searched_ik
+            # else:
+            #     print("collisions FREE IK available")
+            #     return ik_solution
 
         def compute_object_pose(self, cache_entry, manip_data, b_random=True):
             
