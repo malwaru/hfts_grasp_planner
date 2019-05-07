@@ -472,7 +472,7 @@ class DexterousManipulationGraph():
         def nodes_distance(node1, node2):
             point1 = np.array(self._node_to_position[node1])
             point2 = np.array(self._node_to_position[node2])
-            return np.linalg.norm(point1-point2)
+            return abs(np.linalg.norm(point1-point2))
 
         def add_edge(from_node, to_node, distance):
             edges[from_node].append(to_node)
@@ -483,11 +483,11 @@ class DexterousManipulationGraph():
         nodes = set( self.create_node_angle_pairs(node_list) )
         for node in nodes:
             for next_node in nodes:
-                if not next_node is node and next_node[0] in self._adjacency_list[node[0]]:
+                if not next_node is node and (next_node[0] in self._adjacency_list[node[0]] or next_node[0] is node[0]):
                     add_edge(node, next_node, 
-                            nodes_distance(node[0], next_node[0]) + (angle_weight*abs(node[1]-next_node[1])) )
+                            (nodes_distance(node[0], next_node[0])) + (angle_weight*abs(node[1]-next_node[1])) )
         
-        # Dijkestra Start
+        # Dijsktra Start
         visited = { (reference_node, reference_angle) : 0}
         path = {}
 
@@ -508,11 +508,14 @@ class DexterousManipulationGraph():
 
             for edge in edges[min_node]:
                 weight = current_weight + distances[(min_node, edge)]
+                
                 if edge not in visited or weight < visited[edge]:
                     visited[edge] = weight
                     path[edge] = min_node
 
         grasp_order = sorted(visited, key=visited.get)
+        grasp_order.remove((reference_node, reference_angle))
+        grasp_order.insert(0, (reference_node, reference_angle))
 
         # Convert Each grasp in grasp order to transformation matrix
         if to_matrix:
@@ -525,6 +528,8 @@ class DexterousManipulationGraph():
             return grasp_order_matrix
         else:
             return grasp_order
+
+        return visited, path
 
     def plot_graph(self):
         '''Use to visualize the shape and the graph'''
