@@ -1,4 +1,11 @@
 <!--- Right hand gripper -->
 <Robot name="yumi_gripper">
     <kinbody file="yumi_gripper_r.kinbody.xml"/>
+    <manipulator name="gripper_manip">
+        <base>gripper_r_base</base>
+        <effector>gripper_r_base</effector>
+        <joints>gripper_r_joint</joints>
+        <closingdirection>1</closingdirection>
+        <direction>0 0 1</direction>
+    </manipulator>
 </Robot>

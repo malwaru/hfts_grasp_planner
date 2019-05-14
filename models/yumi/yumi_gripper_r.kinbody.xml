@@ -33,6 +33,7 @@
         <axis>-1 0 0</axis>
         <limits>0 0.025</limits>
         <maxvel>2</maxvel>
+        <!-- <initial>0.025</initial> -->
     </Joint>
     <Joint name="gripper_r_joint_m" type="slider" enable="false"
         mimic_pos="gripper_r_joint" mimic_vel="|gripper_r_joint 1"> 
