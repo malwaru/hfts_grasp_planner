@@ -1561,8 +1561,8 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             '''
 
             grasp_tf = utils.inverse_transform(utils.get_tf_gripper(gripper=manip_data.manip.GetRobot().GetJoint('gripper_r_joint')))
-            grasp_tf_gripper = utils.inverse_transform(utils.get_tf_gripper(gripper=manip_data.gripper.GetJoints()[0]))
-            env = manip_data.gripper.GetEnv()
+            # grasp_tf_gripper = utils.inverse_transform(utils.get_tf_gripper(gripper=manip_data.gripper.GetJoints()[0]))
+            # env = manip_data.gripper.GetEnv()
             # import IPython
             for grasp_obj_tf in self.object_data.grasp_order:
                 # IPython.embed()
@@ -1571,40 +1571,42 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 cache_entry.solution.grasp_tf = np.dot(grasp_obj_tf, grasp_tf)
                 cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, cache_entry.solution.grasp_tf)
 
-                manip_data.gripper.SetTransform(cache_entry.eef_tf)
-                in_collision = env.CheckCollision(manip_data.gripper)
-                in_collision = False
+                # target_pose = self.object_data.kinbody.GetTransform()
+                # collision_grasp_tf = np.dot(target_pose, grasp_obj_tf)
+                # collision_eef_tf = np.dot(collision_grasp_tf, grasp_tf_gripper)
+                # manip_data.gripper.SetTransform(collision_eef_tf)
+                # with manip_data.manip.GetRobot():
+                #     in_collision = env.CheckCollision(manip_data.gripper)
+                # in_collision = False
                 
-                if in_collision:
-                    print("Gripper Collision Found")
+                # if in_collision:
+                #     print("Gripper Collision Found")
+                # else:
+                #     print("Collision Free Gripper Found")
+                #     # ik_solution = manip_data.ik_solver.compute_ik(cache_entry.eef_tf,
+                #     #                                                                 joint_limit_margin=joint_limit_margin)
+                #     # return ik_solution
+                #     manip_data.gripper.SetTransform(np.ones(16).reshape(4,4))
+                #     ik_solution, col_free = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
+                #                                                                     joint_limit_margin=joint_limit_margin)
+                #     if ik_solution is not None and not col_free:
+                #         continue
+                #     else:
+                #         # for visualization
+                #         # manip_data.grasp_tf = cache_entry.solution.grasp_tf
+                #         return ik_solution
+                # manip_data.gripper.SetTransform(np.ones(16).reshape(4,4))
+                ik_solution, col_free = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
+                                                                                joint_limit_margin=joint_limit_margin)
+                if ik_solution is not None and not col_free:
+                    continue
                 else:
-                    print("Collision Free Gripper Found")
-                    ik_solution = manip_data.ik_solver.compute_ik(cache_entry.eef_tf,
-                                                                                    joint_limit_margin=joint_limit_margin)
+                    # for visualization
+                    manip_data.grasp_tf = cache_entry.solution.grasp_tf
                     return ik_solution
-                    # ik_solution, col_free = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
-                    #                                                                 joint_limit_margin=joint_limit_margin)
-                    # if ik_solution is not None and not col_free:
-                    #     continue
-                    # else:
-                    #     # for visualization
-                    #     # manip_data.grasp_tf = cache_entry.solution.grasp_tf
-                    #     return ik_solution
 
             raise ValueError("Could not find collition free solution")
-            
-            # assert(col_free)
-            # if ik_solution is not None and not col_free:
-            #     print("collisions found")
-            #     searched_ik = self.search_for_new_grasp(manip_data, cache_entry, joint_limit_margin)
-            #     if searched_ik is None:
-            #         print("IK NOT found after search")
-            #         return ik_solution
-            #     else:
-            #         return searched_ik
-            # else:
-            #     print("collisions FREE IK available")
-            #     return ik_solution
+            # return None
 
         def compute_object_pose(self, cache_entry, manip_data, b_random=True):
             

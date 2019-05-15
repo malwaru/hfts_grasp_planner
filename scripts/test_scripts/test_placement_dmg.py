@@ -328,7 +328,7 @@ if __name__ == "__main__":
         env = orpy.Environment()
         env.Load(problem_desc['or_env'])
         # load gripper
-        env.Add(env.ReadRobotURI(problem_desc['gripper_file']),True)
+        # env.Add(env.ReadRobotURI(problem_desc['gripper_file']),True)
         # load target object
         btarget_found = env.Load(problem_desc['target_obj_file'])
         if not btarget_found:
@@ -391,8 +391,9 @@ if __name__ == "__main__":
         manips.pop()
 
         # prepare gripper
-        robot_gripper = env.GetRobot(problem_desc['gripper_name'])
-        robot_gripper.SetJointValues([problem_desc['gripper_joint_value']], [0])
+        # robot_gripper = env.GetRobot(problem_desc['gripper_name'])
+        # robot_gripper.SetJointValues([problem_desc['gripper_joint_value']], [0])
+        robot_gripper = None
 
         # Get DMG Data
         initial_dmg_node = problem_desc["dmg_node"]
@@ -642,15 +643,18 @@ if __name__ == "__main__":
             # grasp_pose2[2] = [-0.8810643, -0.3410792, -0.3277051, -0.01849286]
             # inv_grasp = inverse_transform(grasp_pose2)
 
-            grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
-            object_tf = dmg.make_transform_matrix(initial_dmg_node, initial_dmg_angle)
-            grasp_pose2 = np.dot(grasp_tf, inverse_transform(object_tf))
-            target_object.SetTransform(np.dot(manip.GetEndEffectorTransform(), grasp_pose2 ))
+            # grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
+            # object_tf = dmg.make_transform_matrix(initial_dmg_node, initial_dmg_angle)
+            # grasp_pose2 = np.dot(grasp_tf, inverse_transform(object_tf))
+            # target_object.SetTransform(np.dot(manip.GetEndEffectorTransform(), grasp_pose2 ))
 
-            # robot_gripper.SetTransform(manip.GetEndEffectorTransform())
-            grasp_tf_gripper = get_tf_gripper(gripper=robot_gripper.GetJoints()[0])
-            target_pose = target_object.GetTransform()
-            robot_gripper.SetTransform(target)
+            # # robot_gripper.SetTransform(manip.GetEndEffectorTransform())
+            # grasp_tf_gripper = get_tf_gripper(gripper=robot_gripper.GetJoints()[0])
+            # target_pose = target_object.GetTransform()
+            # object_tf2 = np.dot(target_pose, object_tf)
+            # grasp_pose3 = np.dot(object_tf2, inverse_transform(grasp_tf_gripper))
+            # robot_gripper.SetTransform(grasp_pose3)
+
 
             IPython.embed()
         else:
