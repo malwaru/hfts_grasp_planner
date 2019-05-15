@@ -214,11 +214,11 @@ def side_transition(goal_tf, cabinet, duration, fps=30):
 
 
 def plan(planner, body, it):
-    # with body:
-    now = time.time()
-    traj, goal = planner.plan(it, body)
-    print "Planning took %fs" % (time.time() - now)
-    return traj, goal
+    with body:
+        now = time.time()
+        traj, goal = planner.plan(it, body)
+        print "Planning took %fs" % (time.time() - now)
+        return traj, goal
 
 def get_grasp(dmg_node, dmg_angle, robot, dmg):
     grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
@@ -327,8 +327,8 @@ if __name__ == "__main__":
 
         env = orpy.Environment()
         env.Load(problem_desc['or_env'])
-        # load gripper
-        # env.Add(env.ReadRobotURI(problem_desc['gripper_file']),True)
+        # load floating gripper
+        env.Add(env.ReadRobotURI(problem_desc['gripper_file']),True)
         # load target object
         btarget_found = env.Load(problem_desc['target_obj_file'])
         if not btarget_found:
@@ -390,10 +390,9 @@ if __name__ == "__main__":
         # To use both, comment the pop() statement
         manips.pop()
 
-        # prepare gripper
-        # robot_gripper = env.GetRobot(problem_desc['gripper_name'])
-        # robot_gripper.SetJointValues([problem_desc['gripper_joint_value']], [0])
-        robot_gripper = None
+        # prepare floating gripper
+        robot_gripper = env.GetRobot(problem_desc['gripper_name'])
+        robot_gripper.SetJointValues([problem_desc['gripper_joint_value']], [0])
 
         # Get DMG Data
         initial_dmg_node = problem_desc["dmg_node"]
