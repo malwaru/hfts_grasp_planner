@@ -68,6 +68,11 @@ class IKSolver(object):
             'num_trials': 10,
         }
 
+    def generate_seed(self):
+        rnd = np.random.rand(self._manip.GetArmDOF())
+        seed = self._lower_limits + rnd * (self._upper_limits - self._lower_limits)
+        return seed
+
     def try_gen_ik_fast(self):
         """
             Try to generate an IKFast model. Returns True on success and False otherwise
@@ -187,7 +192,7 @@ class IKSolver(object):
                         # with self._robot:
                         self._robot.SetDOFValues(np_sol, dofindices=self._arm_indices)
                         if not self._env.CheckCollision(self._robot) and not self._robot.CheckSelfCollision():
-                            return np_sol, True
-            return np_sol, False
+                            return np_sol, True, seed
+            return np_sol, False, seed
         else:
             raise RuntimeError("Neither IKFast nor TracIK is available. Can not solve IK queries!")

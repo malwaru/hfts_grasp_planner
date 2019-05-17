@@ -214,11 +214,11 @@ def side_transition(goal_tf, cabinet, duration, fps=30):
 
 
 def plan(planner, body, it):
-    with body:
-        now = time.time()
-        traj, goal = planner.plan(it, body)
-        print "Planning took %fs" % (time.time() - now)
-        return traj, goal
+    # with body:
+    now = time.time()
+    traj, goal = planner.plan(it, body)
+    print "Planning took %fs" % (time.time() - now)
+    return traj, goal
 
 def get_grasp(dmg_node, dmg_angle, robot, dmg):
     grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
