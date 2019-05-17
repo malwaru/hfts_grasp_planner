@@ -53,6 +53,13 @@ class DexterousManipulationGraph():
             print("Current DMG Angle not set, taking default")
             self.current_angle = self._node_to_angles[self.current_node][0]
         return self.current_angle
+
+    def vector_angle(self, v1, v2):
+        # v1 is your first vector
+        # v2 is your second vector
+        cosang = np.dot(v1, v2)
+        sinang = np.linalg.norm(np.cross(v1, v2))
+        return np.arctan2(sinang, cosang)
         
 
     def set_object_shape_file(self, filename):
@@ -308,8 +315,25 @@ class DexterousManipulationGraph():
         on the surface of an object. The Resulting node will be inside the object 
         '''
 
-        opposite_node = self.get_opposite_nodes(reference_node)[0]
+        opposite_nodes = self.get_opposite_nodes(reference_node)
+        ref_node_component = self._node_to_component[reference_node]
+        ref_node_normal = self._component_to_normal[ref_node_component]
+        
+        opposite_node = None
+        best_angle = np.Inf
+        for node in opposite_nodes:
+            node_comp = self._node_to_component[node]
+            node_normal = self._component_to_normal[node_comp]
 
+            angle = self.vector_angle(ref_node_normal, node_normal)
+            if (angle >= 0 and angle <= 5) or (angle <= 180 and angle >= 175):
+                opposite_node = node
+                break
+
+        if opposite_node is None:
+            # No opposite node found
+            return None
+        
         ref_node_position = self._node_to_position[reference_node]
         opp_node_position = self._node_to_position[opposite_node]
 
@@ -325,6 +349,10 @@ class DexterousManipulationGraph():
         assert(reference_node in self._adjacency_list.keys())
 
         center = self.get_center_node(reference_node)
+        if center is None:
+            # No valid opposite node found
+            return None
+
         component = self._node_to_component[reference_node]
         zero_axis = self._component_to_zero_axis[component]
         normal = self._component_to_normal[component]
@@ -399,59 +427,6 @@ class DexterousManipulationGraph():
                     queue.append(neighbour)
         return explored
 
-    def create_grasp_order(self, reference_node, reference_angle=None, max_depth=1, to_matrix=True):
-        ''' 
-        Creates a list of search order for the possible grasps, giving priority to node switch over angles
-        reference_node: the node from _adjecancy_list
-        target_angle: one of the possible angles in degrees from _node_to_angles list of reference_node
-        '''
-        
-        assert(reference_node in self._adjacency_list.keys())
-        assert(max_depth>0)
-
-        # Get a BFS list of all nodes
-        node_list = self._run_bfs_on_nodes(reference_node)
-
-        # The final grasp order
-        grasp_order = []
-
-        # For each node, create a list based on adjacency angles
-        for i in range(len(node_list)):
-            node = node_list[i]
-            angles = np.array(self._node_to_angles[node])
-            if (not reference_angle is None) and (reference_angle in angles):
-                angles = np.roll(angles, -np.where(angles==reference_angle)[0])
-
-            #Get the neighbours of the node
-            neighbours =  node_list[i+1:i+max_depth]
-
-            # Append node that is suitable to switch
-            for angle in angles:
-                grasp_data = (node, angle)
-                if not grasp_data in grasp_order:
-                    grasp_order.append(grasp_data)
-                 
-                for neighbour in neighbours:
-                    if angle in self._node_to_angles[neighbour]:
-                        new_grasp_data = (neighbour, angle)
-                        if new_grasp_data in grasp_order:
-                            continue
-                        else:
-                            grasp_order.append(new_grasp_data)
-        
-        
-        # Convert Each grasp in grasp order to transformation matrix
-        if to_matrix:
-            grasp_order_matrix = []
-            for grasp_data in grasp_order:
-                assert(len(grasp_data) == 2)
-                node = grasp_data[0]
-                angle = grasp_data[1]
-                grasp_order_matrix.append(self.make_transform_matrix(node, angle))
-            return grasp_order_matrix
-        else:
-            return grasp_order
-
     def run_dijsktra(self, reference_node, reference_angle=None, angle_weight=1.0, to_matrix=True):
         ''' 
         Creates a list of search order for the possible grasps, using dijsktra algorithm
@@ -524,7 +499,9 @@ class DexterousManipulationGraph():
                 assert(len(grasp_data) == 2)
                 node = grasp_data[0]
                 angle = grasp_data[1]
-                grasp_order_matrix.append(self.make_transform_matrix(node, angle))
+                matrix = self.make_transform_matrix(node, angle)
+                if not matrix is None:
+                    grasp_order_matrix.append(matrix)
             return grasp_order_matrix
         else:
             return grasp_order
