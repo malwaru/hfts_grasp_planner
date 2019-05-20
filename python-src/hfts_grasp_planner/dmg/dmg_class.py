@@ -60,7 +60,6 @@ class DexterousManipulationGraph():
         cosang = np.dot(v1, v2)
         sinang = np.linalg.norm(np.cross(v1, v2))
         return np.arctan2(sinang, cosang)
-        
 
     def set_object_shape_file(self, filename):
         '''read the object shape file'''
@@ -319,12 +318,14 @@ class DexterousManipulationGraph():
         ref_node_component = self._node_to_component[reference_node]
         ref_node_normal = self._component_to_normal[ref_node_component]
         
+        # Find a valid opposite node
         opposite_node = None
         best_angle = np.Inf
         for node in opposite_nodes:
             node_comp = self._node_to_component[node]
             node_normal = self._component_to_normal[node_comp]
 
+            # if node_comp == ref_node_component:
             angle = self.vector_angle(ref_node_normal, node_normal)
             if (angle >= 0 and angle <= 5) or (angle <= 180 and angle >= 175):
                 opposite_node = node

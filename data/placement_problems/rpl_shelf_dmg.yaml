@@ -1,0 +1,61 @@
+or_env: ../environments/cabinet_low_clutter.xml
+urdf_file: ../../models/yumi/yumi.urdf
+gripper_file: ../../models/yumi/yumi_gripper_r.robot.xml
+sdf_file: ../../generated/sdfs/cabinet_low_clutter
+occ_file: ../../generated/occupancy_grids/cabinet_low_clutter
+robot_occtree: ../../generated/robot_occtrees/Yumi
+robot_occgrid: ../../generated/robot_occgrids/Yumi
+reachability_path: ../gnat_reachability/
+robot_ball_desc: ../../models/yumi/ball_description.yaml
+gripper_name: yumi_gripper
+data_path: ../
+urdf_path: object/
+robot_name: Yumi
+# target_obj_file: ../scaled_table/scaled_table.kinbody.xml
+# grasp_file: grasps/new/scaled_table.yaml
+# target_obj_file: ../pencil_basket/pencil_basket.kinbody.xml
+# grasp_file: grasps/new/pencil_basket.yaml
+# target_obj_file: ../elmers_glue/elmers_glue.kinbody.xml
+# grasp_file: grasps/new/elmers_glue.yaml
+# target_obj_file: ../crayola/crayola.kinbody.xml
+# grasp_file: grasps/new/crayola.yaml
+# target_obj_file: ../crayola_24/crayola_24.kinbody.xml
+# grasp_file: grasps/new/crayola_24.yaml
+target_obj_file: ../elmers_glue/elmers_glue.kinbody.xml
+grasp_file: grasps/new/elmers_glue_dmg.yaml
+grasp_id: 0
+
+# DMG Files
+target_object_stl: ../elmers_glue/glue.stl
+graph_file: ../dmg_files/glue/graph_glue_12_20.txt
+nodes_position_file: ../dmg_files/glue/node_position_glue_12_20.txt
+nodes_component_file: ../dmg_files/glue/node_component_glue_12_20.txt
+component_normal_file: ../dmg_files/glue/component_normal_glue_12_20.txt
+nodes_angle_file: ../dmg_files/glue/node_angle_glue_12_20.txt
+supervoxel_component_file: ../dmg_files/glue/node_angle_angle_component_glue_12_20.txt
+
+plcmnt_volume: [-0.4, 0.45, 0.25, 0.53, 1.0, 0.54]
+sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
+time_limit: 20.0
+maximize_clearance: False
+goal_stats_file: '/tmp/test_goal_stats'
+plan_stats_file: '/tmp/test_plan_stats'
+# initial_obj_pose: [-0.65, 0.01, 0.63, 1.0, 0.0, 0.0, 0.0]
+gripper_joint_value: 0.02
+parameters:
+  occ_tree_cell_size: 0.005
+  relaxation_type: sub-binary
+  weight_arm_col: 0.25
+  weight_obj_col: 0.25
+  weight_contact: 0.25
+  weight_objective: 0.25
+  eps_xi: 1.0
+  joint_limit_margin: 0.0001
+  c: 0.8
+  objective_impr_f: 0.1
+  num_goal_samples: 12
+  num_goal_iterations: 24
+  mp_timeout: 5.0
+  sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random
+  motion_planner: real
+  proj_type: jac #None

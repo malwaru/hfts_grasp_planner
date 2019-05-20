@@ -223,6 +223,8 @@ def plan(planner, body, it):
 def get_grasp(dmg_node, dmg_angle, robot, dmg):
     grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
     object_tf = dmg.make_transform_matrix(dmg_node, dmg_angle)
+    if object_tf is None:
+        raise ValueError("The provided DMG node has no valid opposite node. Aborting")
     return inverse_transform(np.dot(grasp_tf, inverse_transform(object_tf)))
     # return np.dot(grasp_tf, inverse_transform(object_tf))
 
