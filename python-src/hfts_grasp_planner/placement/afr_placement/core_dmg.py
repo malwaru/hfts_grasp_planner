@@ -1523,7 +1523,9 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.current_node = self.object_data.dmg.get_current_node()
             self.current_angle = self.object_data.dmg.get_current_angle()
             self.ik_seed = ik_seed
-            self.cached_node = 0
+            # self.index_flag = 0
+            # self.grasp_order_indexes = range(len(self.object_data.grasp_order))
+            self.region_index_dict = {}
 
         def get_grasp_tf(self, gripper):
             grasp_tf = utils.inverse_transform(utils.get_tf_gripper(gripper=gripper))
@@ -1561,9 +1563,13 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.set_target_pose(manip_data, cache_entry)
             target_pose = self.object_data.kinbody.GetTransform()
 
+            # if self.index_flag > 0:
+            #     self.grasp_order_indexes = np.roll(self.grasp_order_indexes, len(self.grasp_order_indexes)-self.index_flag)
+            #     self.index_flag = 0
+
             grasp_order_indexes = range(len(self.object_data.grasp_order))
-            if self.cached_node > 0:
-                grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.cached_node)
+            if cache_entry.region in self.region_index_dict.keys():
+                grasp_order_indexes = self.region_index_dict[cache_entry.region] + grasp_order_indexes
 
             # for grasp_obj_tf in self.object_data.grasp_order:
             for i in grasp_order_indexes:
@@ -1575,8 +1581,8 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 else:
                     # print("Collision Free Ik Found")
 
-                    # Save working node in cache
-                    self.cached_node = i
+                    # Save working node index
+                    # self.index_flag = i
 
                     # To avoid collitions with floating gripper
                     manip_data.gripper.Enable(False)
@@ -1589,6 +1595,14 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                     ik_solution = manip_data.ik_solver.compute_ik(cache_entry.eef_tf,
                                                                     joint_limit_margin=joint_limit_margin,
                                                                     seed=self.ik_seed)
+                    print(type(cache_entry.region))
+                    if ik_solution != None:
+                        # Save index mapped to region
+                        if not cache_entry.region in self.region_index_dict.keys():
+                            self.region_index_dict[cache_entry.region] = [i]
+                        elif not i in self.region_index_dict[cache_entry.region]:
+                            self.region_index_dict[cache_entry.region].append(i)
+
                     return ik_solution
                     
                     # ik_solution, col_free, seed = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
