@@ -1523,9 +1523,10 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.current_node = self.object_data.dmg.get_current_node()
             self.current_angle = self.object_data.dmg.get_current_angle()
             self.ik_seed = ik_seed
-            # self.index_flag = 0
-            # self.grasp_order_indexes = range(len(self.object_data.grasp_order))
-            self.region_index_dict = {}
+
+            self.afr_cache = {}
+            self.region_cache = {}
+            self.so2_cache = {}
 
         def get_grasp_tf(self, gripper):
             grasp_tf = utils.inverse_transform(utils.get_tf_gripper(gripper=gripper))
@@ -1549,6 +1550,34 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # For visualization:
             # manip_data.grasp_tf = cache_entry.solution.grasp_tf
 
+        def append_cahce_keys(self, grasp_order_indexes, key):
+            if key[:3] in self.afr_cache.keys():
+                grasp_order_indexes = self.afr_cache[key[:3]] + grasp_order_indexes
+            if key[3] in self.region_cache.keys():
+                grasp_order_indexes = self.region_cache[key[3]] + grasp_order_indexes
+            if key[4] in self.so2_cache.keys():
+                grasp_order_indexes = self.so2_cache[key[4]] + grasp_order_indexes
+            return grasp_order_indexes
+
+        def save_cache(self, key, index):
+
+            # AFR Cache
+            if not key[:3] in self.afr_cache.keys():
+                self.afr_cache[key[:3]] = [index]
+            elif not index in self.afr_cache[key[:3]]:
+                self.afr_cache[key[:3]].append(index)
+
+            # Region Cache
+            if not key[3] in self.region_cache.keys():
+                self.region_cache[key[3]] = [index]
+            elif not index in self.region_cache[key[3]]:
+                self.region_cache[key[3]].append(index)
+
+            # Region Cache
+            if not key[4] in self.so2_cache.keys():
+                self.so2_cache[key[4]] = [index]
+            elif not index in self.so2_cache[key[4]]:
+                self.so2_cache[key[4]].append(index)
 
         def compute_collision_free_grasp(self, cache_entry, manip_data, joint_limit_margin):
             '''
@@ -1567,9 +1596,9 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             #     self.grasp_order_indexes = np.roll(self.grasp_order_indexes, len(self.grasp_order_indexes)-self.index_flag)
             #     self.index_flag = 0
 
-            grasp_order_indexes = range(len(self.object_data.grasp_order))
-            if cache_entry.region in self.region_index_dict.keys():
-                grasp_order_indexes = self.region_index_dict[cache_entry.region] + grasp_order_indexes
+            print(cache_entry.key)
+
+            grasp_order_indexes = self.append_cahce_keys(range(len(self.object_data.grasp_order)), cache_entry.key)
 
             # for grasp_obj_tf in self.object_data.grasp_order:
             for i in grasp_order_indexes:
@@ -1595,13 +1624,9 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                     ik_solution = manip_data.ik_solver.compute_ik(cache_entry.eef_tf,
                                                                     joint_limit_margin=joint_limit_margin,
                                                                     seed=self.ik_seed)
-                    print(type(cache_entry.region))
-                    if ik_solution != None:
-                        # Save index mapped to region
-                        if not cache_entry.region in self.region_index_dict.keys():
-                            self.region_index_dict[cache_entry.region] = [i]
-                        elif not i in self.region_index_dict[cache_entry.region]:
-                            self.region_index_dict[cache_entry.region].append(i)
+                    # print(type(cache_entry.region))
+                    # Save index mapped to region
+                    # self.save_cache(cache_entry.key, i)
 
                     return ik_solution
                     
