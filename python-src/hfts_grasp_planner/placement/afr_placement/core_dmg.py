@@ -1551,33 +1551,37 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # manip_data.grasp_tf = cache_entry.solution.grasp_tf
 
         def append_cahce_keys(self, grasp_order_indexes, key):
+            grasp_order_indexes = np.array(grasp_order_indexes)
+
             if key[:3] in self.afr_cache.keys():
-                grasp_order_indexes = self.afr_cache[key[:3]] + grasp_order_indexes
-            if key[3] in self.region_cache.keys():
-                grasp_order_indexes = self.region_cache[key[3]] + grasp_order_indexes
-            if key[4] in self.so2_cache.keys():
-                grasp_order_indexes = self.so2_cache[key[4]] + grasp_order_indexes
+                grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[key[:3]][-1])
+                grasp_order_indexes = np.append(self.afr_cache[key[:3]], grasp_order_indexes)
+            # if key[3] in self.region_cache.keys():
+            #     grasp_order_indexes = self.region_cache[key[3]] + grasp_order_indexes
+            # if key[4] in self.so2_cache.keys():
+            #     grasp_order_indexes = self.so2_cache[key[4]] + grasp_order_indexes
             return grasp_order_indexes
 
         def save_cache(self, key, index):
 
             # AFR Cache
             if not key[:3] in self.afr_cache.keys():
-                self.afr_cache[key[:3]] = [index]
+                self.afr_cache[key[:3]] = np.array([index])
             elif not index in self.afr_cache[key[:3]]:
-                self.afr_cache[key[:3]].append(index)
+                # self.afr_cache[key[:3]].append(index)
+                np.append(self.afr_cache[key[:3]], index)
 
             # Region Cache
-            if not key[3] in self.region_cache.keys():
-                self.region_cache[key[3]] = [index]
-            elif not index in self.region_cache[key[3]]:
-                self.region_cache[key[3]].append(index)
+            # if not key[3] in self.region_cache.keys():
+            #     self.region_cache[key[3]] = [index]
+            # elif not index in self.region_cache[key[3]]:
+            #     self.region_cache[key[3]].append(index)
 
-            # Region Cache
-            if not key[4] in self.so2_cache.keys():
-                self.so2_cache[key[4]] = [index]
-            elif not index in self.so2_cache[key[4]]:
-                self.so2_cache[key[4]].append(index)
+            # # Region Cache
+            # if not key[4] in self.so2_cache.keys():
+            #     self.so2_cache[key[4]] = [index]
+            # elif not index in self.so2_cache[key[4]]:
+            #     self.so2_cache[key[4]].append(index)
 
         def compute_collision_free_grasp(self, cache_entry, manip_data, joint_limit_margin):
             '''
@@ -1596,11 +1600,10 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             #     self.grasp_order_indexes = np.roll(self.grasp_order_indexes, len(self.grasp_order_indexes)-self.index_flag)
             #     self.index_flag = 0
 
-            print(cache_entry.key)
-
+            # Load cached keys
+            # print(cache_entry.key)
             grasp_order_indexes = self.append_cahce_keys(range(len(self.object_data.grasp_order)), cache_entry.key)
 
-            # for grasp_obj_tf in self.object_data.grasp_order:
             for i in grasp_order_indexes:
                 grasp_obj_tf = self.object_data.grasp_order[i]
                 in_collision = self.check_floating_gripper_colision(manip_data, target_pose, grasp_obj_tf, grasp_tf_gripper, env)
@@ -1626,7 +1629,8 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                                                                     seed=self.ik_seed)
                     # print(type(cache_entry.region))
                     # Save index mapped to region
-                    # self.save_cache(cache_entry.key, i)
+                    if not ik_solution is None:
+                        self.save_cache(cache_entry.key, i)
 
                     return ik_solution
                     
