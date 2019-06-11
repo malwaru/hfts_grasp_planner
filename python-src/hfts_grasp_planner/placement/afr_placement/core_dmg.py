@@ -1525,8 +1525,6 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.ik_seed = ik_seed
 
             self.afr_cache = {}
-            self.region_cache = {}
-            self.so2_cache = {}
 
         def get_grasp_tf(self, gripper):
             grasp_tf = utils.inverse_transform(utils.get_tf_gripper(gripper=gripper))
@@ -1550,26 +1548,55 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # For visualization:
             # manip_data.grasp_tf = cache_entry.solution.grasp_tf
 
-        def append_cahce_keys(self, grasp_order_indexes, key):
+        def append_cahce_keys(self, grasp_order_indexes, key, parents):
             grasp_order_indexes = np.array(grasp_order_indexes)
 
-            if key[:3] in self.afr_cache.keys():
-                grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[key[:3]][-1])
-                grasp_order_indexes = np.append(self.afr_cache[key[:3]], grasp_order_indexes)
-            # if key[3] in self.region_cache.keys():
-            #     grasp_order_indexes = self.region_cache[key[3]] + grasp_order_indexes
-            # if key[4] in self.so2_cache.keys():
-            #     grasp_order_indexes = self.so2_cache[key[4]] + grasp_order_indexes
-            return grasp_order_indexes
+            cache = np.array([])
+            for p in parents:
+                if p in self.afr_cache.keys():
+                    cache = np.append(cache,self.afr_cache[p])
+                    # indexes = np.unique(cache, return_index=True)[1]
+                    # cache = [cache[index] for index in sorted(indexes)]
 
-        def save_cache(self, key, index):
+            if key in self.afr_cache.keys():
+                cache = np.append(cache,self.afr_cache[key])
+                # indexes = np.unique(cache, return_index=True)[1]
+                # cache = [cache[index] for index in sorted(indexes)]
+
+            if key in self.afr_cache.keys():
+                grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[key][-1])
+            # elif parents[0] in self.afr_cache.keys():
+            #     grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[parents[0]][-1])
+            
+            grasp_order_indexes = np.append(cache, grasp_order_indexes)
+            indexes = np.unique(grasp_order_indexes, return_index=True)[1]
+            grasp_order_indexes = np.array([grasp_order_indexes[index] for index in sorted(indexes)])
+            
+            return grasp_order_indexes.astype(int)
+
+        def save_cache(self, key, index, parents):
+            # print("key: ", key)
+            # print("parent: ", parents)
+
+            for p in parents:
+                if not p in self.afr_cache.keys():
+                    self.afr_cache[p] = np.array([index])
+                elif not index in self.afr_cache[p]:
+                    # self.afr_cache[key[:3]].append(index)
+                    np.append(self.afr_cache[p], index)
+
+            if not key in self.afr_cache.keys():
+                self.afr_cache[key] = np.array([index])
+            elif not index in self.afr_cache[key]:
+                # self.afr_cache[key[:3]].append(index)
+                np.append(self.afr_cache[key], index)
 
             # AFR Cache
-            if not key[:3] in self.afr_cache.keys():
-                self.afr_cache[key[:3]] = np.array([index])
-            elif not index in self.afr_cache[key[:3]]:
-                # self.afr_cache[key[:3]].append(index)
-                np.append(self.afr_cache[key[:3]], index)
+            # if not key[:3] in self.afr_cache.keys():
+            #     self.afr_cache[key[:3]] = np.array([index])
+            # elif not index in self.afr_cache[key[:3]]:
+            #     # self.afr_cache[key[:3]].append(index)
+            #     np.append(self.afr_cache[key[:3]], index)
 
             # Region Cache
             # if not key[3] in self.region_cache.keys():
@@ -1582,6 +1609,33 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             #     self.so2_cache[key[4]] = [index]
             # elif not index in self.so2_cache[key[4]]:
             #     self.so2_cache[key[4]].append(index)
+
+        def get_parents(self, key):
+            assert(len(key)==5)
+            parent_list = []
+
+            # so2_key = list(key[4])
+            # for i in range(len(key[4])):
+            #     new_key = list(key)
+            #     so2_key.pop()
+            #     new_key[4] = tuple(so2_key)
+            #     parent_list.append(tuple(new_key))
+
+            rn_key = list(key[3])
+            so2_key = list(key[4])
+            for i in range(len(key[3])):
+                new_key = list(key)
+                rn_key.pop()
+                so2_key.pop()
+                new_key[3] = tuple(rn_key)
+                new_key[4] = tuple(so2_key)
+                parent_list.append(tuple(new_key))
+
+            parent_list.append(key[:3])
+            parent_list.append(key[:2])
+            parent_list.append(key[:1])
+
+            return np.array(parent_list)
 
         def compute_collision_free_grasp(self, cache_entry, manip_data, joint_limit_margin):
             '''
@@ -1596,13 +1650,11 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.set_target_pose(manip_data, cache_entry)
             target_pose = self.object_data.kinbody.GetTransform()
 
-            # if self.index_flag > 0:
-            #     self.grasp_order_indexes = np.roll(self.grasp_order_indexes, len(self.grasp_order_indexes)-self.index_flag)
-            #     self.index_flag = 0
-
             # Load cached keys
-            # print(cache_entry.key)
-            grasp_order_indexes = self.append_cahce_keys(range(len(self.object_data.grasp_order)), cache_entry.key)
+            parents = self.get_parents(cache_entry.key)
+            grasp_order_indexes = self.append_cahce_keys(range(len(self.object_data.grasp_order)), cache_entry.key, parents)
+            # print(grasp_order_indexes)
+            # grasp_order_indexes = range(len(self.object_data.grasp_order))
 
             for i in grasp_order_indexes:
                 grasp_obj_tf = self.object_data.grasp_order[i]
@@ -1628,9 +1680,11 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                                                                     joint_limit_margin=joint_limit_margin,
                                                                     seed=self.ik_seed)
                     # print(type(cache_entry.region))
+
                     # Save index mapped to region
                     if not ik_solution is None:
-                        self.save_cache(cache_entry.key, i)
+                        self.save_cache(cache_entry.key, i, parents)
+                    # self.save_cache(cache_entry.key, i, parents)
 
                     return ik_solution
                     
