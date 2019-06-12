@@ -383,6 +383,7 @@ class DummyPlanner(object):
         self._stats_recorder = stats_recorder
         self.num_goal_samples = num_goal_samples
         self.num_goal_iterations = num_goal_iterations
+        self.solutions = []
 
     def plan(self, timeout, target_object):
         """
@@ -394,7 +395,7 @@ class DummyPlanner(object):
             target_object, Kinbody - body to place
         """
         objectives = []
-        solutions = []
+        self.solutions = []
         goal_set = {}
         best_solution = None
         start_time = time.time()
@@ -412,11 +413,11 @@ class DummyPlanner(object):
                     self._goal_sampler.set_reached_goals([selected_goal])
                     best_solution = selected_goal
                     objectives.append(best_solution.objective_value)
-                    solutions.append(best_solution)
+                    self.solutions.append(best_solution)
                     if self._stats_recorder:
                         self._stats_recorder.register_new_solution(selected_goal)
 
-        return objectives, solutions
+        return objectives, self.solutions
 
     def _check_objective_invariant(self, goals, best_sol):
         if best_sol is None:

@@ -517,7 +517,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             Struct (named tuple) that stores manipulator data.
         """
 
-        def __init__(self, manip, ik_solver, reachability_map, grasp_tf, grasp_config, gripper):
+        def __init__(self, manip, ik_solver, reachability_map, grasp_tf, grasp_config, gripper, grasp_id=0):
             """
                 Create a new instance of manipulator data.
                 ---------
@@ -538,6 +538,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.ik_solver = ik_solver
             self.lower_limits, self.upper_limits = self.manip.GetRobot().GetDOFLimits(manip.GetArmIndices())
             self.gripper = gripper
+            self.grasp_id = grasp_id # index of dmg pose in grasp_order list
 
     class SolutionCacheEntry(object):
         """
@@ -1515,7 +1516,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
 
     class GraspSearcher(object):
         '''
-        Searches for feasible grasp solutions within the DMG
+        Searches for feasible grasp solutions within the DMG graph
         '''
 
         def __init__(self, object_data, ik_seed=None):
@@ -1527,28 +1528,43 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.afr_cache = {}
 
         def get_grasp_tf(self, gripper):
+            '''
+            Creates a grasp tf, given a tf from the dmg nodes 
+            '''
             grasp_tf = utils.inverse_transform(utils.get_tf_gripper(gripper=gripper))
             return grasp_tf
 
         def set_target_pose(self, manip_data, cache_entry):
+            '''
+            Sets the floating gripper pose and updtes the pose of target object
+            '''
             manip_data.gripper.Enable(True)
             self.compute_object_pose(cache_entry, manip_data)
             self.object_data.kinbody.SetTransform(cache_entry.solution.obj_tf)
 
         def check_floating_gripper_colision(self, manip_data, target_pose, grasp_obj_tf, grasp_tf_gripper, env):
+            '''
+            Checks the floating gripper for collisions with the environment
+            '''
             collision_grasp_tf = np.dot(target_pose, grasp_obj_tf)
             collision_eef_tf = np.dot(collision_grasp_tf, grasp_tf_gripper)
             manip_data.gripper.SetTransform(collision_eef_tf)
             in_collision = env.CheckCollision(manip_data.gripper)
             return in_collision
 
-        def set_grasp_pose(self, cache_entry, grasp_obj_tf, grasp_tf):
+        def set_grasp_pose(self, cache_entry, grasp_obj_tf, grasp_tf, dmg_id):
+            '''
+            Sets the eef grasp pose and updates the cache solution
+            '''
             cache_entry.solution.grasp_tf = np.dot(grasp_obj_tf, grasp_tf)
+            cache_entry.solution.grasp_id = dmg_id
             cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, cache_entry.solution.grasp_tf)
-            # For visualization:
-            # manip_data.grasp_tf = cache_entry.solution.grasp_tf
 
         def append_cahce_keys(self, grasp_order_indexes, key, parents):
+            '''
+            Given the grasp order from dmg, appends at the start the collision-free cached solutions
+            for all he parents of the given afr key
+            '''
             grasp_order_indexes = np.array(grasp_order_indexes)
 
             cache = np.array([])
@@ -1575,6 +1591,9 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             return grasp_order_indexes.astype(int)
 
         def save_cache(self, key, index, parents):
+            '''
+            saves the collision-free dmg poses index in all parents of a given afr leaf key
+            '''
             # print("key: ", key)
             # print("parent: ", parents)
 
@@ -1591,35 +1610,12 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 # self.afr_cache[key[:3]].append(index)
                 np.append(self.afr_cache[key], index)
 
-            # AFR Cache
-            # if not key[:3] in self.afr_cache.keys():
-            #     self.afr_cache[key[:3]] = np.array([index])
-            # elif not index in self.afr_cache[key[:3]]:
-            #     # self.afr_cache[key[:3]].append(index)
-            #     np.append(self.afr_cache[key[:3]], index)
-
-            # Region Cache
-            # if not key[3] in self.region_cache.keys():
-            #     self.region_cache[key[3]] = [index]
-            # elif not index in self.region_cache[key[3]]:
-            #     self.region_cache[key[3]].append(index)
-
-            # # Region Cache
-            # if not key[4] in self.so2_cache.keys():
-            #     self.so2_cache[key[4]] = [index]
-            # elif not index in self.so2_cache[key[4]]:
-            #     self.so2_cache[key[4]].append(index)
-
         def get_parents(self, key):
+            '''
+            Generates a list of all the parents of an afr leaf key
+            '''
             assert(len(key)==5)
             parent_list = []
-
-            # so2_key = list(key[4])
-            # for i in range(len(key[4])):
-            #     new_key = list(key)
-            #     so2_key.pop()
-            #     new_key[4] = tuple(so2_key)
-            #     parent_list.append(tuple(new_key))
 
             rn_key = list(key[3])
             so2_key = list(key[4])
@@ -1639,24 +1635,22 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
 
         def compute_collision_free_grasp(self, cache_entry, manip_data, joint_limit_margin):
             '''
-            Searches for grasps given the object pose and arm config
+            Searches for collision-free valid grasps from the dmg list, taking in account the afr cache
             '''
-
-            # grasp_tf = utils.inverse_transform(utils.get_tf_gripper(gripper=manip_data.manip.GetRobot().GetJoint('gripper_r_joint')))
-            # grasp_tf_gripper = utils.inverse_transform(utils.get_tf_gripper(gripper=manip_data.gripper.GetJoints()[0]))
             grasp_tf = self.get_grasp_tf(manip_data.manip.GetRobot().GetJoint('gripper_r_joint'))
             grasp_tf_gripper = self.get_grasp_tf(manip_data.gripper.GetJoints()[0])
             env = manip_data.gripper.GetEnv()
             self.set_target_pose(manip_data, cache_entry)
             target_pose = self.object_data.kinbody.GetTransform()
 
-            # Load cached keys
+            # Load afr cached keys
             parents = self.get_parents(cache_entry.key)
             grasp_order_indexes = self.append_cahce_keys(range(len(self.object_data.grasp_order)), cache_entry.key, parents)
-            # print(grasp_order_indexes)
+            print(grasp_order_indexes)
             # grasp_order_indexes = range(len(self.object_data.grasp_order))
 
             for i in grasp_order_indexes:
+                
                 grasp_obj_tf = self.object_data.grasp_order[i]
                 in_collision = self.check_floating_gripper_colision(manip_data, target_pose, grasp_obj_tf, grasp_tf_gripper, env)
                 
@@ -1664,14 +1658,10 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                     continue
                 else:
                     # print("Collision Free Ik Found")
-
-                    # Save working node index
-                    # self.index_flag = i
-
                     # To avoid collitions with floating gripper
                     manip_data.gripper.Enable(False)
                     
-                    self.set_grasp_pose(cache_entry, grasp_obj_tf, grasp_tf)
+                    self.set_grasp_pose(cache_entry, grasp_obj_tf, grasp_tf, i)
 
                     if self.ik_seed is None:
                         self.ik_seed = manip_data.ik_solver.generate_seed()
@@ -1681,26 +1671,14 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                                                                     seed=self.ik_seed)
                     # print(type(cache_entry.region))
 
+                    # For visualization:
+                    manip_data.grasp_tf = cache_entry.solution.grasp_tf
+
                     # Save index mapped to region
                     if not ik_solution is None:
                         self.save_cache(cache_entry.key, i, parents)
-                    # self.save_cache(cache_entry.key, i, parents)
 
                     return ik_solution
-                    
-                    # ik_solution, col_free, seed = manip_data.ik_solver.compute_collision_free_ik(cache_entry.eef_tf,
-                    #                                                                 joint_limit_margin=joint_limit_margin,
-                    #                                                                 seed=self.ik_seed)
-                    # if ik_solution is not None and not col_free:
-                    #     continue
-                    # else:
-                    #     # for visualization
-                    #     # manip_data.grasp_tf = cache_entry.solution.grasp_tf
-
-                    #     #Setting new seed value
-                    #     print("Collision free Ik found")
-                    #     self.ik_seed = seed
-                    #     return ik_solution
 
             # raise ValueError("Could not find collition free solution")
             return None
@@ -1800,7 +1778,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
-            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
+            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config, grasp_id=manip_data.grasp_id)
         # create a cache entry for this solution
         sol_cache_entry = AFRRobotBridge.SolutionCacheEntry(
             key=key, region=region, plcmnt_orientation=po, so2_interval=so2_interval, solution=new_solution)

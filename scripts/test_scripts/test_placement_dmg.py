@@ -390,7 +390,7 @@ if __name__ == "__main__":
 
         # Just use one manipulator
         # To use both, comment the pop() statement
-        manips.pop()
+        # manips.pop()
 
         # prepare floating gripper
         robot_gripper = env.GetRobot(problem_desc['gripper_name'])
@@ -535,7 +535,8 @@ if __name__ == "__main__":
                                                                          mp_timeout=parameters["mp_timeout"],
                                                                          stats_recorder=planner_stats)
             dummy_planner = anytime_planner_mod.DummyPlanner(goal_sampler, num_goal_samples=parameters["num_goal_samples"],
-                                                             num_goal_iterations=parameters["num_goal_iterations"])
+                                                                        num_goal_iterations=parameters["num_goal_iterations"],
+                                                                        stats_recorder=planner_stats)
             real_time = time.time()
             clock_time = time.clock()
             # traj, goal = plan(motion_planner, target_object, 120)

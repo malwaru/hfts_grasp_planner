@@ -14,7 +14,7 @@ class PlacementGoalSampler(object):
         """
         __metaclass__ = ABCMeta
 
-        def __init__(self, manip, arm_config, obj_tf, key, objective_value, grasp_tf, grasp_config, data=None):
+        def __init__(self, manip, arm_config, obj_tf, key, objective_value, grasp_tf, grasp_config, data=None, grasp_id = 0):
             """
                 Create a new PlacementGoal.
                 ---------
@@ -38,6 +38,7 @@ class PlacementGoalSampler(object):
             self.grasp_config = grasp_config
             self.data = data
             self.sample_num = 0
+            self.grasp_id = grasp_id # index in dmg grasp_order list
         
         def get_arm_config(self):
             return self.arm_config
