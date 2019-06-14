@@ -14,7 +14,9 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   message_generation
   cmake_modules
+  openrave_catkin
 )
+
 
 # find_package(SWIG REQUIRED)
 # INCLUDE(${SWIG_USE_FILE})
@@ -116,7 +118,7 @@ generate_dynamic_reconfigure_options(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
  INCLUDE_DIRS include
-#  LIBRARIES hfts_grasp_planner
+ LIBRARIES OpenRAVE OMPL
  CATKIN_DEPENDS roscpp rospy std_msgs
 #  DEPENDS system_lib
 )
@@ -136,6 +138,7 @@ include_directories(include
 add_subdirectory(src/hfts_grasp_planner/placement/reachability)
 add_subdirectory(src/hfts_grasp_planner/placement/pose_distance)
 add_subdirectory(src/hfts_grasp_planner/placement/objective)
+add_subdirectory(src/hfts_grasp_planner/placement/mp)
 
 # # Build swig python modules
 # set(CMAKE_SWIG_FLAGS "")
