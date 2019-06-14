@@ -53,6 +53,24 @@ def draw_volume(env, volume):
 #         print "Failed to find a solution"
 #     return result
 
+def initialize_planners(hierarchy, afr_bridge, manips, mcts_visualizer, problem_desc):
+
+    goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
+                                                                              [manip.GetName() for manip in manips],
+                                                                              debug_visualizer=mcts_visualizer,
+                                                                              parameters=problem_desc["parameters"])
+
+    planner_stats = statsrecording.PlacementMotionStatsRecorder()
+    motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips,
+                                                                    num_goal_samples=parameters["num_goal_samples"],
+                                                                    num_goal_iterations=parameters["num_goal_iterations"],
+                                                                    mp_timeout=parameters["mp_timeout"],
+                                                                    stats_recorder=planner_stats)
+    dummy_planner = anytime_planner_mod.DummyPlanner(goal_sampler, num_goal_samples=parameters["num_goal_samples"],
+                                                                num_goal_iterations=parameters["num_goal_iterations"],
+                                                                stats_recorder=planner_stats)
+    
+    return goal_sampler, planner_stats, motion_planner, dummy_planner
 
 def resolve_paths(problem_desc, yaml_file):
     global_yaml = str(yaml_file)
@@ -390,7 +408,7 @@ if __name__ == "__main__":
 
         # Just use one manipulator
         # To use both, comment the pop() statement
-        # manips.pop()
+        manips.pop()
 
         # prepare floating gripper
         robot_gripper = env.GetRobot(problem_desc['gripper_name'])
@@ -523,20 +541,9 @@ if __name__ == "__main__":
             #                                                      [manip.GetName() for manip in manips],
             #                                                      debug_visualizer=mcts_visualizer,
             #                                                      parameters=problem_desc["parameters"])
-            goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge,
-                                                                              [manip.GetName() for manip in manips],
-                                                                              debug_visualizer=mcts_visualizer,
-                                                                              parameters=problem_desc["parameters"])
 
-            planner_stats = statsrecording.PlacementMotionStatsRecorder()
-            motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips,
-                                                                         num_goal_samples=parameters["num_goal_samples"],
-                                                                         num_goal_iterations=parameters["num_goal_iterations"],
-                                                                         mp_timeout=parameters["mp_timeout"],
-                                                                         stats_recorder=planner_stats)
-            dummy_planner = anytime_planner_mod.DummyPlanner(goal_sampler, num_goal_samples=parameters["num_goal_samples"],
-                                                                        num_goal_iterations=parameters["num_goal_iterations"],
-                                                                        stats_recorder=planner_stats)
+            goal_sampler, planner_stats, motion_planner, dummy_planner = initialize_planners(hierarchy, afr_bridge, manips, mcts_visualizer, problem_desc)
+            
             real_time = time.time()
             clock_time = time.clock()
             # traj, goal = plan(motion_planner, target_object, 120)

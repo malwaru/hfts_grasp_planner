@@ -4,4 +4,3 @@
   dmg_node: !!python/tuple [130,0]
   dmg_angle: 300
   angle_weight: 0.0
-  # angle_weight: 0.0

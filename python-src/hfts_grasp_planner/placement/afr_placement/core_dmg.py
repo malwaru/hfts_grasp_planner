@@ -1524,8 +1524,13 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.current_node = self.object_data.dmg.get_current_node()
             self.current_angle = self.object_data.dmg.get_current_angle()
             self.ik_seed = ik_seed
-
             self.afr_cache = {}
+
+            # analytics
+            self.cache_hit = 0
+            self.ik_fail = 0
+            self.cfree_runs = 0
+            self.total_runs = 0
 
         def get_grasp_tf(self, gripper):
             '''
@@ -1578,9 +1583,8 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 cache = np.append(cache,self.afr_cache[key])
                 # indexes = np.unique(cache, return_index=True)[1]
                 # cache = [cache[index] for index in sorted(indexes)]
-
-            if key in self.afr_cache.keys():
                 grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[key][-1])
+
             # elif parents[0] in self.afr_cache.keys():
             #     grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[parents[0]][-1])
             
@@ -1588,7 +1592,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             indexes = np.unique(grasp_order_indexes, return_index=True)[1]
             grasp_order_indexes = np.array([grasp_order_indexes[index] for index in sorted(indexes)])
             
-            return grasp_order_indexes.astype(int)
+            return grasp_order_indexes.astype(int), cache
 
         def save_cache(self, key, index, parents):
             '''
@@ -1629,7 +1633,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
 
             parent_list.append(key[:3])
             parent_list.append(key[:2])
-            parent_list.append(key[:1])
+            # parent_list.append(key[:1]) # because only one arm
 
             return np.array(parent_list)
 
@@ -1645,11 +1649,15 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
 
             # Load afr cached keys
             parents = self.get_parents(cache_entry.key)
-            grasp_order_indexes = self.append_cahce_keys(range(len(self.object_data.grasp_order)), cache_entry.key, parents)
-            print(grasp_order_indexes)
+            grasp_order_indexes, cache = self.append_cahce_keys(range(len(self.object_data.grasp_order)), cache_entry.key, parents)
+            # print("<--")
+            # print(grasp_order_indexes)
+            # print(cache)
+            # print("-->")
             # grasp_order_indexes = range(len(self.object_data.grasp_order))
 
             for i in grasp_order_indexes:
+                self.total_runs += 1
                 
                 grasp_obj_tf = self.object_data.grasp_order[i]
                 in_collision = self.check_floating_gripper_colision(manip_data, target_pose, grasp_obj_tf, grasp_tf_gripper, env)
@@ -1657,6 +1665,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 if in_collision:
                     continue
                 else:
+                    self.cfree_runs += 1
                     # print("Collision Free Ik Found")
                     # To avoid collitions with floating gripper
                     manip_data.gripper.Enable(False)
@@ -1672,11 +1681,27 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                     # print(type(cache_entry.region))
 
                     # For visualization:
-                    manip_data.grasp_tf = cache_entry.solution.grasp_tf
+                    # manip_data.grasp_tf = cache_entry.solution.grasp_tf
 
                     # Save index mapped to region
+                    self.save_cache(cache_entry.key, i, parents)
                     if not ik_solution is None:
                         self.save_cache(cache_entry.key, i, parents)
+                        pass
+                    else:
+                        self.ik_fail += 1
+                    
+                    # Viewing cache
+                    if i in cache:
+                        # print("cache hit!")
+                        self.cache_hit += 1
+
+                    print("<--")
+                    print("Total Runs = ", self.total_runs)
+                    print("cFree Runs = ", self.cfree_runs)
+                    print("Ik Fails = ", self.ik_fail)
+                    print("Cache Hit = ", self.cache_hit)
+                    print("-->")
 
                     return ik_solution
 

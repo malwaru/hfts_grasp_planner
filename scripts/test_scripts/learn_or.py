@@ -3,6 +3,34 @@ import openravepy as orpy
 import numpy as np
 import IPython
 from copy import deepcopy
+from hfts_grasp_planner.dmg.dmg_class import DexterousManipulationGraph as DMG
+from hfts_grasp_planner.utils import (is_dynamic_body, inverse_transform, get_manipulator_links,
+                                      set_grasp, set_body_color, set_body_alpha, get_tf_interpolation, get_tf_gripper)
+
+def check_floating_gripper_colision(gripper, target_object, grasp_obj_tf, grasp_tf_gripper, env):
+    '''
+    Checks the floating gripper for collisions with the environment
+    '''
+    target_pose = target_object.GetTransform()
+    collision_grasp_tf = np.dot(target_pose, grasp_obj_tf)
+    collision_eef_tf = np.dot(collision_grasp_tf, grasp_tf_gripper)
+    gripper.SetTransform(collision_eef_tf)
+    in_collision = env.CheckCollision(gripper)
+    return in_collision
+
+def get_grasp_tf(gripper):
+    '''
+    Creates a grasp tf, given a tf from the dmg nodes 
+    '''
+    grasp_tf = inverse_transform(get_tf_gripper(gripper=gripper))
+    return grasp_tf
+
+def get_grasp(dmg_node, dmg_angle, robot, dmg):
+    grasp_tf = get_tf_gripper(gripper=robot.GetJoint('gripper_r_joint'))
+    object_tf = dmg.make_transform_matrix(dmg_node, dmg_angle)
+    if object_tf is None:
+        raise ValueError("The provided DMG node has no valid opposite node. Aborting")
+    return inverse_transform(np.dot(grasp_tf, inverse_transform(object_tf)))
 
 def set_body_color(body, color):
     """
@@ -24,74 +52,46 @@ def set_body_color(body, color):
 
 if __name__ == "__main__":
     env = orpy.Environment()
-    env.Load("../../data/environments/table_low_clutter.xml")
+    env.Load("/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/environments/table_low_clutter.xml")
     # btarget_found = env.Load("../../data/crayola_24/crayola_24.kinbody.xml")
-    # btarget_found = env.Load("../../data/elmers_glue/elmers_glue.kinbody.xml")
-    # if not btarget_found:
-    #     raise ValueError("Could not load target object. Aborting")
-    # target_obj_name = "target_object"
-    # env.GetBodies()[-1].SetName(target_obj_name)
+    btarget_found = env.Load("/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/elmers_glue/elmers_glue.kinbody.xml")
+    if not btarget_found:
+        raise ValueError("Could not load target object. Aborting")
+    target_obj_name = "target_object"
+    env.GetBodies()[-1].SetName(target_obj_name)
 
     robot = env.GetRobot("Yumi")
 
-    robot1 = env.ReadRobotURI('../../models/yumi/yumi_gripper_r.robot.xml')
+    robot1 = env.ReadRobotURI('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/models/yumi/yumi_gripper_r.robot.xml')
     env.Add(robot1,True)
 
     gripper = env.GetRobot('yumi_gripper')
+    gripper.SetJointValues([0.02], [0])
+    target_object = env.GetKinBody(target_obj_name)
 
-    #Joints and Links
-    # rjoint1 = robot.GetJoint('gripper_r_joint')
-    # rlink1 = robot.GetLink('gripper_r_base')
-    # rlink2 = robot.GetLink('gripper_r_finger_r')
-    # rlink3 = robot.GetLink('gripper_r_finger_l')
+    dmg = DMG()
+    dmg.set_object_shape_file('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/elmers_glue/glue.stl')
+    dmg.read_graph('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/dmg_files/glue/graph_glue_12_20.txt')
+    dmg.read_nodes('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/dmg_files/glue/node_position_glue_12_20.txt')
+    dmg.read_node_to_component('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/dmg_files/glue/node_component_glue_12_20.txt')
+    dmg.read_component_to_normal('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/dmg_files/glue/component_normal_glue_12_20.txt')
+    dmg.read_node_to_angles('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/dmg_files/glue/node_angle_glue_12_20.txt')
+    dmg.read_supervoxel_angle_to_angular_component('/home/rizwan/projects/placement_ws/src/hfts_grasp_planner/data/dmg_files/glue/node_angle_angle_component_glue_12_20.txt')
 
-    # #Infos
-    # rj1Info = rjoint1.GetInfo()
+    initial_dmg_node = (130,0)
+    initial_dmg_angle = 300
 
-    # rl1Info = rlink1.GetInfo()
-    # rl1Geo = rlink1.GetGeometries()
+    dmg.set_current_node(initial_dmg_node)
+    dmg.set_current_angle(initial_dmg_angle)
+    grasp_pose = get_grasp(initial_dmg_node, initial_dmg_angle, robot, dmg)
 
-    # rl2Info = rlink2.GetInfo()
-    # rl2Geo = rlink2.GetGeometries()
+    grasp_order = dmg.run_dijsktra(initial_dmg_node, initial_dmg_angle, angle_weight=0.0)
 
-    # rl3Info = rlink3.GetInfo()
-    # rl3Geo = rlink3.GetGeometries()
+    # check here
+    # grasp_tf = get_grasp_tf(robot.GetJoint('gripper_r_joint'))
+    grasp_tf_gripper = get_grasp_tf(gripper.GetJoints()[0])
 
-    # #New Links
-    # link0 = orpy.KinBody.LinkInfo()
-    # link0._vgeometryinfos = [x.GetInfo() for x in rl1Geo]
-    # link0._name = 'link0'
-    # link0._mapFloatParameters = rl1Info._mapFloatParameters
-    # link0._mapIntParameters = rl1Info._mapIntParameters
-
-    # link1 = orpy.KinBody.LinkInfo()
-    # link1._vgeometryinfos = [x.GetInfo() for x in rl2Geo]
-    # link1._name = 'link1'
-    # link1._mapFloatParameters = rl2Info._mapFloatParameters
-    # link1._mapIntParameters = rl2Info._mapIntParameters
-
-    # link2 = orpy.KinBody.LinkInfo()
-    # link2._vgeometryinfos = [x.GetInfo() for x in rl3Geo]
-    # link2._name = 'link2'
-    # link2._mapFloatParameters = rl3Info._mapFloatParameters
-    # link2._mapIntParameters = rl3Info._mapIntParameters
-
-    # # New Joint
-    # joint0 = orpy.KinBody.JointInfo()
-    # joint0._name = 'j0'
-    # joint0._linkname0 = 'link0'
-    # # joint0._linkname1 = 'link1'
-    # # joint0._linkname2 = 'link2'
-    # joint0._type = rj1Info._type
-    # joint0._vlowerlimit = rj1Info._vlowerlimit
-    # joint0._vupperlimit = rj1Info._vupperlimit
-    # joint0._vaxes = rj1Info._vaxes
-
-    # # New Body
-    # body = orpy.RaveCreateKinBody(env,'')
-    # body.Init([link0,link1,link2],[joint0])
-    # body.SetName('temp')
-    # env.Add(body)
+    
 
     env.SetViewer('qtcoin')
     
