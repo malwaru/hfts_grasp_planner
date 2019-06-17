@@ -15,11 +15,11 @@ SequentialMGBiRRT::SequentialMGBiRRT(EnvironmentBasePtr penv,
 
 SequentialMGBiRRT::~SequentialMGBiRRT() = default;
 
-void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, float time_limit)
+void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, double time_limit)
 {
     new_paths.clear();
     unsigned int num_active_planners = 0;
-    float per_grasp_time = 0.0f;
+    double per_grasp_time = 0.0f;
     if (time_limit == 0.0f)
         time_limit = 5.0f;
 
@@ -34,9 +34,12 @@ void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPath>>&
     // plan
     for (auto& key_planner : _planners) {
         WaypointPath path;
-        if (key_planner.second->plan(path)) {
-            // TODO add path to new_paths -> need to figure out what goal it leads to
-            // new_paths.push_back(std::make_tup);
+        unsigned int gid = 0;
+        if (key_planner.second->plan(per_grasp_time, gid)) {
+            // we have a new path, so retrieve it
+            WaypointPath path;
+            key_planner.second->getPath(gid, path);
+            new_paths.emplace_back(std::make_pair(gid, path));
         }
     }
 }
@@ -66,7 +69,7 @@ void SequentialMGBiRRT::addGrasp(const Grasp& grasp)
         // set grasped
         robot->Grab(obj);
         // create a new planner from this env
-        _planners[grasp.id] = std::make_shared<ompl::ORRedirectableBiRRT>(new_env);
+        _planners[grasp.id] = std::make_shared<ompl::ORRedirectableBiRRT>(robot, new_env);
     } else {
         RAVELOG_WARN("Attempting to add a grasp that has already been added! Ignoring request.");
     }
@@ -90,7 +93,7 @@ void SequentialMGBiRRT::addGoal(const Goal& goal)
         throw std::logic_error(error_msg);
     }
     // add the goal to the respective planner
-    iter->second->addGoal(goal.config);
+    iter->second->addGoal(goal.config, goal.id);
     _goals[goal.id] = goal;
 }
 
@@ -107,7 +110,7 @@ void SequentialMGBiRRT::removeGoals(const std::vector<unsigned int>& goal_ids)
         if (planner_iter == _planners.end()) {
             throw std::logic_error("There is no planner for goal " + std::to_string(goal.id) + " with grasp id " + std::to_string(goal.grasp_id));
         }
-        planner_iter->second->removeGoal(goal.config);
+        planner_iter->second->removeGoal(goal.id);
         _goals.erase(goal.id);
     }
 }
@@ -119,7 +122,7 @@ ParallelMGBiRRT::ParallelMGBiRRT(EnvironmentBasePtr penv, unsigned int robot_id,
 
 ParallelMGBiRRT::~ParallelMGBiRRT() = default;
 
-void ParallelMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, float time_limit)
+void ParallelMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, double time_limit)
 {
 }
 

@@ -223,7 +223,6 @@ namespace geometric {
         std::shared_ptr<GoalTreeSubset> queryTreeSet_;
         void removeTreeSet(const base::State* root); // remove the tree set with given root (if it exists)
     };
+    typedef std::shared_ptr<RedirectableRRTConnect> RedirectableRRTConnectPtr;
 } // namespace geometric
 } // namespace ompl
-
-#endif

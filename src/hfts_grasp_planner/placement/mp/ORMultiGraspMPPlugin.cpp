@@ -26,7 +26,7 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
         "Output format: id0 ... idk\n"
         " id q0_0 q1_0 q2_0 .. qn_0 q0_1 .. qn_1 .. q0_k .. qn_k \\n \n"
         "where\n"
-        " max_time, float - maximal planning duration (the actual runtime of this function may be longer than this value)\n"
+        " max_time, double - maximal planning duration (the actual runtime of this function may be longer than this value)\n"
         "      set 0.0 if no timeout should be used"
         " idX, int - ids of goals to which a new solution was found\n"
         "The actual paths can be retrieved calling getPath(..).");
@@ -40,13 +40,13 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
         "where\n"
         " gid, int - id of the goal\n"
         " In the output each line represents one waypoint of the path with\n"
-        " qj_i, float - value of joint j at waypoint i");
+        " qj_i, double - value of joint j at waypoint i");
     RegisterCommand("addGrasp", boost::bind(&ORMultiGraspMPPlugin::addGrasp, this, _1, _2),
         "Inform the motion planner about a new grasp. \n"
         "Input format: id x y z qx qy qz qw q0 ... qn \n"
         "where \n"
         " id, int - unique identifier of the grasp \n"
-        " x, y, z, float - end-effector position in object frame \n"
+        " x, y, z, double - end-effector position in object frame \n"
         " qx, qy, qz, qw - end-effector orientation in object frame (quaternion) \n"
         " q0, ..., qn - gripper joint configuration \n");
     RegisterCommand("addGoal", boost::bind(&ORMultiGraspMPPlugin::addGoal, this, _1, _2),
@@ -55,7 +55,7 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
         "where\n"
         " id, int - unique identifier for this goal\n"
         " gid, int - grasp id for which this goal is defined\n"
-        " q0, ..., qn, float - goal arm configuration");
+        " q0, ..., qn, double - goal arm configuration");
     RegisterCommand("removeGoals", boost::bind(&ORMultiGraspMPPlugin::removeGoals, this, _1, _2),
         "Inform the motion planner to stop planning towards the given goals. \n"
         "Input format: id0 id1 id2 ... idN \n"
@@ -100,7 +100,7 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
 
 bool ORMultiGraspMPPlugin::plan(std::ostream& sout, std::istream& sinput)
 {
-    float timeout;
+    double timeout;
     sinput >> timeout;
     std::vector<std::pair<unsigned int, MultiGraspMP::WaypointPath>> new_paths;
     _planner->plan(new_paths, timeout);
@@ -150,7 +150,7 @@ bool ORMultiGraspMPPlugin::addGrasp(std::ostream& sout, std::istream& sinput)
     sinput >> grasp.quat.x >> grasp.quat.y >> grasp.quat.z >> grasp.quat.w;
     // finally read configuration
     while (sinput.good()) {
-        float q;
+        double q;
         sinput >> q;
         grasp.gripper_values.push_back(q);
     }
@@ -171,7 +171,7 @@ bool ORMultiGraspMPPlugin::addGoal(std::ostream& sout, std::istream& sinput)
     sinput >> goal.grasp_id;
     // finally read configuration
     while (sinput.good()) {
-        float q;
+        double q;
         sinput >> q;
         goal.config.push_back(q);
     }

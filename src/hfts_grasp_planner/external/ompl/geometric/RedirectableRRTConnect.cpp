@@ -34,7 +34,9 @@
 
 /* Author: Ioan Sucan */
 
-#include "ompl/geometric/planners/rrt/RedirectableRRTConnect.h"
+#include "hfts_grasp_planner/external/ompl/geometric/RedirectableRRTConnect.h"
+#include <boost/lexical_cast.hpp>
+// #include "ompl/geometric/planners/rrt/RedirectableRRTConnect.h"
 // #include <iostream>
 #include "ompl/base/goals/GoalSampleableRegion.h"
 #include "ompl/tools/config/SelfConfig.h"

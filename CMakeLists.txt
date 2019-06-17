@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   cmake_modules
   openrave_catkin
+  or_ompl
 )
 
 

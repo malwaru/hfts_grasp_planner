@@ -18,7 +18,7 @@ namespace mp {
         SequentialMGBiRRT(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
         ~SequentialMGBiRRT();
 
-        void plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, float time_limit) override;
+        void plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, double time_limit) override;
         void addGrasp(const Grasp& grasp) override;
         void addGoal(const Goal& goal) override;
         void removeGoals(const std::vector<unsigned int>& goal_ids) override;
@@ -45,7 +45,7 @@ namespace mp {
         ParallelMGBiRRT(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
         ~ParallelMGBiRRT();
 
-        void plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, float time_limit) override;
+        void plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, double time_limit) override;
         void addGrasp(const Grasp& grasp) override;
         void addGoal(const Goal& goal) override;
         void removeGoals(const std::vector<unsigned int>& goal_ids) override;

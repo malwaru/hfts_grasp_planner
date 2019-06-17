@@ -19,7 +19,7 @@ namespace mp {
          * Resets all previously stored information, i.e. all grasps, goals and all motion planning data.
          * You need to add goals using the addGoal function. In addition, you need to add at least one grasp.
          * Input format: robot_name obj_name
-         * where 
+         * where
          *  robot_id, int - environment id of the robot to plan for (planning for its active manipulator)
          *  obj_name, int - environment id of the kinbody that is going to be grasped
          */
@@ -30,7 +30,7 @@ namespace mp {
          * Input format: max_time
          * Output format: id0 ... idk
          * where
-         *  max_time, float - maximal planning duration (the actual runtime of this function may be longer than this value), 
+         *  max_time, double - maximal planning duration (the actual runtime of this function may be longer than this value),
          *      set 0.0 if no timeout should be used
          *  idX, int - ids of goals to which a new solution was found
          * The actual paths can be retrieved calling getPath(..).
@@ -47,7 +47,7 @@ namespace mp {
          * where
          *  gid, int - id of the goal
          *  In the output each line represents one waypoint of the path with
-         *  qj_i, float - value of joint j at waypoint i
+         *  qj_i, double - value of joint j at waypoint i
          */
         bool getPath(std::ostream& sout, std::istream& sinput);
 
@@ -57,9 +57,9 @@ namespace mp {
         /**
          * Inform the motion planner about a new grasp.
          * Input format: id x y z qx qy qz qw q0 ... qn
-         * where 
+         * where
          *  id, int - unique identifier of the grasp
-         *  x, y, z, float - end-effector position in object frame
+         *  x, y, z, double - end-effector position in object frame
          *  qx, qy, qz, qw - end-effector orientation in object frame (quaternion)
          *  q0, ..., qn - gripper joint configuration
          */
@@ -71,14 +71,14 @@ namespace mp {
          * where
          *  id, int - unique identifier for this goal
          *  gid, int - grasp id for which this goal is defined
-         *  q0, ..., qn, float - goal arm configuration
+         *  q0, ..., qn, double - goal arm configuration
          */
         bool addGoal(std::ostream& sout, std::istream& sinput);
 
         /**
          * Inform the motion planner to stop planning towards the given goals.
          * Input format: id0 id1 id2 ... idn
-         * where 
+         * where
          *  idX, int - goal identifiers
          */
         bool removeGoals(std::ostream& sout, std::istream& sinput);
