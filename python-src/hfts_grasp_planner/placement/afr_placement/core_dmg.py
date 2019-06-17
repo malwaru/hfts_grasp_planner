@@ -1678,13 +1678,12 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                     ik_solution = manip_data.ik_solver.compute_ik(cache_entry.eef_tf,
                                                                     joint_limit_margin=joint_limit_margin,
                                                                     seed=self.ik_seed)
-                    # print(type(cache_entry.region))
-
+                    
                     # For visualization:
                     # manip_data.grasp_tf = cache_entry.solution.grasp_tf
 
                     # Save index mapped to region
-                    self.save_cache(cache_entry.key, i, parents)
+                    # self.save_cache(cache_entry.key, i, parents)
                     if not ik_solution is None:
                         self.save_cache(cache_entry.key, i, parents)
                         pass

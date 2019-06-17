@@ -34,6 +34,8 @@ class DexterousManipulationGraph():
         self.current_node = None
         self.current_angle = None
 
+        self.grasp_order = []
+
     def set_current_node(self, node):
         self.current_node = node
 
@@ -503,8 +505,10 @@ class DexterousManipulationGraph():
                 matrix = self.make_transform_matrix(node, angle)
                 if not matrix is None:
                     grasp_order_matrix.append(matrix)
+            self.grasp_order = grasp_order_matrix
             return grasp_order_matrix
         else:
+            self.grasp_order = grasp_order
             return grasp_order
 
         return visited, path

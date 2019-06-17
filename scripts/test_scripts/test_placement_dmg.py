@@ -32,6 +32,16 @@ from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
 from hfts_grasp_planner.dmg.dmg_class import DexterousManipulationGraph as DMG
 # from transformations import compose_matrix
 
+def check_floating_gripper_colision(gripper, target_object, grasp_obj_tf, grasp_tf_gripper, env):
+    '''
+    Checks the floating gripper for collisions with the environment
+    '''
+    target_pose = target_object.GetTransform()
+    collision_grasp_tf = np.dot(target_pose, grasp_obj_tf)
+    collision_eef_tf = np.dot(collision_grasp_tf, grasp_tf_gripper)
+    gripper.SetTransform(collision_eef_tf)
+    in_collision = env.CheckCollision(gripper)
+    return in_collision
 
 def draw_volume(env, volume):
     return env.drawbox(0.5 * (volume[0] + volume[1]), 0.5 * (volume[1] - volume[0]), np.array([0.3, 0.3, 0.3, 0.3]))
@@ -478,6 +488,27 @@ if __name__ == "__main__":
         #Get DMG Grasp Order
         # grasp_order = dmg.create_grasp_order(initial_dmg_node, initial_dmg_angle, max_depth=5)
         grasp_order = dmg.run_dijsktra(initial_dmg_node, initial_dmg_angle, angle_weight=problem_desc['angle_weight'])
+
+        # # Removing unnecessary grasps
+        # save_obj_transform = target_object.GetTransform()
+        # target_object.SetTransform(np.ones(16).reshape(4,4))
+        # grasp_tf_gripper = inverse_transform(get_tf_gripper(gripper=robot_gripper.GetJoints()[0]))
+        # grasp_order = []
+        # for i in range(len(col_grasp_order)):
+        #     col = check_floating_gripper_colision(robot_gripper, target_object, col_grasp_order[i], grasp_tf_gripper, env)
+        #     if not col:
+        #         grasp_order.append(col_grasp_order[i])
+
+        # if not grasp_order[0] is col_grasp_order[0]:
+        #     grasp_order.insert(0, col_grasp_order[0])
+
+        # grasp_order = np.array(grasp_order)
+        # target_object.SetTransform(save_obj_transform)
+
+        # print("Collision Free grasps: ", len(grasp_order))
+        # print("Total grasps: ", len(col_grasp_order))
+        
+
 
         object_data = afr_placement_mod.AFRRobotBridge.ObjectData(target_object, obj_occgrid, dmg, grasp_order)
         # create objective function
