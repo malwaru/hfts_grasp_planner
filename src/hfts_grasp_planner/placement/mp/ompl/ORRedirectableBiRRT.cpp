@@ -51,6 +51,7 @@ ORRedirectableBiRRT::ORRedirectableBiRRT(OpenRAVE::RobotBasePtr probot, OpenRAVE
     _planner = std::make_shared<::ompl::geometric::RedirectableRRTConnect>(_simple_setup->getSpaceInformation(), true);
     _simple_setup->setPlanner(_planner);
     _or_validity_checker->stop();
+    _simple_setup->setup();
 }
 
 ORRedirectableBiRRT::~ORRedirectableBiRRT() = default;
@@ -175,5 +176,6 @@ void ORRedirectableBiRRT::_synchronizeGoals() {
             ompl_goals->addState(state);
         }
     }
+    problem_def->setGoal(ompl_goals);
     _dirty_goals = false;
 }

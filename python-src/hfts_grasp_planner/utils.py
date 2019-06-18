@@ -340,7 +340,7 @@ def inverse_transform(transform):
 
 def compute_closest_point_on_line(start_point, end_point, query_point):
     """
-        Compute the closest point to query_point that lies on the line spanned from 
+        Compute the closest point to query_point that lies on the line spanned from
         start_point to end_point.
         ---------
         Arguments
@@ -401,7 +401,7 @@ def compute_pseudo_inverse_rank(matrix):
         -------
         Returns
         -------
-        psueudo_inv, np.array 
+        psueudo_inv, np.array
         rank, int
     """
     u, s, v = np.linalg.svd(matrix)
@@ -486,7 +486,7 @@ def path_to_trajectory(robot, path, vel_factor=0.2):
         Arguments
         ---------
         robot, OpenRAVE robot that the path is for
-        path, list of SampleData
+        path, list of SampleData or np.array
         vel_factor, float - percentage (in [0, 1]) of maximal velocity
         --------
         Returns
@@ -495,7 +495,10 @@ def path_to_trajectory(robot, path, vel_factor=0.2):
     """
     if path is None:
         return None
-    configurations_path = map(lambda x: x.get_configuration(), path)
+    if type(path[0]) is not np.ndarray:
+        configurations_path = map(lambda x: x.get_configuration(), path)
+    else:
+        configurations_path = path
     # # The path ends in a pre-grasp configuration.
     # # The final grasp configuration is stored as additional data in the last waypoint,
     # # so we need to construct the final configuration here.

@@ -14,7 +14,7 @@ class PlacementGoalSampler(object):
         """
         __metaclass__ = ABCMeta
 
-        def __init__(self, manip, arm_config, obj_tf, key, objective_value, grasp_tf, grasp_config, data=None):
+        def __init__(self, manip, arm_config, obj_tf, key, objective_value, grasp_tf, grasp_config, grasp_id, data=None):
             """
                 Create a new PlacementGoal.
                 ---------
@@ -23,10 +23,11 @@ class PlacementGoalSampler(object):
                 manip - OpenRAVE manipulator this goal is for
                 arm_config, numpy array (n,) - arm configuration
                 obj_tf, numpy array (4, 4) - pose of the object
-                key, int - key information that can be used by the placement goal sampler to identify this goal
+                key, int - unique key information that can be used to identify this goal
                 objective_value, float - objective value of this solution
                 grasp_tf, np.array (4, 4) - eef frame in object frame
                 grasp_config, np.array (q,) - q = manip.GetGripperDOF(), hand configuration for grasp
+                grasp_id, int - unique integer id identifying the grasp (unique for this manipulator)
                 data, object - optional additional data
             """
             self.manip = manip
@@ -36,6 +37,7 @@ class PlacementGoalSampler(object):
             self.objective_value = objective_value
             self.grasp_tf = grasp_tf
             self.grasp_config = grasp_config
+            self.grasp_id = grasp_id
             self.data = data
             self.sample_num = 0
 
@@ -47,7 +49,7 @@ class PlacementGoalSampler(object):
             new_goal = PlacementGoalSampler.PlacementGoal(
                 self.manip, np.array(self.arm_config), np.array(
                     self.obj_tf), self.key, self.objective_value, np.array(self.grasp_tf),
-                np.array(self.grasp_config), self.data)  # TODO deep copy data
+                np.array(self.grasp_config), self.grasp_id, self.data)  # TODO deep copy data
             return new_goal
 
     @abstractmethod
@@ -300,7 +302,7 @@ class PlacementValidator(object):
             This is determined by setting b_incl_obj. If it is True, the returned relaxation
             includes it, else not. In any case, to ensure the returned value lies within [0, 1], it is internally
             normalized. If b_incl_obj=False, by setting b_obj_norrmalizer the normalizer can be forced
-            to be the same as if b_incl_obj was True. Note that this implies that returned values are in some range [0, c] 
+            to be the same as if b_incl_obj was True. Note that this implies that returned values are in some range [0, c]
             with c < 1.
             ---------
             Arguments

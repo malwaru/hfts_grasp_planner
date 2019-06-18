@@ -147,7 +147,7 @@ bool ORMultiGraspMPPlugin::addGrasp(std::ostream& sout, std::istream& sinput)
     // next read x, y, z
     sinput >> grasp.pos.x >> grasp.pos.y >> grasp.pos.z;
     // quaternion
-    sinput >> grasp.quat.x >> grasp.quat.y >> grasp.quat.z >> grasp.quat.w;
+    sinput  >> grasp.quat.w >> grasp.quat.x >> grasp.quat.y >> grasp.quat.z;
     // finally read configuration
     while (sinput.good()) {
         double q;

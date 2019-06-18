@@ -68,6 +68,8 @@ void SequentialMGBiRRT::addGrasp(const Grasp& grasp)
         robot->SetDOFValues(grasp.gripper_values, 1, gripper_indices);
         // set grasped
         robot->Grab(obj);
+        // set arm dofs
+        robot->SetActiveDOFs(manip->GetArmIndices());
         // create a new planner from this env
         _planners[grasp.id] = std::make_shared<ompl::ORRedirectableBiRRT>(robot, new_env);
     } else {

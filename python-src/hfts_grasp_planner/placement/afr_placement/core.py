@@ -269,7 +269,7 @@ class AFRHierarchy(placement_interfaces.PlacementHierarchy):
             -------
             Returns
             -------
-            key, tuple - leaf key that the position and orientation falls into, 
+            key, tuple - leaf key that the position and orientation falls into,
                 None if the position and orientation do not lie within base_key
         """
         assert(len(base_key) >= 3)
@@ -834,12 +834,12 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 Arguments
                 ---------
                 cache_entry, SolutionCacheEntry
-                    Requirements: 
+                    Requirements:
                         cache_entry.region_state is set
                 -------
                 Returns
                 -------
-                violation_val, float 
+                violation_val, float
                 gradient, np array of shape (3,) - gradient of CHOMP's collision cost for the object
                     w.r.t x, y, theta(ez)
             """
@@ -1181,7 +1181,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             arm_configs = []
             with self.robot:
                 with self.object_data.kinbody:
-                    utils.set_grasp(manip, self.object_data.kinbody, 
+                    utils.set_grasp(manip, self.object_data.kinbody,
                                     manip_data.inv_grasp_tf, manip_data.grasp_config)
                     reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
                     manip.SetLocalToolTransform(reference_pose)
@@ -1582,7 +1582,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
-            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config)
+            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config, grasp_id=0)
         # create a cache entry for this solution
         sol_cache_entry = AFRRobotBridge.SolutionCacheEntry(
             key=key, region=region, plcmnt_orientation=po, so2_interval=so2_interval, solution=new_solution)
@@ -1657,7 +1657,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             reference_point_pose = np.dot(cache_entry.solution.obj_tf, cache_entry.plcmnt_orientation.reference_tf)
             # the jacobian optimizer may have moved the solution to a different region
             # TODO this should maybe be done within jacobian optimizer
-            region_id = self._hierarchy.get_region(reference_point_pose[:3, 3])  
+            region_id = self._hierarchy.get_region(reference_point_pose[:3, 3])
             cache_entry.key = (cache_entry.key[0], cache_entry.key[1], region_id)
             if region_id is None: # TODO this is a bug
                 return None, []
@@ -1720,7 +1720,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             This is determined by setting b_incl_obj. If it is True, the returned relaxation
             includes it, else not. In any case, to ensure the returned value lies within [0, 1], it is internally
             normalized. If b_incl_obj=False, by setting b_obj_norrmalizer the normalizer can be forced
-            to be the same as if b_incl_obj was True. Note that this implies that returned values are in some range [0, c] 
+            to be the same as if b_incl_obj was True. Note that this implies that returned values are in some range [0, c]
             with c < 1.
             ---------
             Arguments

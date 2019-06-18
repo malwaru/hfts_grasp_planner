@@ -60,7 +60,7 @@ namespace mp {
          * where
          *  id, int - unique identifier of the grasp
          *  x, y, z, double - end-effector position in object frame
-         *  qx, qy, qz, qw - end-effector orientation in object frame (quaternion)
+         *  qw, qx, qy, qz - end-effector orientation in object frame (quaternion)
          *  q0, ..., qn - gripper joint configuration
          */
         bool addGrasp(std::ostream& sout, std::istream& sinput);

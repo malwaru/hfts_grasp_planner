@@ -5,8 +5,132 @@ import hfts_grasp_planner.utils as hfts_utils
 import time
 import random
 
+class MGMotionPlanner(object):
+    """
+        Wrapper around OpenRAVE plugin for multi-grasp motion planning.
+    """
+    def __init__(self, algorithm_name, manip, vel_factor=0.4):
+        """
+            Create a new instance of a multi-grasp motion planner using the given
+            algorithm for the given manipulator.
+            ---------
+            Arguments
+            ---------
+            planner_name, string - name of the algorithm.
+                Valid choices: SequentialMGBiRRT, ParallelMGBiRRT
+            manip, OpenRAVE Manipulator - manipulator to use
+            vel_factor, float - percentage of maximum velocity for trajectories
+        """
+        self._manip = manip
+        self._robot = manip.GetRobot()
+        self._env = self._robot.GetEnv()
+        self._planner_interface = orpy.RaveCreateModule(self._env, algorithm_name)
+        if self._planner_interface == None:
+            raise ValueError("Could not create planner with name %s" % algorithm_name)
+        self._simplifier = orpy.RaveCreatePlanner(self._env, "OMPL_Simplifier")
+        self._initialized = False  # whether this object has been initialized
+        self._grasped_obj = None
+        self._known_grasps = None
+        self._dof = 0
+        self._vel_factor = vel_factor
 
-class RedirectableOMPLPlanner:
+    def setup(self, grasped_obj, start_config=None):
+        """
+            Reset motion planner to plan from the current or given start configuration.
+            ---------
+            Arguments
+            ---------
+            grasped_obj, OpenRAVE Kinbody - grasped kinbody
+            start_config(optional), numpy array of shape (n,) with n = #dofs of manipulator
+                If provided, planner plans starting from this configuration, else from the current
+                configuration of the manipulator.
+        """
+        with self._robot:
+            self._robot.SetActiveManipulator(self._manip.GetName())
+            self._robot.SetActiveDOFs(self._manip.GetArmIndices())
+            if start_config is not None:
+                self._robot.SetActiveDOFValues(start_config)
+            self._initialized = True
+            self._grasped_obj = grasped_obj
+            self._planner_interface.SendCommand("initPlan %i %i" %
+                (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId()))
+            self._known_grasps = set()
+            self._dof = self._robot.GetActiveDOF()
+
+    def plan(self, time_limit=1.0):
+        """
+            Plan towards the current goals without resetting the internal motion planner.
+            This function returns either until the time limit is reached or new paths have been
+            found. In case the underlying algorithm is parallized, multiple new paths may be
+            returned.
+            ---------
+            Arguments
+            ---------
+            time_limit, float - planning time limit in seconds
+            -------
+            Returns
+            -------
+            trajs, OpenRAVE trajectory - if success, list of found trajectories, else None
+            goal_ids, int - indices of the goals that were reached. If no solution found, -1
+        """
+        command_str = "plan %f" % time_limit
+        result_str = self._planner_interface.SendCommand(command_str)
+        if len(result_str) > 0:
+            ids = map(int, result_str.split(' '))
+            trajs = []
+            for idx in ids:
+                path_str = self._planner_interface.SendCommand("getPath " + str(idx))
+                # need to parse path now
+                path_lines = path_str.splitlines()
+                path = []
+                for l in path_lines:
+                    path.append(np.array(map(float, l.split(" "))))
+                with self._robot:
+                    self._robot.SetActiveDOFs(self._manip.GetArmIndices())
+                    traj = hfts_utils.path_to_trajectory(self._robot, path, self._vel_factor)
+                    trajs.append(traj)
+            return ids, trajs
+        return None, -1
+
+    def addGoals(self, goals):
+        """
+            Add the given list of new goals.
+            ---------
+            Arguments
+            ---------
+            goals, a list of PlacementGoals to plan to. These can be for different grasps.
+        """
+        # first check for new grasps
+        for g in goals:
+            if g.grasp_id not in self._known_grasps:
+                command_str = "addGrasp %i" % g.grasp_id
+                command_str += " %f %f %f" % (g.grasp_tf[0, 3], g.grasp_tf[1, 3], g.grasp_tf[2, 3])
+                gquat = orpy.quatFromRotationMatrix(g.grasp_tf)
+                command_str += " %f %f %f %f" % (gquat[0], gquat[1], gquat[2], gquat[3])
+                for v in g.grasp_config:
+                    command_str += " %f" % v
+                self._planner_interface.SendCommand(command_str)
+                self._known_grasps.add(g.grasp_id)
+            # next add goal
+            command_str = "addGoal %i %i" % (g.key, g.grasp_id)
+            for v in g.arm_config:
+                command_str += " %f" % v
+            self._planner_interface.SendCommand(command_str)
+
+    def removeGoals(self, goals):
+        """
+            Remove the given list of goals.
+            ---------
+            Arguments
+            ---------
+            goals, a list of PlacementGoals to remove from the plan, i.e. to stop planning to.
+        """
+        goal_ids = [g.key for g in goals]
+        command_str = "removeGoals " + str(goal_ids).replace('[', '').replace(']', '').replace(',', '')
+        self._planner_interface.SendCommand(command_str)
+
+
+class RedirectableOMPLPlanner(object):
     """
         Convenience wrapper around the RedirectableOMPLPlanner from or_ompl.
     """
