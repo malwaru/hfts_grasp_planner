@@ -1530,6 +1530,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self.cache_hit = 0
             self.ik_fail = 0
             self.cfree_runs = 0
+            self.col_runs = 0
             self.total_runs = 0
 
         def get_grasp_tf(self, gripper):
@@ -1543,7 +1544,6 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             '''
             Sets the floating gripper pose and updtes the pose of target object
             '''
-            manip_data.gripper.Enable(True)
             self.compute_object_pose(cache_entry, manip_data)
             self.object_data.kinbody.SetTransform(cache_entry.solution.obj_tf)
 
@@ -1576,14 +1576,17 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             for p in parents:
                 if p in self.afr_cache.keys():
                     cache = np.append(cache,self.afr_cache[p])
-                    # indexes = np.unique(cache, return_index=True)[1]
-                    # cache = [cache[index] for index in sorted(indexes)]
+                    indexes = np.unique(cache, return_index=True)[1]
+                    cache = np.array([cache[index] for index in sorted(indexes)])
 
             if key in self.afr_cache.keys():
                 cache = np.append(cache,self.afr_cache[key])
-                # indexes = np.unique(cache, return_index=True)[1]
-                # cache = [cache[index] for index in sorted(indexes)]
+                indexes = np.unique(cache, return_index=True)[1]
+                cache = np.array([cache[index] for index in sorted(indexes)])
                 grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[key][-1])
+
+            # cache = np.array(cache)
+            cache = cache.astype(int)
 
             # elif parents[0] in self.afr_cache.keys():
             #     grasp_order_indexes = np.roll(grasp_order_indexes, len(grasp_order_indexes)-self.afr_cache[parents[0]][-1])
@@ -1592,7 +1595,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             indexes = np.unique(grasp_order_indexes, return_index=True)[1]
             grasp_order_indexes = np.array([grasp_order_indexes[index] for index in sorted(indexes)])
             
-            return grasp_order_indexes.astype(int), cache
+            return grasp_order_indexes.astype(int), cache.astype(int)
 
         def save_cache(self, key, index, parents):
             '''
@@ -1656,55 +1659,67 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # print("-->")
             # grasp_order_indexes = range(len(self.object_data.grasp_order))
 
-            for i in grasp_order_indexes:
-                self.total_runs += 1
-                
-                grasp_obj_tf = self.object_data.grasp_order[i]
-                in_collision = self.check_floating_gripper_colision(manip_data, target_pose, grasp_obj_tf, grasp_tf_gripper, env)
-                
-                if in_collision:
-                    continue
-                else:
-                    self.cfree_runs += 1
-                    # print("Collision Free Ik Found")
-                    # To avoid collitions with floating gripper
-                    manip_data.gripper.Enable(False)
+            manip_data.gripper.Enable(False)
+            # obj_collision = env.CheckCollision(self.object_data.kinbody)
+            obj_collision = False
+
+            if not obj_collision:
+                for i in grasp_order_indexes:
+                    manip_data.gripper.Enable(True)
+                    self.total_runs += 1
+                    # manip_data.manip.GetRobot().Enable(False)
                     
-                    self.set_grasp_pose(cache_entry, grasp_obj_tf, grasp_tf, i)
-
-                    if self.ik_seed is None:
-                        self.ik_seed = manip_data.ik_solver.generate_seed()
-
-                    ik_solution = manip_data.ik_solver.compute_ik(cache_entry.eef_tf,
-                                                                    joint_limit_margin=joint_limit_margin,
-                                                                    seed=self.ik_seed)
+                    grasp_obj_tf = self.object_data.grasp_order[i]
+                    in_collision = self.check_floating_gripper_colision(manip_data, target_pose, grasp_obj_tf, grasp_tf_gripper, env)
                     
-                    # For visualization:
-                    # manip_data.grasp_tf = cache_entry.solution.grasp_tf
-
-                    # Save index mapped to region
-                    # self.save_cache(cache_entry.key, i, parents)
-                    if not ik_solution is None:
-                        self.save_cache(cache_entry.key, i, parents)
-                        pass
+                    if in_collision:
+                        self.col_runs += 1
+                        continue
                     else:
-                        self.ik_fail += 1
-                    
-                    # Viewing cache
-                    if i in cache:
-                        # print("cache hit!")
-                        self.cache_hit += 1
+                        self.cfree_runs += 1
+                        # print("Collision Free Ik Found")
+                        # To avoid collitions with floating gripper
+                        manip_data.gripper.Enable(False)
+                        # manip_data.manip.GetRobot().Enable(True)
+                        
+                        self.set_grasp_pose(cache_entry, grasp_obj_tf, grasp_tf, i)
 
-                    print("<--")
-                    print("Total Runs = ", self.total_runs)
-                    print("cFree Runs = ", self.cfree_runs)
-                    print("Ik Fails = ", self.ik_fail)
-                    print("Cache Hit = ", self.cache_hit)
-                    print("-->")
+                        if self.ik_seed is None:
+                            self.ik_seed = manip_data.ik_solver.generate_seed()
 
-                    return ik_solution
+                        ik_solution = manip_data.ik_solver.compute_ik(cache_entry.eef_tf,
+                                                                        joint_limit_margin=joint_limit_margin,
+                                                                        seed=self.ik_seed)
+                        
+                        # For visualization:
+                        manip_data.grasp_tf = cache_entry.solution.grasp_tf
+
+                        # Save index mapped to region
+                        # self.save_cache(cache_entry.key, i, parents)
+                        if not ik_solution is None:
+                            self.save_cache(cache_entry.key, i, parents)
+                            pass
+                        else:
+                            self.ik_fail += 1
+                        
+                        # Viewing cache
+                        if i in cache:
+                            # print("cache hit!")
+                            self.cache_hit += 1
+
+                        print("<--")
+                        print("Total Runs = ", self.total_runs)
+                        print("Coll Runs = ", self.col_runs)
+                        print("cFree Runs = ", self.cfree_runs)
+                        print("Ik Fails = ", self.ik_fail)
+                        print("Cache Hit = ", self.cache_hit)
+                        print("Cache Items = ", len(cache))
+                        print("-->")
+
+                        return ik_solution
 
             # raise ValueError("Could not find collition free solution")
+            # self.set_grasp_pose(cache_entry, self.object_data.grasp_order[0], grasp_tf, i)
             return None
 
         def compute_object_pose(self, cache_entry, manip_data, b_random=True):
