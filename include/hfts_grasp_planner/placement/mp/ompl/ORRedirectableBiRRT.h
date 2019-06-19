@@ -1,13 +1,13 @@
 #pragma once
+#include <hfts_grasp_planner/external/ompl/geometric/RedirectableRRTConnect.h>
 #include <iostream>
 #include <memory>
-#include <unordered_map>
-#include <openrave/openrave.h>
+#include <ompl/base/StateSpace.h>
 #include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
 #include <ompl/geometric/SimpleSetup.h>
-#include <ompl/base/StateSpace.h>
-#include <hfts_grasp_planner/external/ompl/geometric/RedirectableRRTConnect.h>
+#include <openrave/openrave.h>
 #include <or_ompl/StateSpaces.h>
+#include <unordered_map>
 
 namespace placement {
 namespace mp {
@@ -16,7 +16,7 @@ namespace mp {
         struct GoalWithId {
             std::vector<double> config;
             unsigned int id;
-            GoalWithId(const std::vector<double> &iconfig, unsigned int iid)
+            GoalWithId(const std::vector<double>& iconfig, unsigned int iid)
                 : config(iconfig)
                 , id(iid)
             {
@@ -49,7 +49,7 @@ namespace mp {
             void add(const std::shared_ptr<GoalWithId>& c)
             {
                 gnat.add(c);
-                goals[c->id] =  c;
+                goals[c->id] = c;
             }
 
             void remove(std::shared_ptr<GoalWithId>& cid)
@@ -58,7 +58,7 @@ namespace mp {
                 gnat.remove(cid);
             }
 
-            bool contains(unsigned int id)  const
+            bool contains(unsigned int id) const
             {
                 return goals.find(id) != goals.end();
             }
@@ -88,7 +88,8 @@ namespace mp {
                 return nearest(state->config);
             }
 
-            std::shared_ptr<GoalWithId> getGoal(unsigned int id) const {
+            std::shared_ptr<GoalWithId> getGoal(unsigned int id) const
+            {
                 auto iter = goals.find(id);
                 if (iter != goals.end()) {
                     return iter->second;
@@ -96,7 +97,8 @@ namespace mp {
                 return nullptr;
             }
 
-            std::shared_ptr<GoalWithId> getGoal(const std::vector<double>& config) const {
+            std::shared_ptr<GoalWithId> getGoal(const std::vector<double>& config) const
+            {
                 if (gnat.size() == 0)
                     return nullptr;
                 auto nearest_el = nearest(config);
@@ -107,7 +109,8 @@ namespace mp {
                 return nullptr;
             }
 
-            unsigned int size() const {
+            unsigned int size() const
+            {
                 return goals.size();
             }
 
@@ -117,11 +120,13 @@ namespace mp {
                 goals.clear();
             }
 
-            void getGoals(std::vector<std::shared_ptr<GoalWithId>>& gs) {
+            void getGoals(std::vector<std::shared_ptr<GoalWithId>>& gs)
+            {
                 for (const auto& key_value : goals) {
                     gs.push_back(key_value.second);
                 }
             }
+
         private:
             mutable std::shared_ptr<GoalWithId> query_el;
             std::unordered_map<unsigned int, std::shared_ptr<GoalWithId>> goals;
@@ -167,8 +172,8 @@ namespace mp {
              */
             void addGoal(const std::vector<double>& config, unsigned int id);
             /**
-             * Remove the goal with the given id. After calling this function you can not retrieve
-             * any path computed to the goal anymore. The goal id may be reassigned after removal.
+             * Remove the goal with the given id from the active list of goals.
+             * If a path to the given goal has already been found, this is a no-op.
              */
             void removeGoal(unsigned int id);
 
@@ -185,7 +190,6 @@ namespace mp {
 
             bool _handlePlanningStatus(::ompl::base::PlannerStatus status, unsigned int& goal_id);
             void _synchronizeGoals();
-
         };
 
         typedef std::shared_ptr<ORRedirectableBiRRT> ORRedirectableBiRRTPtr;

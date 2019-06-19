@@ -1,7 +1,7 @@
 #include <hfts_grasp_planner/placement/mp/ompl/ORRedirectableBiRRT.h>
+#include <ompl/base/goals/GoalStates.h>
 #include <or_ompl/OMPLConversions.h>
 #include <or_ompl/OMPLPlannerParameters.h>
-#include <ompl/base/goals/GoalStates.h>
 
 using namespace placement::mp::ompl;
 
@@ -56,8 +56,10 @@ ORRedirectableBiRRT::ORRedirectableBiRRT(OpenRAVE::RobotBasePtr probot, OpenRAVE
 
 ORRedirectableBiRRT::~ORRedirectableBiRRT() = default;
 
-bool ORRedirectableBiRRT::plan(double timeout, unsigned int& gid) {
-    if (getNumGoals() == 0) return false;
+bool ORRedirectableBiRRT::plan(double timeout, unsigned int& gid)
+{
+    if (getNumGoals() == 0)
+        return false;
     _synchronizeGoals();
     // start validity checker
     _or_validity_checker->start();
@@ -66,8 +68,10 @@ bool ORRedirectableBiRRT::plan(double timeout, unsigned int& gid) {
     return _handlePlanningStatus(status, gid);
 }
 
-bool ORRedirectableBiRRT::plan(std::function<bool()> interrupt_fn, unsigned int& gid) {
-    if (getNumGoals() == 0) return false;
+bool ORRedirectableBiRRT::plan(std::function<bool()> interrupt_fn, unsigned int& gid)
+{
+    if (getNumGoals() == 0)
+        return false;
     _synchronizeGoals();
     // start validity checker
     _or_validity_checker->start();
@@ -76,18 +80,21 @@ bool ORRedirectableBiRRT::plan(std::function<bool()> interrupt_fn, unsigned int&
     return _handlePlanningStatus(status, gid);
 }
 
-unsigned int ORRedirectableBiRRT::getNumGoals() const {
+unsigned int ORRedirectableBiRRT::getNumGoals() const
+{
     return _goal_storage.size();
 }
 
-void ORRedirectableBiRRT::getPath(unsigned int id, std::vector<std::vector<double>>& path) const {
+void ORRedirectableBiRRT::getPath(unsigned int id, std::vector<std::vector<double>>& path) const
+{
     auto iter = _path_storage.find(id);
     if (iter != _path_storage.end()) {
         path = iter->second;
     }
 }
 
-void ORRedirectableBiRRT::addGoal(const std::vector<double>& config, unsigned int id) {
+void ORRedirectableBiRRT::addGoal(const std::vector<double>& config, unsigned int id)
+{
     if (_goal_storage.contains(id)) {
         throw std::logic_error("A goal with id " + std::to_string(id) + " already exists!");
     }
@@ -96,20 +103,20 @@ void ORRedirectableBiRRT::addGoal(const std::vector<double>& config, unsigned in
     _dirty_goals = true;
 }
 
-void ORRedirectableBiRRT::removeGoal(unsigned int id) {
+void ORRedirectableBiRRT::removeGoal(unsigned int id)
+{
     auto goal = _goal_storage.getGoal(id);
     if (!goal) {
-        RAVELOG_ERROR("Could not remove goal with id " + std::to_string(id) + ". There is no such goal");
+        RAVELOG_WARN("Could not remove goal with id " + std::to_string(id) + ". There is no such goal");
         return;
     }
     _goal_storage.remove(goal);
-    _path_storage.erase(id);
     _dirty_goals = true;
 }
 
-bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus status, unsigned int& gid) {
-    if (status == ::ompl::base::PlannerStatus::EXACT_SOLUTION)
-    {
+bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus status, unsigned int& gid)
+{
+    if (status == ::ompl::base::PlannerStatus::EXACT_SOLUTION) {
         // extract path
         auto ompl_path = _simple_setup->getSolutionPath();
         std::vector<std::vector<double>> path;
@@ -118,22 +125,26 @@ bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus stat
             _state_space->copyToReals(config, ompl_path.getState(i));
             path.push_back(config);
         }
+        RAVELOG_DEBUG("New path leads to ");
+        _simple_setup->getSpaceInformation()->printState(ompl_path.getState(ompl_path.getStateCount() - 1));
         // get the goal id that we connected
         auto goal = _goal_storage.getGoal(path.back());
         if (!goal) {
             throw std::logic_error("Found a path to a non-existing goal");
         }
         gid = goal->id;
+        RAVELOG_DEBUG("Found a path to goal " + std::to_string(gid));
+        // remove goal from goal storage so we don't plan to it again
+        removeGoal(gid);
         // store path
         _path_storage[gid] = path;
         // reset ompl path, so we can continue searching
         auto pdef = _planner->getProblemDefinition();
         pdef->clearSolutionPaths();
         return true;
-    } else if (status == ::ompl::base::PlannerStatus::APPROXIMATE_SOLUTION)
-    {
-            // do nothing
-            return false;
+    } else if (status == ::ompl::base::PlannerStatus::APPROXIMATE_SOLUTION) {
+        // do nothing
+        return false;
     } else {
         // this shouldn't happen, so warn the user
         RAVELOG_ERROR("Planner returned %s.\n", status.asString().c_str());
@@ -141,8 +152,10 @@ bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus stat
     }
 }
 
-void ORRedirectableBiRRT::_synchronizeGoals() {
-    if (!_dirty_goals) return;
+void ORRedirectableBiRRT::_synchronizeGoals()
+{
+    if (!_dirty_goals)
+        return;
     // init new ompl goals
     auto problem_def = _planner->getProblemDefinition();
     problem_def->clearGoal();

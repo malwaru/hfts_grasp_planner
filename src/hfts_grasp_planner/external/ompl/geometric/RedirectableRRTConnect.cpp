@@ -41,17 +41,17 @@
 #include "ompl/base/goals/GoalSampleableRegion.h"
 #include "ompl/tools/config/SelfConfig.h"
 
-ompl::geometric::RedirectableRRTConnect::RedirectableRRTConnect(const base::SpaceInformationPtr &si,
-                                                                bool addIntermediateStates)
-  : base::Planner(si, addIntermediateStates ? "RedirectableRRTConnectIntermediate" : "RedirectableRRTConnect")
+ompl::geometric::RedirectableRRTConnect::RedirectableRRTConnect(const base::SpaceInformationPtr& si,
+    bool addIntermediateStates)
+    : base::Planner(si, addIntermediateStates ? "RedirectableRRTConnectIntermediate" : "RedirectableRRTConnect")
 {
     specs_.recognizedGoal = base::GOAL_SAMPLEABLE_REGION;
     specs_.directed = true;
 
     Planner::declareParam<double>("range", this, &RedirectableRRTConnect::setRange, &RedirectableRRTConnect::getRange,
-                                  "0.:1.:10000.");
+        "0.:1.:10000.");
     Planner::declareParam<bool>("intermediate_states", this, &RedirectableRRTConnect::setIntermediateStates,
-                                &RedirectableRRTConnect::getIntermediateStates, "0,1");
+        &RedirectableRRTConnect::getIntermediateStates, "0,1");
 
     distanceBetweenTrees_ = std::numeric_limits<double>::infinity();
     addIntermediateStates_ = addIntermediateStates;
@@ -69,13 +69,13 @@ void ompl::geometric::RedirectableRRTConnect::setup()
     sc.configurePlannerRange(maxDistance_);
 
     if (!tStart_)
-        tStart_.reset(tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));
+        tStart_.reset(tools::SelfConfig::getDefaultNearestNeighbors<Motion*>(this));
     if (!tGoal_)
-        tGoal_.reset(tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));  // reset of goal tree!
+        tGoal_.reset(tools::SelfConfig::getDefaultNearestNeighbors<Motion*>(this)); // reset of goal tree!
     if (!goalTrees_)
         goalTrees_.reset(tools::SelfConfig::getDefaultNearestNeighbors<std::shared_ptr<GoalTreeSubset>>(this));
-    tStart_->setDistanceFunction([this](const Motion *a, const Motion *b) { return distanceFunction(a, b); });
-    tGoal_->setDistanceFunction([this](const Motion *a, const Motion *b) { return distanceFunction(a, b); });
+    tStart_->setDistanceFunction([this](const Motion* a, const Motion* b) { return distanceFunction(a, b); });
+    tGoal_->setDistanceFunction([this](const Motion* a, const Motion* b) { return distanceFunction(a, b); });
     goalTrees_->setDistanceFunction(
         [this](const std::shared_ptr<const GoalTreeSubset> a, const std::shared_ptr<const GoalTreeSubset> b) {
             return treeSetDistanceFunction(a, b);
@@ -86,42 +86,35 @@ void ompl::geometric::RedirectableRRTConnect::setup()
 
 void ompl::geometric::RedirectableRRTConnect::freeMemory()
 {
-    std::vector<Motion *> motions;
+    std::vector<Motion*> motions;
 
-    if (tStart_)
-    {
+    if (tStart_) {
         tStart_->list(motions);
-        for (auto &motion : motions)
-        {
+        for (auto& motion : motions) {
             if (motion->state != nullptr)
                 si_->freeState(motion->state);
             delete motion;
         }
     }
 
-    if (tGoal_)
-    {
+    if (tGoal_) {
         tGoal_->list(motions);
-        for (auto &motion : motions)
-        {
+        for (auto& motion : motions) {
             if (motion->state != nullptr)
                 si_->freeState(motion->state);
             delete motion;
         }
     }
 
-    if (goalTrees_)
-    {
+    if (goalTrees_) {
         std::vector<std::shared_ptr<GoalTreeSubset>> trees;
         goalTrees_->list(trees);
-        for (auto &tree : trees)
-        {
-            tree->nodes.clear();  // elements of this have already been deleted above
+        for (auto& tree : trees) {
+            tree->nodes.clear(); // elements of this have already been deleted above
         }
     }
 
-    if (queryTreeSet_)
-    {
+    if (queryTreeSet_) {
         if (queryTreeSet_->root->state != nullptr)
             si_->freeState(queryTreeSet_->root->state);
         delete queryTreeSet_->root;
@@ -144,33 +137,33 @@ void ompl::geometric::RedirectableRRTConnect::clear()
     num_goal_tree_samples_ = 0;
 }
 
-void ompl::geometric::RedirectableRRTConnect::addToBackwardTreeSet(Motion *m)
+void ompl::geometric::RedirectableRRTConnect::addToBackwardTreeSet(Motion* m)
 {
     auto goal_tree = getTreeSet(m->root);
     assert(goal_tree != nullptr);
     goal_tree->nodes.push_back(m);
-    if (goal_tree->is_goal)
-    {
+    if (goal_tree->is_goal) {
         num_goal_tree_samples_ += 1;
     }
 }
 
-std::pair<bool, ompl::geometric::RedirectableRRTConnect::Motion *>
-ompl::geometric::RedirectableRRTConnect::mergeIntoForwardTree(ompl::geometric::RedirectableRRTConnect::Motion *fm,
-                                                              ompl::geometric::RedirectableRRTConnect::Motion *m)
+std::pair<bool, ompl::geometric::RedirectableRRTConnect::Motion*>
+ompl::geometric::RedirectableRRTConnect::mergeIntoForwardTree(ompl::geometric::RedirectableRRTConnect::Motion* fm,
+    ompl::geometric::RedirectableRRTConnect::Motion* m)
 {
     // std::cout << "Merging backward tree into forward tree." << std::endl;
+    // si_->printState(fm->state);
+    // si_->printState(m->state);
     assert(si_->distance(fm->state, m->state) == 0.0);
     // first retrieve backwards tree set of backward tree
     auto btree_set = getTreeSet(m->root);
     assert(btree_set != nullptr);
 
     // rewire path from m's parent to root
-    Motion *bcurrent = m->parent;
-    Motion *fcurrent = fm;
-    while (bcurrent != nullptr)
-    {
-        Motion *bparent = bcurrent->parent;  // save parent of bcurrent
+    Motion* bcurrent = m->parent;
+    Motion* fcurrent = fm;
+    while (bcurrent != nullptr) {
+        Motion* bparent = bcurrent->parent; // save parent of bcurrent
         // rewire bcurrent to forward tree
         bcurrent->parent = fcurrent;
         bcurrent->root = fcurrent->root;
@@ -180,15 +173,13 @@ ompl::geometric::RedirectableRRTConnect::mergeIntoForwardTree(ompl::geometric::R
     }
     // move all motions of the backward tree to the forward tree
     bool is_goal = btree_set->is_goal;
-    if (is_goal)
-    {
+    if (is_goal) {
         // std::cout << "The backward tree is a goal. Having " << num_goal_tree_samples_ << " samples. Removing "
         //   << btree_set->nodes.size() << std::endl;
         num_goal_tree_samples_ -= btree_set->nodes.size();
         // std::cout << "Number of goal samples left:" << num_goal_tree_samples_ << std::endl;
     }
-    for (auto *motion : btree_set->nodes)
-    {
+    for (auto* motion : btree_set->nodes) {
         tGoal_->remove(motion);
         if (motion != m)
             tStart_->add(motion);
@@ -202,19 +193,18 @@ ompl::geometric::RedirectableRRTConnect::mergeIntoForwardTree(ompl::geometric::R
 }
 
 ompl::geometric::RedirectableRRTConnect::GrowState
-ompl::geometric::RedirectableRRTConnect::growTree(TreeData &tree, TreeGrowingInfo &tgi, Motion *rmotion)
+ompl::geometric::RedirectableRRTConnect::growTree(TreeData& tree, TreeGrowingInfo& tgi, Motion* rmotion)
 {
     /* find closest state in the tree */
-    Motion *nmotion = tree->nearest(rmotion);
+    Motion* nmotion = tree->nearest(rmotion);
 
     /* assume we can reach the state we go towards */
     bool reach = true;
 
     /* find state to add */
-    base::State *dstate = rmotion->state;
+    base::State* dstate = rmotion->state;
     double d = si_->distance(nmotion->state, rmotion->state);
-    if (d > maxDistance_)
-    {
+    if (d > maxDistance_) {
         si_->getStateSpace()->interpolate(nmotion->state, rmotion->state, maxDistance_ / d, tgi.xstate);
 
         /* Check if we have moved at all. Due to some stranger state spaces (e.g., the constrained state spaces),
@@ -227,49 +217,47 @@ ompl::geometric::RedirectableRRTConnect::growTree(TreeData &tree, TreeGrowingInf
         reach = false;
     }
 
-    bool validMotion = tgi.start ? si_->checkMotion(nmotion->state, dstate) :
-                                   si_->isValid(dstate) && si_->checkMotion(dstate, nmotion->state);
+    bool validMotion = tgi.start ? si_->checkMotion(nmotion->state, dstate) : si_->isValid(dstate) && si_->checkMotion(dstate, nmotion->state);
 
     if (!validMotion)
         return TRAPPED;
+    // si_->printState(dstate);
 
-    if (addIntermediateStates_)
-    {
-        const base::State *astate = tgi.start ? nmotion->state : dstate;
-        const base::State *bstate = tgi.start ? dstate : nmotion->state;
+    if (addIntermediateStates_) {
+        // const base::State* astate = tgi.start ? nmotion->state : dstate;
+        // const base::State* bstate = tgi.start ? dstate : nmotion->state;
+        const base::State* astate = nmotion->state;
+        const base::State* bstate = dstate;
 
-        std::vector<base::State *> states;
+        std::vector<base::State*> states;
         const unsigned int count = si_->getStateSpace()->validSegmentCount(astate, bstate);
 
         if (si_->getMotionStates(astate, bstate, states, count, true, true))
             si_->freeState(states[0]);
 
-        for (std::size_t i = 1; i < states.size(); ++i)
-        {
-            Motion *motion = new Motion;
+        // si_->printState(nmotion->state);
+        for (std::size_t i = 1; i < states.size(); ++i) {
+            Motion* motion = new Motion;
             motion->state = states[i];
             motion->parent = nmotion;
             motion->root = nmotion->root;
             tree->add(motion);
-            if (!tgi.start)
-            {
+            if (!tgi.start) {
                 addToBackwardTreeSet(motion);
             }
 
             nmotion = motion;
+            // si_->printState(nmotion->state);
         }
 
         tgi.xmotion = nmotion;
-    }
-    else
-    {
-        Motion *motion = new Motion(si_);
+    } else {
+        Motion* motion = new Motion(si_);
         si_->copyState(motion->state, dstate);
         motion->parent = nmotion;
         motion->root = nmotion->root;
         tree->add(motion);
-        if (!tgi.start)
-        {
+        if (!tgi.start) {
             addToBackwardTreeSet(motion);
         }
 
@@ -279,33 +267,29 @@ ompl::geometric::RedirectableRRTConnect::growTree(TreeData &tree, TreeGrowingInf
     return reach ? REACHED : ADVANCED;
 }
 
-ompl::base::PlannerStatus ompl::geometric::RedirectableRRTConnect::solve(const base::PlannerTerminationCondition &ptc)
+ompl::base::PlannerStatus ompl::geometric::RedirectableRRTConnect::solve(const base::PlannerTerminationCondition& ptc)
 {
     checkValidity();
-    auto *goal = dynamic_cast<base::GoalSampleableRegion *>(pdef_->getGoal().get());
+    auto* goal = dynamic_cast<base::GoalSampleableRegion*>(pdef_->getGoal().get());
 
-    if (goal == nullptr)
-    {
+    if (goal == nullptr) {
         OMPL_ERROR("%s: Unknown type of goal", getName().c_str());
         return base::PlannerStatus::UNRECOGNIZED_GOAL_TYPE;
     }
 
-    while (const base::State *st = pis_.nextStart())
-    {
-        auto *motion = new Motion(si_);
+    while (const base::State* st = pis_.nextStart()) {
+        auto* motion = new Motion(si_);
         si_->copyState(motion->state, st);
         motion->root = motion->state;
         tStart_->add(motion);
     }
 
-    if (tStart_->size() == 0)
-    {
+    if (tStart_->size() == 0) {
         OMPL_ERROR("%s: Motion planning start tree could not be initialized!", getName().c_str());
         return base::PlannerStatus::INVALID_START;
     }
 
-    if (num_goal_tree_samples_ == 0 and !goal->couldSample())
-    {
+    if (num_goal_tree_samples_ == 0 and !goal->couldSample()) {
         OMPL_ERROR("%s: Insufficient states in sampleable goal region", getName().c_str());
         return base::PlannerStatus::INVALID_GOAL;
     }
@@ -314,32 +298,30 @@ ompl::base::PlannerStatus ompl::geometric::RedirectableRRTConnect::solve(const b
         sampler_ = si_->allocStateSampler();
 
     OMPL_INFORM("%s: Starting planning with %d states already in datastructure", getName().c_str(),
-                (int)(tStart_->size() + tGoal_->size()));
+        (int)(tStart_->size() + tGoal_->size()));
 
     TreeGrowingInfo tgi;
     tgi.xstate = si_->allocState();
 
     // Motion *approxsol = nullptr;
     // double approxdif = std::numeric_limits<double>::infinity();
-    auto *rmotion = new Motion(si_);
-    base::State *rstate = rmotion->state;
+    auto* rmotion = new Motion(si_);
+    base::State* rstate = rmotion->state;
     bool startTree = true;
     bool solved = false;
     unsigned int num_goals_sampled = 0;
 
-    while (!ptc)
-    {
-        TreeData &tree = startTree ? tStart_ : tGoal_;
+    while (!ptc) {
+        TreeData& tree = startTree ? tStart_ : tGoal_;
         tgi.start = startTree;
         startTree = !startTree;
-        TreeData &otherTree = startTree ? tStart_ : tGoal_;
+        TreeData& otherTree = startTree ? tStart_ : tGoal_;
 
         // TODO this is specific to placement planner use case
-        if (tGoal_->size() == 0 ||
-            num_goals_sampled < goal->maxSampleCount())  // not using pis_ here because it would need to be reset
+        if (tGoal_->size() == 0 || num_goals_sampled < goal->maxSampleCount()) // not using pis_ here because it would need to be reset
         {
             // we have a new goal
-            auto *motion = new Motion(si_);
+            auto* motion = new Motion(si_);
             goal->sampleGoal(motion->state);
             motion->root = motion->state;
             tGoal_->add(motion);
@@ -354,10 +336,9 @@ ompl::base::PlannerStatus ompl::geometric::RedirectableRRTConnect::solve(const b
 
         GrowState gs = growTree(tree, tgi, rmotion);
 
-        if (gs != TRAPPED)
-        {
+        if (gs != TRAPPED) {
             /* remember which motion was just added */
-            Motion *addedMotion = tgi.xmotion;
+            Motion* addedMotion = tgi.xmotion;
 
             /* attempt to connect trees */
 
@@ -372,29 +353,25 @@ ompl::base::PlannerStatus ompl::geometric::RedirectableRRTConnect::solve(const b
 
             /* update distance between trees */
             const double newDist = tree->getDistanceFunction()(addedMotion, otherTree->nearest(addedMotion));
-            if (newDist < distanceBetweenTrees_)
-            {
+            if (newDist < distanceBetweenTrees_) {
                 distanceBetweenTrees_ = newDist;
                 // OMPL_INFORM("Estimated distance to go: %f", distanceBetweenTrees_);
             }
 
-            Motion *startMotion = startTree ? tgi.xmotion : addedMotion;
-            Motion *goalMotion = startTree ? addedMotion : tgi.xmotion;
+            Motion* startMotion = startTree ? tgi.xmotion : addedMotion;
+            Motion* goalMotion = startTree ? addedMotion : tgi.xmotion;
 
             /* if we connected the trees in a valid way (start and goal pair is valid)*/
-            if (gsc == REACHED && goal->isStartGoalPairValid(startMotion->root, goalMotion->root))
-            {
+            if (gsc == REACHED && goal->isStartGoalPairValid(startMotion->root, goalMotion->root)) {
                 // in any case merge the connected backward and forward tree
                 bool b_goal;
-                Motion *solution;
+                Motion* solution;
                 std::tie(b_goal, solution) = mergeIntoForwardTree(startMotion, goalMotion);
-                if (b_goal)
-                {
+                if (b_goal) {
                     // std::cout << "The tree was a goal tree!" << std::endl;
                     /* construct the solution path */
-                    std::vector<Motion *> mpath;
-                    while (solution != nullptr)
-                    {
+                    std::vector<Motion*> mpath;
+                    while (solution != nullptr) {
                         mpath.push_back(solution);
                         solution = solution->parent;
                     }
@@ -433,7 +410,7 @@ ompl::base::PlannerStatus ompl::geometric::RedirectableRRTConnect::solve(const b
     delete rmotion;
 
     OMPL_INFORM("%s: Created %u states (%u start + %u goal)", getName().c_str(), tStart_->size() + tGoal_->size(),
-                tStart_->size(), tGoal_->size());
+        tStart_->size(), tGoal_->size());
 
     // if (approxsol && !solved)
     // {
@@ -455,59 +432,54 @@ ompl::base::PlannerStatus ompl::geometric::RedirectableRRTConnect::solve(const b
     return solved ? base::PlannerStatus::EXACT_SOLUTION : base::PlannerStatus::TIMEOUT;
 }
 
-void ompl::geometric::RedirectableRRTConnect::removeGoals(const std::vector<const base::State *> &old_goals)
+void ompl::geometric::RedirectableRRTConnect::removeGoals(const std::vector<const base::State*>& old_goals)
 {
-    for (auto &old_goal : old_goals)  // for each goal
+    for (auto& old_goal : old_goals) // for each goal
     {
         // check whether we have a tree set for this goal
         auto goal_tree = getTreeSet(old_goal);
         // if (goal_tree != nullptr and goal_tree->is_goal)
-        if (goal_tree != nullptr)
-        {
+        if (goal_tree != nullptr) {
             if (!goal_tree->is_goal)
                 throw std::logic_error("Removing a goal tree twice!");
-            goal_tree->is_goal = false;  // mark it as non-goal
+            goal_tree->is_goal = false; // mark it as non-goal
             num_goal_tree_samples_ -= goal_tree->nodes.size();
         }
     }
 }
 
-void ompl::geometric::RedirectableRRTConnect::removeGoals(const std::vector<base::ScopedState<>> &old_goals)
+void ompl::geometric::RedirectableRRTConnect::removeGoals(const std::vector<base::ScopedState<>>& old_goals)
 {
-    std::vector<const base::State *> raw_pointers;
+    std::vector<const base::State*> raw_pointers;
     raw_pointers.reserve(old_goals.size());
-    for (auto &scoped_state : old_goals)
-    {
+    for (auto& scoped_state : old_goals) {
         raw_pointers.push_back(scoped_state.get());
     }
     removeGoals(raw_pointers);
 }
 
-void ompl::geometric::RedirectableRRTConnect::getGoals(std::vector<base::ScopedState<>> &current_goals)
+void ompl::geometric::RedirectableRRTConnect::getGoals(std::vector<base::ScopedState<>>& current_goals)
 {
     std::vector<std::shared_ptr<GoalTreeSubset>> goal_trees;
     goalTrees_->list(goal_trees);
-    for (auto gtree : goal_trees)
-    {
+    for (auto gtree : goal_trees) {
         if (gtree->is_goal)
             current_goals.emplace_back(base::ScopedState<>(si_->getStateSpace(), gtree->root->state));
     }
 }
 
-void ompl::geometric::RedirectableRRTConnect::getPlannerData(base::PlannerData &data) const
+void ompl::geometric::RedirectableRRTConnect::getPlannerData(base::PlannerData& data) const
 {
     Planner::getPlannerData(data);
 
-    std::vector<Motion *> motions;
+    std::vector<Motion*> motions;
     if (tStart_)
         tStart_->list(motions);
 
-    for (auto &motion : motions)
-    {
+    for (auto& motion : motions) {
         if (motion->parent == nullptr)
             data.addStartVertex(base::PlannerDataVertex(motion->state, 1));
-        else
-        {
+        else {
             data.addEdge(base::PlannerDataVertex(motion->parent->state, 1), base::PlannerDataVertex(motion->state, 1));
         }
     }
@@ -516,12 +488,10 @@ void ompl::geometric::RedirectableRRTConnect::getPlannerData(base::PlannerData &
     if (tGoal_)
         tGoal_->list(motions);
 
-    for (auto &motion : motions)
-    {
+    for (auto& motion : motions) {
         if (motion->parent == nullptr)
             data.addGoalVertex(base::PlannerDataVertex(motion->state, 2));
-        else
-        {
+        else {
             // The edges in the goal tree are reversed to be consistent with start tree
             data.addEdge(base::PlannerDataVertex(motion->state, 2), base::PlannerDataVertex(motion->parent->state, 2));
         }
@@ -532,24 +502,22 @@ void ompl::geometric::RedirectableRRTConnect::getPlannerData(base::PlannerData &
 }
 
 std::shared_ptr<ompl::geometric::RedirectableRRTConnect::GoalTreeSubset>
-ompl::geometric::RedirectableRRTConnect::getTreeSet(const base::State *root) const
+ompl::geometric::RedirectableRRTConnect::getTreeSet(const base::State* root) const
 {
     assert(queryTreeSet_ != nullptr);
     // check whether we have a tree set
     si_->copyState(queryTreeSet_->root->state, root);
     auto nearest_goal_tree = goalTrees_->nearest(queryTreeSet_);
-    if (treeSetDistanceFunction(queryTreeSet_, nearest_goal_tree) == 0.0)
-    {
+    if (treeSetDistanceFunction(queryTreeSet_, nearest_goal_tree) == 0.0) {
         return nearest_goal_tree;
     }
     return nullptr;
 }
 
-void ompl::geometric::RedirectableRRTConnect::removeTreeSet(const base::State *root)
+void ompl::geometric::RedirectableRRTConnect::removeTreeSet(const base::State* root)
 {
     auto tree_set = getTreeSet(root);
-    if (tree_set != nullptr)
-    {
+    if (tree_set != nullptr) {
         goalTrees_->remove(tree_set);
     }
 }

@@ -5,10 +5,12 @@ import hfts_grasp_planner.utils as hfts_utils
 import time
 import random
 
+
 class MGMotionPlanner(object):
     """
         Wrapper around OpenRAVE plugin for multi-grasp motion planning.
     """
+
     def __init__(self, algorithm_name, manip, vel_factor=0.4):
         """
             Create a new instance of a multi-grasp motion planner using the given
@@ -53,7 +55,7 @@ class MGMotionPlanner(object):
             self._initialized = True
             self._grasped_obj = grasped_obj
             self._planner_interface.SendCommand("initPlan %i %i" %
-                (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId()))
+                                                (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId()))
             self._known_grasps = set()
             self._dof = self._robot.GetActiveDOF()
 
@@ -70,8 +72,8 @@ class MGMotionPlanner(object):
             -------
             Returns
             -------
-            trajs, OpenRAVE trajectory - if success, list of found trajectories, else None
-            goal_ids, int - indices of the goals that were reached. If no solution found, -1
+            trajs, list of OpenRAVE trajectory - list of newly computed trajectories
+            goal_ids, list of int - indices of the goals that were reached
         """
         command_str = "plan %f" % time_limit
         result_str = self._planner_interface.SendCommand(command_str)
@@ -89,8 +91,8 @@ class MGMotionPlanner(object):
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
                     traj = hfts_utils.path_to_trajectory(self._robot, path, self._vel_factor)
                     trajs.append(traj)
-            return ids, trajs
-        return None, -1
+            return trajs, ids
+        return [], []
 
     def addGoals(self, goals):
         """
