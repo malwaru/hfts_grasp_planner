@@ -181,6 +181,7 @@ ompl::geometric::RedirectableRRTConnect::mergeIntoForwardTree(ompl::geometric::R
     }
     for (auto* motion : btree_set->nodes) {
         tGoal_->remove(motion);
+        motion->root = fm->root;
         if (motion != m)
             tStart_->add(motion);
     }

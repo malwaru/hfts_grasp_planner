@@ -64,8 +64,6 @@ if __name__ == "__main__":
         SimpleGoal.grasp_tf), SimpleGoal.grasp_config)
 
     start_config = robot.GetDOFValues()
-    planner = MGMotionPlanner("SequentialMGBiRRT", manip)
-    planner.setup(target_object)
     # planner.addGoals([goal])
     # ids, trajs = planner.plan(0.5)
 
@@ -88,26 +86,31 @@ if __name__ == "__main__":
         goals.append(SimpleGoal())
         goals[-1].arm_config = config
         goals[-1].key = idx
+        goals[-1].grasp_id = idx % 2
         robot.SetDOFValues(config, manip.GetArmIndices())
         time.sleep(0.1)
     robot.SetDOFValues(start_config)
-    print "Adding goals"
-    planner.addGoals(goals)
-    reached_goals = []
-    trajectories = []
+    for i in range(400):
+        print "Creating planner"
+        planner = MGMotionPlanner("SequentialMGBiRRT", manip)
+        planner.setup(target_object)
+        print "Adding goals"
+        planner.addGoals(goals)
+        reached_goals = []
+        trajectories = []
 
-    # print "PLANNING TOWARDS:\n", str(np.array([goal.arm_config for goal in goals))
-    print "Entering planning loop"
-    trajectories, reached_goals = planner.plan(0.1)
-    unreached_goals = [g for g in goals if g.key not in reached_goals]
-    if len(unreached_goals) > 0:
-        goals_to_remove = [random.choice(unreached_goals)]
-        # remove a random goal
-        print "Removing a random unreached goal"
-        planner.removeGoals(goals_to_remove)
-    print "Planning for remaining goals"
-    while len(goals) - len(goals_to_remove) > len(reached_goals):
-        trajs, indices = planner.plan(0.1)
-        trajectories.extend(trajs)
-        reached_goals.extend(indices)
+        # print "PLANNING TOWARDS:\n", str(np.array([goal.arm_config for goal in goals))
+        print "Entering planning loop"
+        trajectories, reached_goals = planner.plan(0.1)
+        unreached_goals = [g for g in goals if g.key not in reached_goals]
+        if len(unreached_goals) > 0:
+            goals_to_remove = [random.choice(unreached_goals)]
+            # remove a random goal
+            print "Removing a random unreached goal"
+            planner.removeGoals(goals_to_remove)
+        print "Planning for remaining goals"
+        while len(goals) - len(goals_to_remove) > len(reached_goals):
+            trajs, indices = planner.plan(0.1)
+            trajectories.extend(trajs)
+            reached_goals.extend(indices)
     IPython.embed()

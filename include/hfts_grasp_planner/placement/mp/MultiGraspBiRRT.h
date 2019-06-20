@@ -15,6 +15,13 @@ namespace mp {
          */
     class SequentialMGBiRRT : public MultiGraspMP {
     public:
+        /**
+         * Create a new sequential multi-grasp BiRRT algorithm.
+         * @param penv, environment to plan in. This object takes ownership of this environment
+         *      and its Destroy function will be called upon the destruction of this object.
+         * @param robot_id, Environment id of the robot to plan for
+         * @param obj_id, Environment id of the object to plan for
+         */
         SequentialMGBiRRT(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
         ~SequentialMGBiRRT();
 

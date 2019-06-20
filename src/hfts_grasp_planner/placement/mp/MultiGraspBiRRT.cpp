@@ -1,3 +1,4 @@
+#include <boost/thread.hpp>
 #include <hfts_grasp_planner/placement/mp/MultiGraspBiRRT.h>
 
 using namespace placement::mp;
@@ -13,7 +14,10 @@ SequentialMGBiRRT::SequentialMGBiRRT(EnvironmentBasePtr penv,
 {
 }
 
-SequentialMGBiRRT::~SequentialMGBiRRT() = default;
+SequentialMGBiRRT::~SequentialMGBiRRT()
+{
+    _base_env->Destroy();
+}
 
 void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPath>>& new_paths, double time_limit)
 {
@@ -49,7 +53,9 @@ void SequentialMGBiRRT::addGrasp(const Grasp& grasp)
     auto iter = _planners.find(grasp.id);
     if (iter == _planners.end()) {
         // clone base env
+        boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_base_env->GetMutex());
         auto new_env = _base_env->CloneSelf(OpenRAVE::Clone_Bodies);
+        new_env->StopSimulation();
         auto robot = new_env->GetRobot(new_env->GetBodyFromEnvironmentId(_robot_id)->GetName());
         assert(robot != nullptr);
         // release any object in case it is set to grasp any

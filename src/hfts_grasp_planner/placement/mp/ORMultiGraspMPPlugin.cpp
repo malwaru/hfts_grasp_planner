@@ -63,9 +63,13 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
         " idX, int - goal identifiers");
     _algorithm_name = algorithm;
     _original_env = penv;
+    RAVELOG_DEBUG("Constructed ORMultiGraspMPPlugin");
 }
 
-ORMultiGraspMPPlugin::~ORMultiGraspMPPlugin() = default;
+ORMultiGraspMPPlugin::~ORMultiGraspMPPlugin()
+{
+    RAVELOG_DEBUG("Destructing ORMultiGraspMPPlugin");
+}
 
 bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
 {
@@ -73,6 +77,7 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
     sinput >> robot_id;
     unsigned int obj_id;
     sinput >> obj_id;
+    boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_original_env->GetMutex());
     auto obj_body = _original_env->GetBodyFromEnvironmentId(obj_id);
     if (!obj_body) {
         std::string error_msg = "Could not retrieve object with id " + std::to_string(obj_id);
@@ -87,6 +92,7 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
     }
     RAVELOG_DEBUG("Initializing plan for robot " + robot->GetName() + " and object " + obj_body->GetName());
     auto query_env = _original_env->CloneSelf(OpenRAVE::Clone_Bodies);
+    query_env->StopSimulation();
     if (_algorithm_name == PARALLEL_BIRRT) {
         _planner = std::make_shared<ParallelMGBiRRT>(query_env, robot_id, obj_id);
     } else if (_algorithm_name == SEQUENTIAL_BIRRT) {
@@ -147,7 +153,7 @@ bool ORMultiGraspMPPlugin::addGrasp(std::ostream& sout, std::istream& sinput)
     // next read x, y, z
     sinput >> grasp.pos.x >> grasp.pos.y >> grasp.pos.z;
     // quaternion
-    sinput  >> grasp.quat.w >> grasp.quat.x >> grasp.quat.y >> grasp.quat.z;
+    sinput >> grasp.quat.w >> grasp.quat.x >> grasp.quat.y >> grasp.quat.z;
     // finally read configuration
     while (sinput.good()) {
         double q;

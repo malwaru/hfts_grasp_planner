@@ -3,6 +3,7 @@
 #include <iostream>
 #include <memory>
 #include <ompl/base/StateSpace.h>
+#include <ompl/base/goals/GoalStates.h>
 #include <ompl/datastructures/NearestNeighborsGNATNoThreadSafety.h>
 #include <ompl/geometric/SimpleSetup.h>
 #include <openrave/openrave.h>
@@ -135,6 +136,12 @@ namespace mp {
 
         class ORRedirectableBiRRT {
         public:
+            /**
+             * Create a new ORRedirectableBiRRT algorithm.
+             * @param probot, the robot to plan for (must be from penv)
+             * @param penv, the environment probot lives in. This object assumes ownership over penv
+             *      and calls its Destroy function when destructed.
+             */
             ORRedirectableBiRRT(OpenRAVE::RobotBasePtr probot, OpenRAVE::EnvironmentBasePtr penv);
             ~ORRedirectableBiRRT();
             /**
@@ -178,13 +185,14 @@ namespace mp {
             void removeGoal(unsigned int id);
 
         private:
+            OpenRAVE::EnvironmentBasePtr _env;
+            OpenRAVE::RobotBasePtr _robot;
             ::ompl::base::StateSpacePtr _state_space;
             ::ompl::geometric::SimpleSetupPtr _simple_setup;
             or_ompl::OrStateValidityCheckerPtr _or_validity_checker;
             ::ompl::geometric::RedirectableRRTConnectPtr _planner;
-            OpenRAVE::RobotBasePtr _robot;
+            std::shared_ptr<::ompl::base::GoalStates> _ompl_goal_states;
 
-            bool _dirty_goals;
             GoalStorage _goal_storage;
             std::unordered_map<unsigned int, std::vector<std::vector<double>>> _path_storage;
 

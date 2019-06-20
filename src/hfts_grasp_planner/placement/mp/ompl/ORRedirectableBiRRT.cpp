@@ -1,15 +1,14 @@
 #include <hfts_grasp_planner/placement/mp/ompl/ORRedirectableBiRRT.h>
-#include <ompl/base/goals/GoalStates.h>
 #include <or_ompl/OMPLConversions.h>
 #include <or_ompl/OMPLPlannerParameters.h>
 
 using namespace placement::mp::ompl;
 
 ORRedirectableBiRRT::ORRedirectableBiRRT(OpenRAVE::RobotBasePtr probot, OpenRAVE::EnvironmentBasePtr penv)
+    : _env(penv)
+    , _robot(probot)
 {
     typedef ::ompl::base::ScopedState<::ompl::base::StateSpace> ScopedState;
-    _robot = probot;
-    _dirty_goals = true;
     // dummy ompl planner parameters
     or_ompl::OMPLPlannerParameters params;
     // init state space
@@ -47,6 +46,9 @@ ORRedirectableBiRRT::ORRedirectableBiRRT(OpenRAVE::RobotBasePtr probot, OpenRAVE
         throw std::runtime_error("Invalid start state.");
     }
     _simple_setup->addStartState(q_start);
+    // init goals
+    _ompl_goal_states = std::make_shared<::ompl::base::GoalStates>(_simple_setup->getSpaceInformation());
+    _simple_setup->setGoal(_ompl_goal_states);
     // create planning algorithm
     _planner = std::make_shared<::ompl::geometric::RedirectableRRTConnect>(_simple_setup->getSpaceInformation(), true);
     _simple_setup->setPlanner(_planner);
@@ -54,7 +56,10 @@ ORRedirectableBiRRT::ORRedirectableBiRRT(OpenRAVE::RobotBasePtr probot, OpenRAVE
     _simple_setup->setup();
 }
 
-ORRedirectableBiRRT::~ORRedirectableBiRRT() = default;
+ORRedirectableBiRRT::~ORRedirectableBiRRT()
+{
+    _env->Destroy();
+}
 
 bool ORRedirectableBiRRT::plan(double timeout, unsigned int& gid)
 {
@@ -100,7 +105,6 @@ void ORRedirectableBiRRT::addGoal(const std::vector<double>& config, unsigned in
     }
     auto config_with_id = std::make_shared<GoalWithId>(config, id);
     _goal_storage.add(config_with_id);
-    _dirty_goals = true;
 }
 
 void ORRedirectableBiRRT::removeGoal(unsigned int id)
@@ -111,7 +115,6 @@ void ORRedirectableBiRRT::removeGoal(unsigned int id)
         return;
     }
     _goal_storage.remove(goal);
-    _dirty_goals = true;
 }
 
 bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus status, unsigned int& gid)
@@ -142,7 +145,8 @@ bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus stat
         auto pdef = _planner->getProblemDefinition();
         pdef->clearSolutionPaths();
         return true;
-    } else if (status == ::ompl::base::PlannerStatus::APPROXIMATE_SOLUTION) {
+    } else if (status == ::ompl::base::PlannerStatus::APPROXIMATE_SOLUTION
+        || status == ::ompl::base::PlannerStatus::TIMEOUT) {
         // do nothing
         return false;
     } else {
@@ -154,13 +158,9 @@ bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus stat
 
 void ORRedirectableBiRRT::_synchronizeGoals()
 {
-    if (!_dirty_goals)
-        return;
-    // init new ompl goals
-    auto problem_def = _planner->getProblemDefinition();
-    problem_def->clearGoal();
-    auto ompl_goals = std::make_shared<::ompl::base::GoalStates>(_simple_setup->getSpaceInformation());
-    // first get goals that the planner has already added
+    // clear current goals
+    _ompl_goal_states->clear();
+    // now get goals that the planner has already added
     std::vector<::ompl::base::ScopedState<>> in_tree_goals;
     _planner->getGoals(in_tree_goals);
     // determine which of those we have to remove
@@ -170,13 +170,17 @@ void ORRedirectableBiRRT::_synchronizeGoals()
     for (auto& goal : in_tree_goals) {
         std::vector<double> config;
         _state_space->copyToReals(config, goal.get());
+        // _simple_setup->getSpaceInformation()->printState(goal.get());
         auto goal_with_id = _goal_storage.getGoal(config);
         if (goal_with_id == nullptr) {
             to_remove.push_back(goal);
         } else {
+            // auto dummy_iter = to_keep.find(goal_with_id->id);
+            // assert(dummy_iter == to_keep.end());
             to_keep.insert(goal_with_id->id);
         }
     }
+    assert(in_tree_goals.size() == to_remove.size() + to_keep.size());
     _planner->removeGoals(to_remove);
     // run over goals in goal storage and add those that aren't in to_keep to ompl goal
     std::vector<std::shared_ptr<GoalWithId>> all_goals;
@@ -186,9 +190,7 @@ void ORRedirectableBiRRT::_synchronizeGoals()
             // add to ompl goal
             ::ompl::base::ScopedState<> state(_state_space);
             _state_space->copyFromReals(state.get(), g->config);
-            ompl_goals->addState(state);
+            _ompl_goal_states->addState(state);
         }
     }
-    problem_def->setGoal(ompl_goals);
-    _dirty_goals = false;
 }
