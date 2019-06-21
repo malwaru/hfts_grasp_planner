@@ -108,7 +108,7 @@ bool ORMultiGraspMPPlugin::plan(std::ostream& sout, std::istream& sinput)
 {
     double timeout;
     sinput >> timeout;
-    std::vector<std::pair<unsigned int, MultiGraspMP::WaypointPath>> new_paths;
+    std::vector<std::pair<unsigned int, MultiGraspMP::WaypointPathPtr>> new_paths;
     _planner->plan(new_paths, timeout);
     if (!new_paths.empty()) {
         for (unsigned int i = 0; i < new_paths.size(); ++i) {
@@ -128,15 +128,15 @@ bool ORMultiGraspMPPlugin::getPath(std::ostream& sout, std::istream& sinput)
     sinput >> id;
     auto iter = _solutions.find(id);
     if (iter != _solutions.end()) {
-        MultiGraspMP::WaypointPath& path = iter->second;
-        for (unsigned int wi = 0; wi < path.size(); ++wi) {
-            auto& wp = path.at(wi);
+        MultiGraspMP::WaypointPathPtr path = iter->second;
+        for (unsigned int wi = 0; wi < path->size(); ++wi) {
+            auto& wp = path->at(wi);
             for (unsigned int i = 0; i < wp.size(); ++i) {
                 sout << wp.at(i);
                 if (i + 1 < wp.size())
                     sout << " ";
             }
-            if (wi + 1 < path.size())
+            if (wi + 1 < path->size())
                 sout << "\n";
         }
     }

@@ -43,7 +43,6 @@ def show_goals(goals, manip, target_object):
 
 
 if __name__ == "__main__":
-    print "BLALALALA"
     base_path = os.path.dirname(__file__)
     env_file = os.path.normpath(base_path + '/../../data/environments/placement_exp_0.xml')
     env = orpy.Environment()
@@ -90,9 +89,10 @@ if __name__ == "__main__":
         robot.SetDOFValues(config, manip.GetArmIndices())
         time.sleep(0.1)
     robot.SetDOFValues(start_config)
-    for i in range(400):
+    for i in range(20):
         print "Creating planner"
-        planner = MGMotionPlanner("SequentialMGBiRRT", manip)
+        # planner = MGMotionPlanner("SequentialMGBiRRT", manip)
+        planner = MGMotionPlanner("ParallelMGBiRRT", manip)
         planner.setup(target_object)
         print "Adding goals"
         planner.addGoals(goals)
@@ -104,9 +104,9 @@ if __name__ == "__main__":
         trajectories, reached_goals = planner.plan(0.1)
         unreached_goals = [g for g in goals if g.key not in reached_goals]
         if len(unreached_goals) > 0:
-            goals_to_remove = [random.choice(unreached_goals)]
+            goals_to_remove = random.sample(unreached_goals, min(3, len(unreached_goals)))
             # remove a random goal
-            print "Removing a random unreached goal"
+            print "Removing random unreached goals"
             planner.removeGoals(goals_to_remove)
         print "Planning for remaining goals"
         while len(goals) - len(goals_to_remove) > len(reached_goals):

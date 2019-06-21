@@ -1,6 +1,6 @@
 find_package(OpenRAVE REQUIRED)
 find_package(Eigen REQUIRED)
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS thread)
 find_package(OMPL)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_COMPILER clang++)

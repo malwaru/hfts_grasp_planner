@@ -111,7 +111,7 @@ void ORRedirectableBiRRT::removeGoal(unsigned int id)
 {
     auto goal = _goal_storage.getGoal(id);
     if (!goal) {
-        RAVELOG_WARN("Could not remove goal with id " + std::to_string(id) + ". There is no such goal");
+        RAVELOG_DEBUG("Could not remove goal with id " + std::to_string(id) + ". There is no such goal");
         return;
     }
     _goal_storage.remove(goal);

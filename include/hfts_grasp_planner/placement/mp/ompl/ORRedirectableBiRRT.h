@@ -174,8 +174,9 @@ namespace mp {
 
             /**
              * Add the given configuration as a new goal that is identified by the given id.
-             * The caller has to ensure that this id is unique. If a goal with same already exists,
-             * a logic error is thrown.
+             * The caller has to ensure that this id is unique. If a goal with the same id
+             * already exists, a logic error is thrown. If a goal with the same id has existed
+             * in the past, the behavior is undefined.
              */
             void addGoal(const std::vector<double>& config, unsigned int id);
             /**
