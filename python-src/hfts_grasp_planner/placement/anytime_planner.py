@@ -35,6 +35,7 @@ class MGMotionPlanner(object):
         self._known_grasps = None
         self._dof = 0
         self._vel_factor = vel_factor
+        self._goals = {}
 
     def setup(self, grasped_obj, start_config=None):
         """
@@ -73,15 +74,18 @@ class MGMotionPlanner(object):
             Returns
             -------
             trajs, list of OpenRAVE trajectory - list of newly computed trajectories
-            goal_ids, list of int - indices of the goals that were reached
+            goals, list of PlacementGoals - list of goals that the trajectories lead to
         """
         command_str = "plan %f" % time_limit
         result_str = self._planner_interface.SendCommand(command_str)
         if len(result_str) > 0:
             ids = map(int, result_str.split(' '))
             trajs = []
+            reached_goals = []
             for idx in ids:
                 path_str = self._planner_interface.SendCommand("getPath " + str(idx))
+                reached_goals.append(self._goals[idx])
+                self._goals.pop(idx)
                 # need to parse path now
                 path_lines = path_str.splitlines()
                 path = []
@@ -91,7 +95,7 @@ class MGMotionPlanner(object):
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
                     traj = hfts_utils.path_to_trajectory(self._robot, path, self._vel_factor)
                     trajs.append(traj)
-            return trajs, ids
+            return trajs, reached_goals
         return [], []
 
     def addGoals(self, goals):
@@ -118,6 +122,8 @@ class MGMotionPlanner(object):
             for v in g.arm_config:
                 command_str += " %f" % v
             self._planner_interface.SendCommand(command_str)
+            # finally add it to the set of known goals
+            self._goals[g.key] = g
 
     def removeGoals(self, goals):
         """
@@ -130,6 +136,290 @@ class MGMotionPlanner(object):
         goal_ids = [g.key for g in goals]
         command_str = "removeGoals " + str(goal_ids).replace('[', '').replace(']', '').replace(',', '')
         self._planner_interface.SendCommand(command_str)
+        for g in goals:
+            self._goals.pop(g.key)
+
+
+class MGAnytimePlacementPlanner(object):
+    """
+        This class implements an integrated anytime placement planner.
+        This algorithm combines a PlacementGoalSampler as defined in goal_sampler.interfaces
+        with a multi-grasp motion planner, i.e. a motion planner that can plan motions under different grasps.
+        Parameters:
+            num_goal_samples, int  - number of goal samples to query for in every iteration
+            num_goal_iterations, int  - max number of iterations the goal sampler can run in each iteration
+            vel_scale, float - percentage of max velocity
+            mp_timeout, float - computation time the motion planner for each manipulator has in each iteration
+    """
+
+    def __init__(self, goal_sampler, manips, mplanner=None, stats_recorder=None, **kwargs):
+        """
+            Create a new MGAnytimePlacementPlanner.
+            ---------
+            Arguments
+            ---------
+            goal_sampler, PlacementGoalSampler - goal sampler to use
+            manips, list of OpenRAVE manipulators - manipulators to plan for (it is assumed that they all belong
+                to the same robot)
+            mplanner, string(optional) - name of the motion planner. Valid choices: SequentialMGBiRRT, ParallelMGBiRRT
+            kwargs: Any parameter defined in class documentation.
+        """
+        if mplanner is None:
+            mplanner = "ParallelMGBiRRT"
+        self.goal_sampler = goal_sampler
+        self._motion_planners = {}  # store separate motion planner for each manipulator
+        self._params = {"num_goal_samples": 2, "num_goal_iterations": 50, "vel_scale": 0.1,
+                        "mp_timeout": 1.0}
+        for manip in manips:
+            self._motion_planners[manip.GetName()] = MGMotionPlanner(mplanner, manip)
+        self._robot = manips[0].GetRobot()
+        self.set_parameters(**kwargs)
+        self.solutions = []
+        self._stats_recorder = stats_recorder
+
+    def plan(self, timeout, target_object):
+        """
+            Plan a new solution to a placement. The algorithm plans from the current robot configuration.
+            The target volume etc. need to be specified on the goal sampler directly.
+            ---------
+            Arguments
+            ---------
+            timeout, float - maximum time
+            target_object, OpenRAVE Kinbody - the target object to plan the placement for
+            # TODO pass terminal condition to let the outside decide when to terminate, i.e. real anytime
+            -------
+            Returns
+            -------
+            traj, OpenRAVE trajectory - arm trajectory to a placement goal. None in case of failure.
+            goal, PlacementGoal - the placement goal traj leads to. None in case of failure.
+        """
+        num_goal_samples = self._params["num_goal_samples"]
+        num_goal_iter = self._params["num_goal_iterations"]
+        self.solutions = []
+        best_solution = None  # store tuple (Trajectory, PlacementGoal)
+        goal_set = {}  # stores for each manipuluator the current set of goals
+        # initialize motion planners
+        for _, planner in self._motion_planners.iteritems():
+            planner.setup(grasped_obj=target_object)
+        # repeatedly query new goals, and plan motions
+        start_time = time.time()
+        iter_idx = 0
+        while time.time() - start_time < timeout:
+            rospy.logdebug("Running iteration %i" % iter_idx)
+            connected_goals = []  # store goals that we manage to connect to in this iteration
+            # sample new goals
+            rospy.logdebug("Sampling %i new goals" % num_goal_samples)
+            new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter, True)
+            rospy.logdebug("Got %i valid new goals" % num_new_goals)
+            self._merge_goal_sets(goal_set, new_goals)
+            # add new goals
+            for manip_name, planner in self._motion_planners.iteritems():
+                planner.addGoals(new_goals[manip_name])
+            # plan
+            for manip_name, planner in self._motion_planners.iteritems():
+                # filter goals out that are worse than our current best solution
+                current_goals = goal_set[manip_name]
+                current_goals, goals_to_remove = self._filter_goals(current_goals, best_solution)
+                goal_set[manip_name] = current_goals
+                planner.removeGoals(goals_to_remove)
+                if len(current_goals) > 0:
+                    trajs, reached_goals = planner.plan(self._params["mp_timeout"])
+                    if len(trajs) > 0:
+                        # select the reached goal with maximal objective value
+                        idx = np.argmax([g.objective_value for g in reached_goals])
+                        reached_goal = reached_goals[idx]
+                        traj = trajs[idx]
+                        # locally improve this goal
+                        traj, improved_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
+                        self.solutions.append((traj, improved_goal))
+                        best_solution = (traj, improved_goal)
+                        rospy.logdebug("Found new solution - it has objective value %f" %
+                                       best_solution[1].objective_value)
+                        connected_goals.extend(reached_goals)
+                        connected_goals.append(improved_goal)
+                        if self._stats_recorder:
+                            # record both reached and improved goal (before and after local optimization)
+                            self._stats_recorder.register_new_solution(reached_goal)
+                            if reached_goal != improved_goal:
+                                self._stats_recorder.register_new_solution(improved_goal)
+            # lastly, inform goal sampler about the goals we reached this round
+            self.goal_sampler.set_reached_goals(connected_goals)
+            iter_idx += 1
+        if best_solution is not None:
+            planner = self._motion_planners[best_solution[1].manip.GetName()]
+            planner.simplify(best_solution[0], best_solution[1])
+            self.time_traj(best_solution[0])
+            return best_solution
+        return None, None
+
+    def time_traj(self, traj):
+        """
+            Retime the given trajectory.
+        """
+        with self._robot:
+            vel_limits = self._robot.GetDOFVelocityLimits()
+            self._robot.SetDOFVelocityLimits(self._params['vel_scale'] * vel_limits)
+            orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
+            self._robot.SetDOFVelocityLimits(vel_limits)
+        return traj
+
+    def get_solution(self, i, bsimplify=True):
+        """
+            Return the ith trajectory found. Optionally, simplify the solution.
+        """
+        if i >= len(self.solutions):
+            return None, None
+        if bsimplify:
+            planner = self._motion_planners[self.solutions[i][1].manip.GetName()]
+            planner.simplify(self.solutions[i][0], self.solutions[i][1])
+        self.time_traj(self.solutions[i][0])
+        return self.solutions[i]
+
+    def _filter_goals(self, goals, best_solution):
+        """
+            Filter the given list of goals based on objective value.
+            ---------
+            Arguments
+            ---------
+            goals, list of PlacementGoals
+            best_solution, tuple (traj, PlacementGoal), where PlacementGoal is the best reached so far. The tuple may be None
+            -------
+            Returns
+            -------
+            goals_to_keep, list of PlacementGoals (might be empty)
+            goals_to_remove, list of PlacementGoals (might be emtpy)
+        """
+        if best_solution is None:
+            return goals, []
+        goals_to_keep = [x for x in goals if x.objective_value > best_solution[1].objective_value]
+        goals_to_remove = [x for x in goals if x.objective_value <= best_solution[1].objective_value]
+        return goals_to_keep, goals_to_remove
+
+    def _merge_goal_sets(self, old_goals, new_goals):
+        """
+            Merge new_goals into old_goals.
+            ---------
+            Arguments
+            ---------
+            old_goals, dict - manip_name -> list of goals
+            new_goals, dict - manip_name -> list of goals
+            -------
+            Returns
+            -------
+            old_goals
+        """
+        for (key, goals) in new_goals.iteritems():
+            if key in old_goals:
+                old_goals[key].extend(goals)
+            else:
+                old_goals[key] = goals
+        return old_goals
+
+    def set_parameters(self, **kwargs):
+        """
+            Set parameters
+        """
+        for key, value in kwargs.iteritems():
+            if key in self._params:
+                self._params[key] = value
+            else:
+                rospy.logwarn("Unknown parameter: %s" % key)
+
+
+class DummyPlanner(object):
+    """
+        Dummy placement planner that pretends to plan motions.
+        It samples several goals, and then randomly decides that one of them was reached by a motion planner.
+        Subsequently, the goal sampler is informed about this and queried again.
+    """
+
+    def __init__(self, goal_sampler, num_goal_samples=10, num_goal_iterations=10, stats_recorder=None):
+        """
+            num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
+            num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
+        """
+        self._goal_sampler = goal_sampler
+        self._stats_recorder = stats_recorder
+        self.num_goal_samples = num_goal_samples
+        self.num_goal_iterations = num_goal_iterations
+
+    def plan(self, timeout, target_object):
+        """
+            Run pseudo planning.
+            ---------
+            Arguments
+            ---------
+            timeout, float - maximum time
+            target_object, Kinbody - body to place
+        """
+        objectives = []
+        solutions = []
+        goal_set = {}
+        best_solution = None
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            new_goals, _ = self._goal_sampler.sample(self.num_goal_samples, self.num_goal_iterations, True)
+            self._check_objective_invariant(new_goals, best_solution)
+            goal_set = self._merge_goal_sets(goal_set, new_goals)
+            if len(goal_set) > 0:
+                all_sols = []
+                for (_, sols) in goal_set.iteritems():
+                    all_sols.extend(sols)
+                all_sols = self._filter_goals(all_sols, best_solution)
+                if len(all_sols) > 0:
+                    selected_goal = random.choice(all_sols)
+                    self._goal_sampler.set_reached_goals([selected_goal])
+                    best_solution = selected_goal
+                    objectives.append(best_solution.objective_value)
+                    solutions.append(best_solution)
+                    if self._stats_recorder:
+                        self._stats_recorder.register_new_solution(selected_goal)
+
+        return objectives, solutions
+
+    def _check_objective_invariant(self, goals, best_sol):
+        if best_sol is None:
+            return
+        for (key, goal_set) in goals.iteritems():
+            for goal in goal_set:
+                assert(goal.objective_value >= best_sol.objective_value)
+
+    def _merge_goal_sets(self, old_goals, new_goals):
+        """
+            Merge new_goals into old_goals.
+            ---------
+            Arguments
+            ---------
+            old_goals, dict - manip_name -> list of goals
+            new_goals, dict - manip_name -> list of goals
+            -------
+            Returns
+            -------
+            old_goals
+        """
+        for (key, goals) in new_goals.iteritems():
+            if key in old_goals:
+                old_goals[key].extend(goals)
+            else:
+                old_goals[key] = goals
+        return old_goals
+
+    def _filter_goals(self, goals, best_solution):
+        """
+            Filter the given list of goals based on objective value.
+            ---------
+            Arguments
+            ---------
+            goals, list of PlacementGoals
+            best_solution, tuple (traj, PlacementGoal), where PlacementGoal is the best reached so far. The tuple may be None
+            -------
+            Returns
+            -------
+            remaining_goals, list of PlacementGoals (might be empty)
+        """
+        if best_solution is None:
+            return goals
+        return [x for x in goals if x.objective_value > best_solution.objective_value]
 
 
 class RedirectableOMPLPlanner(object):

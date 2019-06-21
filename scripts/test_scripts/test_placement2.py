@@ -473,11 +473,16 @@ if __name__ == "__main__":
                                                                               parameters=problem_desc["parameters"])
 
             planner_stats = statsrecording.PlacementMotionStatsRecorder()
-            motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips,
-                                                                         num_goal_samples=parameters["num_goal_samples"],
-                                                                         num_goal_iterations=parameters["num_goal_iterations"],
-                                                                         mp_timeout=parameters["mp_timeout"],
-                                                                         stats_recorder=planner_stats)
+            # motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips,
+            #                                                              num_goal_samples=parameters["num_goal_samples"],
+            #                                                              num_goal_iterations=parameters["num_goal_iterations"],
+            #                                                              mp_timeout=parameters["mp_timeout"],
+            #                                                              stats_recorder=planner_stats)
+            motion_planner = anytime_planner_mod.MGAnytimePlacementPlanner(goal_sampler, manips,
+                                                                           num_goal_samples=parameters["num_goal_samples"],
+                                                                           num_goal_iterations=parameters["num_goal_iterations"],
+                                                                           mp_timeout=parameters["mp_timeout"],
+                                                                           stats_recorder=planner_stats)
             dummy_planner = anytime_planner_mod.DummyPlanner(goal_sampler, num_goal_samples=parameters["num_goal_samples"],
                                                              num_goal_iterations=parameters["num_goal_iterations"])
             real_time = time.time()
