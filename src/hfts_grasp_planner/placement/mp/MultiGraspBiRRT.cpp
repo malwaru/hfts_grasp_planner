@@ -39,12 +39,11 @@ void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr
     per_grasp_time = time_limit / num_active_planners;
     // plan
     for (auto& key_planner : _planners) {
-        WaypointPathPtr path_ptr = std::make_shared<WaypointPath>();
-        WaypointPath& path = *path_ptr;
         unsigned int gid = 0;
         if (key_planner.second->plan(per_grasp_time, gid)) {
             // we have a new path, so retrieve it
-            WaypointPath path;
+            WaypointPathPtr path_ptr = std::make_shared<WaypointPath>();
+            WaypointPath& path = *path_ptr;
             key_planner.second->getPath(gid, path);
             new_paths.emplace_back(std::make_pair(gid, path_ptr));
             _goals.erase(gid);
@@ -73,6 +72,33 @@ void SequentialMGBiRRT::addGrasp(const Grasp& grasp)
         Transform eTo = oTe.inverse();
         Transform wTo = wTe * eTo;
         obj->SetTransform(wTo);
+        {
+            std::stringstream ss;
+            ss << "Name of the manipulator " << manip->GetName();
+            std::vector<double> dof_values;
+            robot->GetDOFValues(dof_values, manip->GetArmIndices());
+            ss << " DoF values: ";
+            for (auto v : dof_values) {
+                ss << v << ", ";
+            }
+            RAVELOG_DEBUG(ss.str());
+            ss.str("");
+            ss << "quat: " << eTo.rot;
+            ss << "trans: " << eTo.trans;
+            RAVELOG_DEBUG("Object pose in eef frame " + ss.str());
+            ss.str("");
+            ss << "quat: " << oTe.rot;
+            ss << "trans: " << oTe.trans;
+            RAVELOG_DEBUG("EEF pose in object frame " + ss.str());
+            ss.str("");
+            ss << "quat: " << wTe.rot;
+            ss << "trans: " << wTe.trans;
+            RAVELOG_DEBUG("EEF pose in world frame " + ss.str());
+            ss.str("");
+            ss << "quat: " << wTo.rot;
+            ss << "trans: " << wTo.trans;
+            RAVELOG_DEBUG("Setting object to pose " + ss.str());
+        }
         // set hand_config
         auto gripper_indices = manip->GetGripperIndices();
         robot->SetDOFValues(grasp.gripper_values, 1, gripper_indices);
@@ -246,18 +272,20 @@ ParallelMGBiRRT::~ParallelMGBiRRT()
 void ParallelMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit)
 {
     new_paths.clear();
-    // sleep for the duration of time_limit to give asynchronous motion planners some time
-    std::this_thread::sleep_for(std::chrono::duration<double>(time_limit));
-    // collect paths
-    for (auto& key_planner : _planners) {
-        std::vector<std::pair<unsigned int, WaypointPathPtr>> paths_for_grasp;
-        key_planner.second->getNewPaths(paths_for_grasp);
-        // filter goals that we are not longer interested in
-        for (auto& id_path_pair : paths_for_grasp) {
-            if (_goals.find(id_path_pair.first) != _goals.end()) {
-                new_paths.push_back(id_path_pair);
-                _goals.erase(id_path_pair.first);
-            } // else ignore
+    if (not _goals.empty()) {
+        // sleep for the duration of time_limit to give asynchronous motion planners some time
+        std::this_thread::sleep_for(std::chrono::duration<double>(time_limit));
+        // collect paths
+        for (auto& key_planner : _planners) {
+            std::vector<std::pair<unsigned int, WaypointPathPtr>> paths_for_grasp;
+            key_planner.second->getNewPaths(paths_for_grasp);
+            // filter goals that we are not longer interested in
+            for (auto& id_path_pair : paths_for_grasp) {
+                if (_goals.find(id_path_pair.first) != _goals.end()) {
+                    new_paths.push_back(id_path_pair);
+                    _goals.erase(id_path_pair.first);
+                } // else ignore
+            }
         }
     }
 }

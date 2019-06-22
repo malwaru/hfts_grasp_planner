@@ -58,6 +58,7 @@ class MGMotionPlanner(object):
             self._planner_interface.SendCommand("initPlan %i %i" %
                                                 (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId()))
             self._known_grasps = set()
+            self._goals = {}
             self._dof = self._robot.GetActiveDOF()
 
     def plan(self, time_limit=1.0):
@@ -73,7 +74,8 @@ class MGMotionPlanner(object):
             -------
             Returns
             -------
-            trajs, list of OpenRAVE trajectory - list of newly computed trajectories
+            trajs, list of OpenRAVE trajectory - list of newly computed trajectories 
+                (storing only paths, no velocities) 
             goals, list of PlacementGoals - list of goals that the trajectories lead to
         """
         command_str = "plan %f" % time_limit
@@ -93,7 +95,7 @@ class MGMotionPlanner(object):
                     path.append(np.array(map(float, l.split(" "))))
                 with self._robot:
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
-                    traj = hfts_utils.path_to_trajectory(self._robot, path, self._vel_factor)
+                    traj = hfts_utils.path_to_trajectory(self._robot, path, bvelocities=False)
                     trajs.append(traj)
             return trajs, reached_goals
         return [], []
@@ -133,11 +135,65 @@ class MGMotionPlanner(object):
             ---------
             goals, a list of PlacementGoals to remove from the plan, i.e. to stop planning to.
         """
-        goal_ids = [g.key for g in goals]
-        command_str = "removeGoals " + str(goal_ids).replace('[', '').replace(']', '').replace(',', '')
-        self._planner_interface.SendCommand(command_str)
-        for g in goals:
-            self._goals.pop(g.key)
+        goal_ids = [g.key for g in goals if g.key in self._goals]
+        if len(goal_ids) > 0:
+            command_str = "removeGoals " + str(goal_ids).replace('[', '').replace(']', '').replace(',', '')
+            self._planner_interface.SendCommand(command_str)
+            for g in goal_ids:
+                self._goals.pop(g)
+
+
+class PathSimplifier(object):
+    """
+        Wrapper around OR_OMPL_Simplifier.
+    """
+
+    def __init__(self, manip):
+        """
+            Create a new instance of a path simplifier for the given manipulator.
+            ---------
+            Arguments
+            ---------
+            manip, OpenRAVE Manipulator - manipulator to use
+        """
+        env = manip.GetRobot().GetEnv()
+        self._params = orpy.Planner.PlannerParameters()
+        self._traj = orpy.RaveCreateTrajectory(env, '')
+        self._robot = manip.GetRobot()
+        with self._robot:
+            self._robot.SetActiveManipulator(manip.GetName())
+            self._robot.SetActiveDOFs(manip.GetArmIndices())
+            self._params.SetRobotActiveJoints(self._robot)
+        self._simplifier = orpy.RaveCreatePlanner(env, "OMPL_Simplifier")
+        self._manip = manip
+
+    def simplify(self, traj, goal, grasped_obj, time_limit=1.0):
+        """
+            Simplifies the given path.
+            ---------
+            Arguments
+            ---------
+            traj, OpenRAVE trajectory
+            goal, PlacementGoal the path leads to (required to extract grasp)
+            time_limit, float - time_limit
+            -------
+            Returns
+            -------
+            traj, OpenRAVE trajectory, the same object as traj
+        """
+        inv_grasp_tf = hfts_utils.inverse_transform(goal.grasp_tf)
+        with self._robot:
+            with grasped_obj:
+                try:
+                    hfts_utils.set_grasp(self._manip, grasped_obj, inv_grasp_tf, goal.grasp_config)
+                    self._robot.SetActiveDOFs(self._manip.GetArmIndices())
+                    params = orpy.Planner.PlannerParameters()
+                    params.SetExtraParameters("<time_limit>%f</time_limit>" % time_limit)
+                    self._simplifier.InitPlan(self._robot, params)
+                    self._simplifier.PlanPath(traj)
+                finally:
+                    self._robot.Release(grasped_obj)
+        return traj
 
 
 class MGAnytimePlacementPlanner(object):
@@ -168,10 +224,14 @@ class MGAnytimePlacementPlanner(object):
             mplanner = "ParallelMGBiRRT"
         self.goal_sampler = goal_sampler
         self._motion_planners = {}  # store separate motion planner for each manipulator
+        self._simplifiers = {}  # same for path simplifiers
         self._params = {"num_goal_samples": 2, "num_goal_iterations": 50, "vel_scale": 0.1,
                         "mp_timeout": 1.0}
+        if mplanner == "ParallelMGBiRRT":
+            self._params["mp_timeout"] = 0.0
         for manip in manips:
             self._motion_planners[manip.GetName()] = MGMotionPlanner(mplanner, manip)
+            self._simplifiers[manip.GetName()] = PathSimplifier(manip)
         self._robot = manips[0].GetRobot()
         self.set_parameters(**kwargs)
         self.solutions = []
@@ -246,8 +306,8 @@ class MGAnytimePlacementPlanner(object):
             self.goal_sampler.set_reached_goals(connected_goals)
             iter_idx += 1
         if best_solution is not None:
-            planner = self._motion_planners[best_solution[1].manip.GetName()]
-            planner.simplify(best_solution[0], best_solution[1])
+            simplifier = self._simplifiers[best_solution[1].manip.GetName()]
+            simplifier.simplify(best_solution[0], best_solution[1], target_object)
             self.time_traj(best_solution[0])
             return best_solution
         return None, None
@@ -270,8 +330,8 @@ class MGAnytimePlacementPlanner(object):
         if i >= len(self.solutions):
             return None, None
         if bsimplify:
-            planner = self._motion_planners[self.solutions[i][1].manip.GetName()]
-            planner.simplify(self.solutions[i][0], self.solutions[i][1])
+            simplifier = self._simplifiers[self.solutions[i][1].manip.GetName()]
+            simplifier.simplify(self.solutions[i][0], self.solutions[i][1])
         self.time_traj(self.solutions[i][0])
         return self.solutions[i]
 

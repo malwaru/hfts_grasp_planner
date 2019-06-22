@@ -479,14 +479,16 @@ def extend_or_traj(ortraj, path):
     return ortraj
 
 
-def path_to_trajectory(robot, path, vel_factor=0.2):
+def path_to_trajectory(robot, path, bvelocities=True, vel_factor=0.2):
     """
         Create an OpenRAVE trajectory for the given path.
         ---------
         Arguments
         ---------
-        robot, OpenRAVE robot that the path is for
+        robot, OpenRAVE robot that the path is for (active dofs)
         path, list of SampleData or np.array
+        bvelocities, bool - if True, returned trajectory includes velocities, else
+            it'll only represent a position path.
         vel_factor, float - percentage (in [0, 1]) of maximal velocity
         --------
         Returns
@@ -513,8 +515,6 @@ def path_to_trajectory(robot, path, vel_factor=0.2):
     # configurations_path.append(last_config)
     active_dofs = robot.GetActiveDOFIndices()
     assert(len(active_dofs) == len(configurations_path[0]))
-    vel_limits = robot.GetDOFVelocityLimits()
-    robot.SetDOFVelocityLimits(vel_factor * vel_limits)
     traj = orpy.RaveCreateTrajectory(robot.GetEnv(), '')
     cs = traj.GetConfigurationSpecification()
     dof_string = string.join([' ' + str(x) for x in active_dofs])
@@ -523,11 +523,13 @@ def path_to_trajectory(robot, path, vel_factor=0.2):
     traj.Init(cs)
     for idx in range(len(configurations_path)):
         traj.Insert(idx, configurations_path[idx])
-    orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
-    robot.SetDOFVelocityLimits(vel_limits)
+    # orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
+    if bvelocities:
+        vel_limits = robot.GetDOFVelocityLimits()
+        robot.SetDOFVelocityLimits(vel_factor * vel_limits)
+        orpy.planningutils.RetimeActiveDOFTrajectory(traj, robot, hastimestamps=False)
+        robot.SetDOFVelocityLimits(vel_limits)
     # print "TRAJECTORY FOUND, TRY THINGS OUT!"
-    # import IPython
-    # IPython.embed()
     return traj
 
 

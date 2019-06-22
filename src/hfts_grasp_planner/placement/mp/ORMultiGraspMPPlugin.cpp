@@ -90,9 +90,14 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
         RAVELOG_ERROR(error_msg);
         throw std::runtime_error(error_msg);
     }
-    RAVELOG_DEBUG("Initializing plan for robot " + robot->GetName() + " and object " + obj_body->GetName());
     auto query_env = _original_env->CloneSelf(OpenRAVE::Clone_Bodies);
     query_env->StopSimulation();
+    {
+        auto cloned_robot = query_env->GetRobot(query_env->GetBodyFromEnvironmentId(robot_id)->GetName());
+        auto cloned_obj = query_env->GetBodyFromEnvironmentId(obj_id);
+        auto manip = cloned_robot->GetActiveManipulator();
+        RAVELOG_DEBUG("Initializing plan for robot " + cloned_robot->GetName() + " with manipulator " + manip->GetName() + " and object " + cloned_obj->GetName());
+    }
     if (_algorithm_name == PARALLEL_BIRRT) {
         _planner = std::make_shared<ParallelMGBiRRT>(query_env, robot_id, obj_id);
     } else if (_algorithm_name == SEQUENTIAL_BIRRT) {
@@ -152,8 +157,10 @@ bool ORMultiGraspMPPlugin::addGrasp(std::ostream& sout, std::istream& sinput)
     sinput >> grasp.id;
     // next read x, y, z
     sinput >> grasp.pos.x >> grasp.pos.y >> grasp.pos.z;
-    // quaternion
-    sinput >> grasp.quat.w >> grasp.quat.x >> grasp.quat.y >> grasp.quat.z;
+    // quaternion (expected to be w x y z, where w is the real part)
+    // OpenRAVE expects the first component of a RaveVector (x, y, z, w) to be the real part.
+    // So the statement below is correct, despite the confusing use of names.
+    sinput >> grasp.quat.x >> grasp.quat.y >> grasp.quat.z >> grasp.quat.w;
     // finally read configuration
     while (sinput.good()) {
         double q;

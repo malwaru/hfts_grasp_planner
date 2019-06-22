@@ -301,6 +301,8 @@ if __name__ == "__main__":
     try:
         env = orpy.Environment()
         env.Load(problem_desc['or_env'])
+        if args.debug:
+            orpy.RaveSetDebugLevel(orpy.DebugLevel.Debug)
         # load target object
         btarget_found = env.Load(problem_desc['target_obj_file'])
         if not btarget_found:
@@ -479,9 +481,10 @@ if __name__ == "__main__":
             #                                                              mp_timeout=parameters["mp_timeout"],
             #                                                              stats_recorder=planner_stats)
             motion_planner = anytime_planner_mod.MGAnytimePlacementPlanner(goal_sampler, manips,
+                                                                           mplanner="ParallelMGBiRRT",
                                                                            num_goal_samples=parameters["num_goal_samples"],
                                                                            num_goal_iterations=parameters["num_goal_iterations"],
-                                                                           mp_timeout=parameters["mp_timeout"],
+                                                                           mp_timeout=0.0,
                                                                            stats_recorder=planner_stats)
             dummy_planner = anytime_planner_mod.DummyPlanner(goal_sampler, num_goal_samples=parameters["num_goal_samples"],
                                                              num_goal_iterations=parameters["num_goal_iterations"])

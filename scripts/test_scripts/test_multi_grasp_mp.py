@@ -102,11 +102,12 @@ if __name__ == "__main__":
         # print "PLANNING TOWARDS:\n", str(np.array([goal.arm_config for goal in goals))
         print "Entering planning loop"
         trajectories, reached_goals = planner.plan(0.1)
-        unreached_goals = [g for g in goals if g.key not in reached_goals]
+        print "Reached goals: ", [g.key for g in reached_goals]
+        unreached_goals = [g for g in goals if g not in reached_goals]
         if len(unreached_goals) > 0:
             goals_to_remove = random.sample(unreached_goals, min(3, len(unreached_goals)))
             # remove a random goal
-            print "Removing random unreached goals"
+            print "Removing randomly selected unreached goals: ", [g.key for g in unreached_goals]
             planner.removeGoals(goals_to_remove)
         print "Planning for remaining goals"
         while len(goals) - len(goals_to_remove) > len(reached_goals):
