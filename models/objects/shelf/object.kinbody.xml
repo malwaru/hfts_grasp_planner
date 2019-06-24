@@ -1,0 +1,9 @@
+<KinBody name="shelf">
+  <Body type="dynamic">
+    <Geom type="trimesh">
+      <Data>shelf.ply</Data>
+      <Render>shelf.ply</Render>
+      <transparency>0</transparency>
+    </Geom>      
+  </Body>
+</KinBody>

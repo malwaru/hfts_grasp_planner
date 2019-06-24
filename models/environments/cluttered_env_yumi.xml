@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+
+    <Robot file="../../models/robots/yumi/yumi.xml">
+        <RotationAxis>0 0 1 90</RotationAxis>
+        -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+        <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
+        <Translation>0 -0.1 0.1</Translation>
+    </Robot>
+
+    <KinBody name="floor">
+        <Translation>0.3   0.0   -0.5</Translation>
+        <Body type="static">
+            <Geom type="box">
+                <extents>1 1.5 0.005</extents>
+                <diffuseColor>.6 .6 .6</diffuseColor>
+                <ambientColor>0.6 0.6 0.6</ambientColor>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="cluttered_shelf">
+        <Translation>0.58   0.96   0.44</Translation>
+        <RotationAxis>0 0 1 180</RotationAxis>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>cluttered_env_scaled.stl</Data>
+                <Render>cluttered_env_scaled.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="crayola">
+        <Translation>-0.26 0.373 0.516</Translation>
+        <!-- <RotationAxis>0 0 1 20</RotationAxis> -->
+        <Body type="dynamic">
+            <Geom type="trimesh">
+                <Data>../objects/crayola/objectModel.ply</Data>
+                <Render>../objects/crayola/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="bunny">
+        <Translation>-0.16 0.78 1.5</Translation>
+        <Body type="dynamic">
+            <Geom type="trimesh">
+                <Data>../objects/bunny/objectModel.ply</Data>
+                <Render>../objects/bunny/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="stick">
+        <Translation>0.3 0.5 0.5</Translation>
+        <Body type="dynamic">
+            <Geom type="trimesh">
+                <Data>../objects/stick/objectModel.stl</Data>
+                <Render>../objects/stick/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+</Environment> 

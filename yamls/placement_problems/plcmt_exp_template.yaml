@@ -1,0 +1,22 @@
+or_env: <PATH_TO_XML>
+urdf_file: ../../models/robots/yumi/yumi.urdf
+sdf_file: <PATH_TO_SDF>
+occ_file: <PATH_TO_OCC>
+robot_ball_desc: ../../models/robots/yumi/ball_description.yaml
+robot_name: Yumi
+manip_name: left_arm_with_gripper
+target_obj_file: <PATH_TO_KINBODY_XML>
+grasp_file: <PATH_TO_GRASP_FILE>
+plcmnt_volume: [-0.5, 0.29, 0.0, 0.10, 0.78, 0.2]
+sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
+time_limit: 240.0
+grasp_id: 0
+maximize_clearance: <BOOL>
+parameters:
+  occ_tree_cell_size: 0.005
+  relaxation_type: <STRING>
+  weight_arm_col: 0.1
+  weight_obj_col: 0.3
+  weight_contact: 0.4
+  weight_objective: 0.3
+  eps_xi: 1.0

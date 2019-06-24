@@ -1,0 +1,295 @@
+<Kinbody name="yumi_kinbody">
+    <Body name="yumi_body" type="dynamic">
+        <Translation> 0 0 0</Translation>
+        <quat>1.0 0.0 0.0 0.0</quat>
+        <Geom type="trimesh">
+            <!-- <render>meshes/body.stl</render> -->
+            <render>meshes/coarse/body.stl</render>
+            <collision>meshes/coarse/body.stl</collision>
+        </Geom>
+    </Body>
+    <!-- Right arm -->
+    <Body name="yumi_link_1_r" type="dynamic">
+        <offsetfrom>yumi_body</offsetfrom>
+        <Translation>0.05355 -0.0725 0.41492</Translation>
+        <quat>0.21925458 -0.40779636 0.31428983 -0.82876502</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_1.stl</Render> -->
+            <render>meshes/coarse/link_1.stl</render>
+            <collision>meshes/coarse/link_1.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_2_r" type="dynamic">
+        <offsetfrom>yumi_link_1_r</offsetfrom>
+        <Translation>0.03 0.0 0.1</Translation>
+        <quat>0.70710678 0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_2.stl</Render> -->
+            <render>meshes/coarse/link_2.stl</render>
+            <collision>meshes/coarse/link_2.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_3_r" type="dynamic">
+        <offsetfrom>yumi_link_2_r</offsetfrom>
+        <Translation>-0.03 0.17283 0.0</Translation>
+        <quat>0.70710678 -0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_3.stl</Render> -->
+            <render>meshes/coarse/link_3.stl</render>
+            <collision>meshes/coarse/link_3.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_4_r" type="dynamic">
+        <offsetfrom>yumi_link_3_r</offsetfrom>
+        <Translation>-0.04188 0.0 0.07873</Translation>
+        <quat>0.5 0.5 -0.5 0.5</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_4.stl</Render> -->
+            <render>meshes/coarse/link_4.stl</render>
+            <collision>meshes/coarse/link_4.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_5_r" type="dynamic">
+        <offsetfrom>yumi_link_4_r</offsetfrom>
+        <Translation>0.0405 0.16461 0.0</Translation>
+        <quat>0.70710678 -0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_5.stl</Render> -->
+            <render>meshes/coarse/link_5.stl</render>
+            <collision>meshes/coarse/link_5.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_6_r" type="dynamic">
+        <offsetfrom>yumi_link_5_r</offsetfrom>
+        <Translation>-0.027 0 0.10039</Translation>
+        <quat>0.70710678 0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_6.stl</Render> -->
+            <render>meshes/coarse/link_6.stl</render>
+            <collision>meshes/coarse/link_6.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_7_r" type="dynamic">
+        <offsetfrom>yumi_link_6_r</offsetfrom>
+        <Translation>0.027 0.029 0.0</Translation>
+        <quat>0.70710678 -0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_7.stl</Render> -->
+            <render>meshes/coarse/link_7.stl</render>
+            <collision>meshes/coarse/link_7.stl</collision>
+        </Geom>
+    </Body>
+    <!-- ==================== Right arm joints ==================== -->
+    <Joint name="yumi_joint_1_r" type="hinge" enable="true">
+        <Body>yumi_body</Body>
+        <Body>yumi_link_1_r</Body>
+        <offsetfrom>yumi_link_1_r</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.94087978961 2.94087978961</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_2_r" type="hinge" enable="true">
+        <Body>yumi_link_1_r</Body>
+        <Body>yumi_link_2_r</Body>
+        <offsetfrom>yumi_link_2_r</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.50454747661 0.759218224618</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_7_r" type="hinge" enable="true">  <!-- the weird naming is correct -->
+        <Body>yumi_link_2_r</Body>
+        <Body>yumi_link_3_r</Body>
+        <offsetfrom>yumi_link_3_r</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.94087978961 2.94087978961</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_3_r" type="hinge" enable="true">  
+        <Body>yumi_link_3_r</Body>
+        <Body>yumi_link_4_r</Body>
+        <offsetfrom>yumi_link_4_r</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.15548162621 1.3962634016</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_4_r" type="hinge" enable="true">
+        <Body>yumi_link_4_r</Body>
+        <Body>yumi_link_5_r</Body>
+        <offsetfrom>yumi_link_5_r</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-5.06145483078 5.06145483078</limits>
+        <maxvel>6.98131700798</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_5_r" type="hinge" enable="true">
+        <Body>yumi_link_5_r</Body>
+        <Body>yumi_link_6_r</Body>
+        <offsetfrom>yumi_link_6_r</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-1.53588974176 2.40855436775</limits>
+        <maxvel>6.98131700798</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_6_r" type="hinge" enable="true"> 
+        <Body>yumi_link_6_r</Body>
+        <Body>yumi_link_7_r</Body>
+        <offsetfrom>yumi_link_7_r</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-3.99680398707 3.99680398707</limits>
+        <maxvel>6.98131700798</maxvel>
+    </Joint>
+    <!-- Left arm -->
+    <Body name="yumi_link_1_l" type="dynamic">
+        <offsetfrom>yumi_body</offsetfrom>
+        <Translation>0.05355 0.0725 0.41492</Translation>
+        <quat>0.21763236  0.40848028  0.31343673  0.82917877</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_1.stl</Render> -->
+            <render>meshes/coarse/link_1.stl</render>
+            <collision>meshes/coarse/link_1.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_2_l" type="dynamic">
+        <offsetfrom>yumi_link_1_l</offsetfrom>
+        <Translation>0.03 0.0 0.1</Translation>
+        <quat>0.70710678 0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_2.stl</Render> -->
+            <render>meshes/coarse/link_2.stl</render>
+            <collision>meshes/coarse/link_2.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_3_l" type="dynamic">
+        <offsetfrom>yumi_link_2_l</offsetfrom>
+        <Translation>-0.03 0.17283 0.0</Translation>
+        <quat>0.70710678 -0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_3.stl</Render> -->
+            <render>meshes/coarse/link_3.stl</render>
+            <collision>meshes/coarse/link_3.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_4_l" type="dynamic">
+        <offsetfrom>yumi_link_3_l</offsetfrom>
+        <Translation>-0.04188 0.0 0.07873</Translation>
+        <quat>0.5 0.5 -0.5 0.5</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_4.stl</Render> -->
+            <render>meshes/coarse/link_4.stl</render>
+            <collision>meshes/coarse/link_4.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_5_l" type="dynamic">
+        <offsetfrom>yumi_link_4_l</offsetfrom>
+        <Translation>0.0405 0.16461 0.0</Translation>
+        <quat>0.70710678 -0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_5.stl</Render> -->
+            <render>meshes/coarse/link_5.stl</render>
+            <collision>meshes/coarse/link_5.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_6_l" type="dynamic">
+        <offsetfrom>yumi_link_5_l</offsetfrom>
+        <Translation>-0.027 0 0.10039</Translation>
+        <quat>0.70710678 0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_6.stl</Render> -->
+            <render>meshes/coarse/link_6.stl</render>
+            <collision>meshes/coarse/link_6.stl</collision>
+        </Geom>
+    </Body>
+    <Body name="yumi_link_7_l" type="dynamic">
+        <offsetfrom>yumi_link_6_l</offsetfrom>
+        <Translation>0.027 0.029 0.0</Translation>
+        <quat>0.70710678 -0.70710678 0 0</quat>
+        <Geom type="trimesh">
+            <!-- <Render>meshes/link_7.stl</Render> -->
+            <render>meshes/coarse/link_7.stl</render>
+            <collision>meshes/coarse/link_7.stl</collision>
+        </Geom>
+    </Body>
+    <!-- ==================== Left arm joints ==================== -->
+    <Joint name="yumi_joint_1_l" type="hinge" enable="true">
+        <Body>yumi_body</Body>
+        <Body>yumi_link_1_l</Body>
+        <offsetfrom>yumi_link_1_l</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.94087978961 2.94087978961</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_2_l" type="hinge" enable="true">
+        <Body>yumi_link_1_l</Body>
+        <Body>yumi_link_2_l</Body>
+        <offsetfrom>yumi_link_2_l</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.50454747661 0.759218224618</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_7_l" type="hinge" enable="true">  <!-- the weird naming is correct -->
+        <Body>yumi_link_2_l</Body>
+        <Body>yumi_link_3_l</Body>
+        <offsetfrom>yumi_link_3_l</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.94087978961 2.94087978961</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_3_l" type="hinge" enable="true">  
+        <Body>yumi_link_3_l</Body>
+        <Body>yumi_link_4_l</Body>
+        <offsetfrom>yumi_link_4_l</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-2.15548162621 1.3962634016</limits>
+        <maxvel>3.14159265359</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_4_l" type="hinge" enable="true">
+        <Body>yumi_link_4_l</Body>
+        <Body>yumi_link_5_l</Body>
+        <offsetfrom>yumi_link_5_l</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-5.06145483078 5.06145483078</limits>
+        <maxvel>6.98131700798</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_5_l" type="hinge" enable="true">
+        <Body>yumi_link_5_l</Body>
+        <Body>yumi_link_6_l</Body>
+        <offsetfrom>yumi_link_6_l</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-1.53588974176 2.40855436775</limits>
+        <maxvel>6.98131700798</maxvel>
+    </Joint>
+    <Joint name="yumi_joint_6_l" type="hinge" enable="true"> 
+        <Body>yumi_link_6_l</Body>
+        <Body>yumi_link_7_l</Body>
+        <offsetfrom>yumi_link_7_l</offsetfrom>
+        <axis>0 0 1</axis>
+        <limits>-3.99680398707 3.99680398707</limits>
+        <maxvel>6.98131700798</maxvel>
+    </Joint>
+    <!--- Grippers -->
+    <Kinbody file="yumi_gripper_l.kinbody.xml">
+        <Body name="gripper_l_base">
+            <offsetfrom>yumi_link_7_l</offsetfrom>
+            <Translation>0.0 0.0 0.007</Translation>
+            <quat>0 0 0 1</quat>
+        </Body>
+    </Kinbody>
+    <Kinbody file="yumi_gripper_r.kinbody.xml">
+        <Body name="gripper_r_base">
+            <offsetfrom>yumi_link_7_r</offsetfrom>
+            <Translation>0.0 0.0 0.007</Translation>
+            <quat>0 0 0 1</quat>
+        </Body>
+    </Kinbody>
+    <!-- Right hand joint -->
+    <Joint name="yumi_link_7_r_joint" type="hinge" enable="false"> 
+        <Body>yumi_link_7_r</Body>
+        <Body>gripper_r_base</Body>
+        <limits>0 0</limits>
+    </Joint>
+    <!-- Left hand joint -->
+    <Joint name="yumi_link_7_l_joint" type="hinge" enable="false"> 
+        <Body>yumi_link_7_l</Body>
+        <Body>gripper_l_base</Body>
+        <limits>0 0</limits>
+    </Joint>
+    <jointvalues>1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0</jointvalues>
+</Kinbody>

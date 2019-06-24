@@ -1,0 +1,27 @@
+or_env: ../../models/environments/placement_exp_0.xml
+urdf_file: ../../models/robots/yumi/yumi.urdf
+gripper_file: ../../models/robots/yumi/yumi_gripper_l.robot.xml
+sdf_file: ../../data/generated/sdfs/placement_exp_0.sdf
+occ_file: ../../data/generated/occupancy_grids/placement_exp_0
+robot_occtree: ../../data/generated/robot_occtrees/Yumi
+robot_occgrid: ../../data/generated/robot_occgrids/Yumi
+robot_ball_desc: ../../models/robots/yumi/ball_description.yaml
+reachability_path: ../../data/generated/gnat_reachability/
+robot_name: Yumi
+manip_name: left_arm_with_gripper
+target_name: crayola
+plcmnt_volume: [-0.35, 0.55, 0.62, 0.53, 0.9, 0.74]
+sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
+time_limit: 60.0
+grasp_file: grasps/crayola.yaml
+grasp_id: 0
+maximize_clearance: True
+# initial_obj_pose: [-0.65, 0.01, 0.63, 1.0, 0.0, 0.0, 0.0]
+parameters:
+  occ_tree_cell_size: 0.005
+  relaxation_type: binary
+  weight_arm_col: 0.1
+  weight_obj_col: 0.3
+  weight_contact: 0.4
+  weight_objective: 0.3
+  eps_xi: 1.0

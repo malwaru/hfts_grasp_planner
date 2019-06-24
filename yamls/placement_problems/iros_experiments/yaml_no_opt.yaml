@@ -1,0 +1,37 @@
+or_env: ../../environments/table_low_clutter.xml
+urdf_file: ../../../models/yumi/yumi.urdf
+gripper_file: ../../../models/yumi/yumi_gripper_l.robot.xml
+sdf_file: ../../sdfs/table_low_clutter
+occ_file: ../../occupancy_grids/table_low_clutter
+robot_occtree: ../../robot_occtrees/Yumi
+robot_occgrid: ../../robot_occgrids/Yumi
+reachability_path: ../../gnat_reachability/
+robot_ball_desc: ../../../models/yumi/ball_description.yaml
+data_path: ../../
+urdf_path: ../object/
+robot_name: Yumi
+target_obj_file: ../../wine_glass/wine_glass.kinbody.xml
+grasp_file: ../grasps/new/wine_glass.yaml
+grasp_id: 0
+plcmnt_volume: [-0.4, 0.29, 0.0, 0.40, 0.78, 0.2]
+sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
+time_limit: 180.0
+maximize_clearance: False
+goal_stats_file: '/home/data/data_collections/placement_iros_2019/2019-02-27/False/table_low_clutter/wine_glass/goal_random_no_opt'
+plan_stats_file: '/home/data/data_collections/placement_iros_2019/2019-02-27/False/table_low_clutter/wine_glass/plan_random_no_opt'
+parameters:
+  occ_tree_cell_size: 0.005
+  relaxation_type: <RELAX_TYPE>
+  weight_arm_col: 0.25
+  weight_obj_col: 0.25
+  weight_contact: 0.25
+  weight_objective: 0.25
+  eps_xi: 1.0
+  joint_limit_margin: 0.0001
+  c: <C>
+  objective_impr_f: 0.1
+  num_goal_samples: 10
+  num_goal_iterations: 10
+  mp_timeout: 5.0
+  sampler_type: random_no_opt  # random, random_proj, random_afr, conservative_random, optimistic_random, mcts_sampler
+  motion_planner: real

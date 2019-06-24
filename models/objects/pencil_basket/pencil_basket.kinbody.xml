@@ -1,0 +1,13 @@
+<KinBody name="pencil_basket">
+    <Body type="dynamic">
+        <!-- <mass type="custom">
+            <total>0.1</total>
+            <com>0.02 -0.03 0.07</com>
+        </mass> -->
+        <Geom type="trimesh">
+            <collision>basket.obj</collision>
+            <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+            <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+        </Geom>
+    </Body>
+</KinBody>
