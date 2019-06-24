@@ -1,0 +1,9 @@
+right_arm_with_gripper:
+  reference_link: gripper_r_finger_r
+  rotation: [0.70710678, 0.70710678, 0, 0]
+  translation: [0, 0.0065, 0.04]
+left_arm_with_gripper:
+  reference_link: gripper_l_finger_r
+  rotation: [0.70710678, 0.70710678, 0, 0]
+  translation: [0, 0.0065, 0.04]
+  

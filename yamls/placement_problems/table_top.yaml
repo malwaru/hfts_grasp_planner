@@ -14,10 +14,11 @@ robot_name: Yumi
 # grasp_file: grasps/new/scaled_table.yaml
 # target_obj_file: ../pencil_basket/pencil_basket.kinbody.xml
 # grasp_file: grasps/new/pencil_basket.yaml
-# target_obj_file: ../elmers_glue/elmers_glue.kinbody.xml
-# grasp_file: grasps/new/elmers_glue.yaml
-target_obj_file: ../../models/objects/crayola_24/crayola_24.kinbody.xml
-grasp_file: grasps/new/crayola_24.yaml
+target_obj_file: ../../models/objects/elmers_glue/elmers_glue.kinbody.xml
+grasp_file: grasps/new/elmers_glue.yaml
+finger_information: ../../models/robots/yumi/finger_info.yaml
+# target_obj_file: ../../models/objects/crayola_24/crayola_24.kinbody.xml
+# grasp_file: grasps/new/crayola_24.yaml
 # target_obj_file: ../crayola/crayola.kinbody.xml
 # grasp_file: grasps/new/crayola.yaml
 # target_obj_file: ../wine_glass/wine_glass.kinbody.xml

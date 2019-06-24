@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Environment>
-    <Robot file="../yumi/yumi.xml">
+    <Robot file="../robots/yumi/yumi.xml">
         <RotationAxis>0 0 1 90</RotationAxis>
         -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
         <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>

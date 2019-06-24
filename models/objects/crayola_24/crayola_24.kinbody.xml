@@ -5,7 +5,7 @@
             <com>0 -0.065 0</com>
         </mass> -->
         <Geom type="trimesh">
-            <Data>0.001 crayola_24_ct.stl</Data>
+            <Data>crayola_24.stl</Data>
             <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
             <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
         </Geom>

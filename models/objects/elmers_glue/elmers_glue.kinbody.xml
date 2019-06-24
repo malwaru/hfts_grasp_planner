@@ -1,8 +1,8 @@
 <KinBody name="elmers_washable_no_run_school_glue">
   <Body type="dynamic">
     <Geom type="trimesh">
-      <Data>0.001 glue.stl</Data>
-      <Render>0.001 glue.stl</Render>
+      <Data>glue.stl</Data>
+      <Render>glue.stl</Render>
       <transparency>0</transparency>
     </Geom>
   </Body>
