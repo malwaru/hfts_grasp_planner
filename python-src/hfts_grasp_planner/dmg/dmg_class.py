@@ -155,19 +155,20 @@ class DexterousManipulationGraph():
         self._node_to_angle_intervals = {}
         for node, angles in self._node_to_angles.iteritems():
             if len(angles) == 1:
-                self._node_to_angle_intervals[node] = [(angles[0], angles[0])]
+                self._node_to_angle_intervals[node] = (angles[0], angles[0])
             else:
                 assert(len(angles) > 1)
-                intervals = []
+                # search what the true min and max angles are
+                # the min angle might be negative, if we wrap around 360
                 min_angle = angles[0]
-                prev_angle = angles[0]
-                for a in angles[1:]:
-                    if a - prev_angle > self._angle_res:
-                        intervals.append((min_angle, prev_angle))
-                        min_angle = a
-                    prev_angle = a
-                intervals.append((min_angle, prev_angle))
-                self._node_to_angle_intervals[node] = intervals
+                max_angle = angles[-1]
+                for i in range(1, len(angles)):
+                    if angles[i] - angles[i - 1] > self._angle_res:
+                        # there is a gap in angles here
+                        max_angle = angles[i - 1]
+                        min_angle = angles[i] - 360
+                        break
+                self._node_to_angle_intervals[node] = (min_angle, max_angle)
 
     def read_supervoxel_angle_to_angular_component(self, filename):
         '''reads the mapping from supervoxel id and angle to the node angular component'''
@@ -185,6 +186,20 @@ class DexterousManipulationGraph():
             sv_to_angle_component[supervoxel_id].add(int(y[2]))
         self._supervoxel_angle_to_angular_component = node_angle_to_angle_component
         self._supervoxel_to_angular_component = sv_to_angle_component
+
+    def snap_to_angle_grid(self, angle):
+        """
+            Snap the given floating point angle to the closest angle on the grid.
+            ---------
+            Arguments
+            ---------
+            angle, float - floating point angle in range [0, 360)
+            -------
+            Returns
+            -------
+            angle, int - closest angle grid point to the input angle
+        """
+        return int(np.around(angle / self._angle_res) * self._angle_res)
 
     def get_closest_nodes(self, point):
         '''returns the nodes whose center is the closest to the given point. They can be two if there are nodes with different angular component'''
@@ -207,6 +222,39 @@ class DexterousManipulationGraph():
             intersection_points.append(np.array(x))
         return intersection_points
 
+    def is_valid_angle(self, node, angle, breturn_err=False):
+        """
+            Return whether the given angle is valid for the given node.
+            ---------
+            Arguments
+            ---------
+            node, tuple (int, int)
+            angle, float or int - in degrees in range [0, 360)
+            breturn_err, bool - if True, also return distance to interval
+            -------
+            Returns
+            -------
+            bvalid, bool
+            error, float - optionally the minimal angular distance to the range of valid angles
+        """
+        error = 0.0
+        min_angle, max_angle = self._node_to_angle_intervals[node]
+        if min_angle < 0.0 and angle > max_angle:
+            langle = angle - 360
+            bvalid = langle >= min_angle
+            if not bvalid and breturn_err:
+                error = min(abs(min_angle - langle), abs(angle - max_angle))
+        else:
+            bvalid = angle >= min_angle and angle <= max_angle
+            if not bvalid and breturn_err:
+                if angle < min_angle:
+                    error = min(min_angle - angle, angle + 360 - max_angle)
+                else:
+                    error = min(angle - max_angle, min_angle - angle + 360)
+        if breturn_err:
+            return bvalid, error
+        return bvalid
+
     def get_finger_tf(self, node, angle):
         """
             Return the pose of the fingertip in object frame at the given node and angle.
@@ -215,6 +263,10 @@ class DexterousManipulationGraph():
             ---------
             node, tuple (int, int) identifying a DMG node
             angle, int - angle in degrees
+            -------
+            Returns
+            -------
+            oTf, np array of shape (4, 4)
         """
         # get position of the node
         point = self._node_to_position[node]
@@ -229,6 +281,65 @@ class DexterousManipulationGraph():
         theta = angle * np.pi / 180.0
         nTa = transformations.rotation_matrix(theta, np.array([1.0, 0.0, 0.0]))
         return np.dot(oTn, nTa)
+
+    def get_closest_node_angle(self, finger_tf):
+        """
+            Return the closest node and angle for a fingertip located at pose finger_tf.
+            ---------
+            Arguments
+            ---------
+            finger_tf, np.array of shape (4, 4) - tf matrix of finger frame in object frame oTf
+            -------
+            Returns
+            -------
+            node, tuple - node id
+            angle, int - closest angle
+            bvalid, bool - flag whether the angle is within the range of valid angles for the returned node
+        """
+        # first get closest node
+        pos = finger_tf[:3, 3]
+        neighbors = self.get_closest_nodes(pos)
+        nearest_n = None
+        nearest_angle = None
+        angle_err = np.inf
+        for n in neighbors:
+            comp = self._node_to_component[n]
+            normal = self._component_to_normal[comp]
+            zero_axis = self._component_to_zero_axis[comp]
+            cTo = np.array([normal, -zero_axis, np.cross(normal, -zero_axis)])
+            cTf = np.dot(cTo, finger_tf[:3, :3])
+            angle, _, _ = transformations.euler_from_matrix(cTf)
+            angle = angle / np.pi * 180.0
+            if angle < 0.0:
+                angle += 360
+            # angle, direct, point = transformations.rotation_from_matrix(cTf)
+            # assert(np.isclose(point, np.zeros(3), atol=1e-3))
+            # assert(np.isclose(direct, np.array([1.0, 0.0, 0.0]), atol=1e-3))
+            bvalid, err = self.is_valid_angle(n, angle, True)
+            if bvalid:
+                return n, self.snap_to_angle_grid(angle), True
+            if angle_err > err:
+                nearest_n = n
+                nearest_angle = angle
+                angle_err = err
+        return nearest_n, nearest_angle, False
+
+    def get_finger_distance(self, node_a, node_b):
+        """
+            Return the distance between fingertips if finger a is placed at node_a and finger b at node_b
+            ---------
+            Arguments
+            ---------
+            node_a, tuple (int, int)
+            node_b, tuple (int, int)
+            -------
+            Returns
+            -------
+            dist, float
+        """
+        pos_a = self._node_to_position[node_a]
+        pos_b = self._node_to_position[node_b]
+        return np.linalg.norm(pos_a - pos_b)
 
     def get_finger_openings(self, node, angle):
         """
@@ -252,10 +363,10 @@ class DexterousManipulationGraph():
         node_pos = self._node_to_position[node]
         # iterate over all opposing nodes
         for on in opposing_nodes:
-            # get angles of opposing nodes
-            # angles = self._node_to_angles[on]
-            # if angle not in angles:
-            #     continue
+            # get angle for opposing node
+            oangle = self.get_opposing_angle(node, angle, on)
+            if not self.is_valid_angle(on, oangle):
+                continue
             on_pos = self._node_to_position[on]
             distances.append(np.linalg.norm(node_pos - on_pos))
         return np.array(distances)
@@ -273,7 +384,8 @@ class DexterousManipulationGraph():
             -------
             Returns
             -------
-            oangle, float - angle of the opposing finger at the opposing node
+            oangle, float - angle of the opposing finger at the opposing node.
+                The angle is within range [0, 360)
         """
         comp = self._node_to_component[node]
         ocomp = self._node_to_component[onode]
@@ -290,7 +402,30 @@ class DexterousManipulationGraph():
         raxis = np.dot(ocTo, rot_zero_axis)
         # compute angle at opposing component in local frame (x is normal of plane)
         theta_prime = np.arctan2(raxis[2], raxis[1])
-        return theta_prime * 180.0 / np.pi
+        theta_deg = theta_prime * 180.0 / np.pi
+        if theta_deg < 0:
+            theta_deg += 360
+        return theta_deg
+
+    def get_opposite_node(self, node, dist):
+        """
+            Return the node that is opposite of node and closest to the given distance.
+            ---------
+            Arguments
+            ---------
+            node, tuple - node key
+            dist, float - distance
+            -------
+            Returns
+            -------
+            node, tuple
+        """
+        nodes = self.get_opposite_nodes(node)
+        if nodes is None:
+            return None
+        node_pos = self._node_to_position[node]
+        idx = np.argmin([np.abs(np.linalg.norm(self._node_to_position[n] - node_pos) - dist) for n in nodes])
+        return nodes[idx]
 
     def get_opposite_nodes(self, node):
         '''get the nodes that are on the opposite face of the object'''

@@ -81,6 +81,31 @@ class AFRHierarchy(placement_interfaces.PlacementHierarchy):
         self._so2_branching = so2_branching
         self._so2_depth = so2_depth
 
+    def get_parent_key(self, child_key):
+        """
+            Return the key of the parent of the given child key.
+            ---------
+            Arguments
+            ---------
+            child_key, tuple - see class documentation for key description
+            -------
+            Returns
+            -------
+            parent_key, tuple - Parent key of child_key. If child_key is the root (,), returns None
+        """
+        if len(child_key) == 0:
+            return None
+        if len(child_key) <= 3:
+            return child_key[:len(child_key) - 1]
+        assert(len(child_key) == 5)
+        region_key = child_key[3]
+        so2_key = child_key[4]
+        pregion_key = region_key[:len(region_key) - 1]
+        pso2_key = so2_key[:len(so2_key) - 1]
+        if len(pregion_key) == 0 or len(pso2_key) == 0:
+            return child_key[:3]
+        return (child_key[0], child_key[1], child_key[2], pregion_key, pso2_key)
+
     def get_child_key_gen(self, key):
         """
             Return a key-generator for the children of the given key.
@@ -453,8 +478,8 @@ class AFRHierarchy(placement_interfaces.PlacementHierarchy):
 
 
 class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
-                      placement_interfaces.PlacementValidator,
-                      placement_interfaces.PlacementObjective):
+                     placement_interfaces.PlacementValidator,
+                     placement_interfaces.PlacementObjective):
     """
         An AFRRobotBridge serves as the central interface for a placement planner
         operating on the AFRHierarchy. The AFRRobotBridge fulfills multiple functionalities

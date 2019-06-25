@@ -314,19 +314,6 @@ def create_point_cloud(points):
     return point_cloud
 
 
-def vec_angel_diff(v0, v1):
-    # in radians
-    assert len(v0) == len(v1)
-    l0 = math.sqrt(np.inner(v0, v0))
-    l1 = math.sqrt(np.inner(v1, v1))
-    if l0 == 0 or l1 == 0:
-        return 0
-    x = np.dot(v0, v1) / (l0*l1)
-    x = min(1.0, max(-1.0, x))  # fixing math precision error
-    angel = math.acos(x)
-    return angel
-
-
 def inverse_transform(transform):
     """
         Returns the inverse transformation matrix of the given matrix.
@@ -600,6 +587,33 @@ def normalize_radian(val):
     num_intervals = np.floor(val / (2.0 * np.pi))
     val -= num_intervals * 2.0 * np.pi
     return val
+
+
+def vec_angel_diff(v0, v1):
+    # in radians
+    assert len(v0) == len(v1)
+    l0 = math.sqrt(np.inner(v0, v0))
+    l1 = math.sqrt(np.inner(v1, v1))
+    if l0 == 0 or l1 == 0:
+        return 0
+    x = np.dot(v0, v1) / (l0*l1)
+    x = min(1.0, max(-1.0, x))  # fixing math precision error
+    angel = math.acos(x)
+    return angel
+
+
+# def identified_vector_angle(self, v1, v2):
+#     """
+#         Compute the angle between two vectors v1, v2.
+#         In contrast to vec_angle_diff, this function returns
+#         a signed angle in range [-pi, pi] indicating in what direction
+#         to rotate v1 around the common normal.
+#     """
+#     nv1 = v1 / np.linalg.norm(v1)
+#     nv2 = v2 / np.linalg.norm(v2)
+#     cosang = np.dot(nv1, nv2)
+#     sinang = np.linalg.norm(np.cross(nv1, nv2))
+#     return np.arctan2(sinang, cosang)
 
 
 def dist_in_range(d, r):
