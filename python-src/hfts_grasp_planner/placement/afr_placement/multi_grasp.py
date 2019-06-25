@@ -45,7 +45,7 @@ class DMGGraspSet(object):
             self.config = config
             self.dmg_info = dmg_info
 
-    def __init__(self, manip, target_obj, gripper_file, target_obj_file, finger_info_file, dmg):
+    def __init__(self, manip, target_obj, gripper_file, target_obj_file, finger_info_file, dmg, rot_weight=0.1):
         """
             Create a new DMGGraspSet for the given manipulator on the given target object.
             The grasp set consists of the grasps that are reachable through in-hand manipulation
@@ -61,10 +61,12 @@ class DMGGraspSet(object):
             target_obj_file, string - path to kinbody xml file representing the target object
             finger_info_file, string - path to finger information file
             dmg, DexterousManipulationGraph - the DMG created for the target object
+            rot_weight, float - scaling factor of angles in radians for distance computation
         """
         self._manip = manip
         self._target_obj = target_obj
         self._dmg = dmg
+        self._rot_weight = rot_weight
         # set up internal or environment
         self._my_env = orpy.Environment()
         self._my_env.Load(gripper_file)
@@ -103,29 +105,55 @@ class DMGGraspSet(object):
         finger_dist = self._dmg.get_finger_distance(node_a, node_b)
         return DMGGraspSet.Grasp(gid, eTo, np.array([finger_dist / 2.0]), (node_a, angle_a, node_b, angle_b))
 
-    def _get_adjacent_grasps(self, grasp):
+    def _get_adjacent_grasps(self, dmg_info):
         """
             Return a generator for adjacent grasps.
             ---------
             Arguments
             ---------
-            grasp, Grasp
+            dmg_info, tuple - (node_key, angle, onode_key, oangle)
             -------
             Returns
             -------
-            generator producing adjacent grasps
+            list of dmg_info tuples of adjacent grasps
+            list of edge costs
         """
-        # TODO iterate over neighboring nodes (translational adjacency)
-        # Two grasps are translational adjacent, if
-        #  1. nodes are adjacent (iteration over neighbors solves this)
-        #  2. angle is also valid in neighboring node
-        #  3. opposite nodes are adjacent
-        #  4. opposite angle is valid in opposite node neighbor
+        neighbor_grasps = []
+        edge_costs = []
+        node, angle, onode, oangle = dmg_info
+        node_pos = self._dmg.get_position(node)
+        ocomp = self._dmg.get_component(onode)
+        neighbor_nodes = self._dmg.get_neighbors(node)
+        for neigh in neighbor_nodes:
+            # Two grasps are translational adjacent, if
+            #  1. nodes are adjacent (iteration over neighbors solves this)
+            #  2. angle is also valid in neighboring node
+            #  3. opposite nodes are adjacent
+            #  4. opposite angle is valid in opposite node neighbor
+            # 2
+            if not self._dmg.is_valid_angle(node, angle):
+                continue
+            # 3
+            oneigh = self._dmg.get_opposite_node(neigh, comp=ocomp)
+            if oneigh is None:
+                continue
+            if oneigh not in self._dmg.get_neighbors(onode):
+                continue
+            # 4
+            if not self._dmg.is_valid_angle(oneigh, oangle):
+                continue
+            neighbor_grasps.append((neigh, angle, oneigh, oangle))
+            edge_costs.append(np.linalg.norm(self._dmg.get_position(neigh) - node_pos))
         # Two grasps are rotationally adjacent, if
         #  1. angles are adjacent on grid
         #  2. opposite angle is within valid range of opposite node
-        # TODO follow-up grasp needs to be collision-free
-        pass
+        neighbor_angles = self._dmg.get_neighbor_angles(node, angle)
+        for nangle in neighbor_angles:
+            noangle = self._dmg.get_opposing_angle(node, nangle, onode)
+            if self._dmg.is_valid_angle(onode, noangle):
+                neighbor_grasps.append((node, nangle, oneigh, noangle))
+                edge_costs.append(self._dmg.get_angular_resolution() / 180.0 * np.pi * self._rot_weight)
+        return neighbor_grasps, edge_costs
 
     def _compute_grasps(self):
         """
@@ -156,6 +184,9 @@ class DMGGraspSet(object):
             dmg_initial_grasp = self._construct_grasp(start_node, start_angle, onode, oangle, len(self._grasps))
             self._grasps.append(dmg_initial_grasp)
         # TODO explore all reachable grasps from here
+        # TODO implement dijkstra
+        open_list = []
+        # TODO do collision checks here
 
 
 class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,

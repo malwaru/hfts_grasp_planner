@@ -212,6 +212,18 @@ class DexterousManipulationGraph():
             nodes.append((supervoxel, c))
         return nodes
 
+    def get_position(self, node):
+        """
+            Return the position of the given node.
+        """
+        return self._node_to_position[node]
+
+    def get_angular_resolution(self):
+        """
+            Return angular resolution in degrees.
+        """
+        return self._angle_res
+
     def ray_shape_intersections(self, start_point, goal_point):
         '''get the intersection of a ray with the object's shape (used for checks on the opposite finger)'''
         source = start_point
@@ -407,25 +419,54 @@ class DexterousManipulationGraph():
             theta_deg += 360
         return theta_deg
 
-    def get_opposite_node(self, node, dist):
+    def get_opposite_node(self, node, dist=None, comp=None):
         """
-            Return the node that is opposite of node and closest to the given distance.
+            Return the node that is opposite of node and either
+                a. closest to the given distance, or
+                b. in component comp.
+            You choose which option by providing only the respective argument.
+            If both are provided, option a is returned.
             ---------
             Arguments
             ---------
             node, tuple - node key
             dist, float - distance
+            comp, int - component
             -------
             Returns
             -------
             node, tuple
         """
-        nodes = self.get_opposite_nodes(node)
-        if nodes is None:
-            return None
-        node_pos = self._node_to_position[node]
-        idx = np.argmin([np.abs(np.linalg.norm(self._node_to_position[n] - node_pos) - dist) for n in nodes])
-        return nodes[idx]
+        if dist is not None:
+            nodes = self.get_opposite_nodes(node)
+            if nodes is None:
+                return None
+            node_pos = self._node_to_position[node]
+            idx = np.argmin([np.abs(np.linalg.norm(self._node_to_position[n] - node_pos) - dist) for n in nodes])
+            return nodes[idx]
+        else:
+            nodes = self.get_opposite_nodes(node)
+            if nodes is None:
+                return None
+            comp_nodes = filter(lambda n: self._node_to_component[n] == comp, nodes)
+            if len(comp_nodes) == 0:
+                return None
+            assert(len(comp_nodes) == 1)
+            return comp_nodes[0]
+
+    def get_component(self, node):
+        """
+            Return the connected component of the given node.
+            ---------
+            Arguments
+            ---------
+            node, tuple - node key
+            -------
+            Returns
+            -------
+            id, int - identifier of connected component
+        """
+        return self._node_to_component[node]
 
     def get_opposite_nodes(self, node):
         '''get the nodes that are on the opposite face of the object'''
@@ -459,6 +500,27 @@ class DexterousManipulationGraph():
             node_list = self.get_closest_nodes(p)
             opposite_nodes += node_list
         return opposite_nodes
+
+    def get_neighbors(self, node):
+        """
+            Return a list of all neighboring nodes of the given node.
+        """
+        return self._adjacency_list[node]
+
+    def get_neighbor_angles(self, node, angle):
+        """
+            Get the neighboring angles of the given angle at the given node.
+        """
+        neighbor_angles = []
+        lower_angle = angle - self._angle_res
+        if lower_angle < 0:
+            lower_angle += 360
+        if self.is_valid_angle(node, lower_angle):
+            neighbor_angles.append(lower_angle)
+        upper_angle = angle + self._angle_res
+        if self.is_valid_angle(node, upper_angle):
+            neighbor_angles.append(upper_angle)
+        return  neighbor_angles
 
     def get_shortest_path(self, start, goal):
         '''finds the shortest path in only one component'''
