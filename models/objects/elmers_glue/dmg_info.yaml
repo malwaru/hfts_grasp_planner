@@ -1,0 +1,9 @@
+mesh: glue.stl
+mesh_scale: 1000.0
+angle_res: 20
+graph_file: graph_glue_12_20.txt
+node_angle_angle_component: node_angle_angle_component_glue_12_20.txt
+node_angle: node_angle_glue_12_20.txt
+node_component: node_component_glue_12_20.txt
+node_position: node_position_glue_12_20.txt
+component_to_normal: component_normal_glue_12_20.txt

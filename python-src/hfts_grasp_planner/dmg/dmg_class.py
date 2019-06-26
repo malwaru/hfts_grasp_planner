@@ -1,4 +1,6 @@
 import numpy as np
+import yaml
+import os
 import math
 import sys
 from pycaster import pycaster
@@ -38,35 +40,61 @@ class DexterousManipulationGraph():
         self._finger_length = 0.04  # Yumi's finger
 
     @staticmethod
-    def initFromPath(basepath, name, voxel_res, ang_res, mesh_scale=1.0):
+    def loadFromYaml(yaml_file):
         """
-            Create a DMG from files in folder basefolder assuming that the files follow
-            the following naming convention:
-            <type>_<name>_<voxel_res>_<ang_res>.txt
+            Load a DMG from yaml description file.
             ---------
             Arguments
             ---------
-            basepath, string - path to a folder containing all files
-            name, string - common substring of all filenames
-            voxel_res, int - voxel resolution
-            ang_res, int - angular resolution
-            mesh_scale, float - scale to apply on mesh to scale it to meters
+            yaml_file, string - path to yaml file containing all information to load a DMG
             -------
             Returns
             -------
-            dmg, DexterousManipulationGraph - fully initialized graph
+            dmg, DexterousManipulationGraph - fully intialized graph
         """
         dmg = DexterousManipulationGraph()
-        # read the dmg from files
-        dmg.set_object_shape_file(basepath + '/' + name + '.stl', mesh_scale)
-        dmg.read_graph("%s/graph_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
-        dmg.read_nodes("%s/node_position_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
-        dmg.read_node_to_component("%s/node_component_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
-        dmg.read_component_to_normal("%s/component_normal_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
-        dmg.read_node_to_angles("%s/node_angle_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res), ang_res)
-        dmg.read_supervoxel_angle_to_angular_component(
-            "%s/node_angle_angle_component_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
+        with open(yaml_file, 'r') as the_file:
+            yaml_content = yaml.load(the_file)
+        basepath = os.path.dirname(yaml_file) + '/'
+        dmg.set_object_shape_file(basepath + yaml_content["mesh"], yaml_content["mesh_scale"])
+        dmg.read_graph(basepath + yaml_content['graph_file'])
+        dmg.read_nodes(basepath + yaml_content['node_position'])
+        dmg.read_node_to_component(basepath + yaml_content['node_component'])
+        dmg.read_component_to_normal(basepath + yaml_content['component_to_normal'])
+        dmg.read_node_to_angles(basepath + yaml_content['node_angle'], yaml_content['angle_res'])
+        dmg.read_supervoxel_angle_to_angular_component(basepath + yaml_content['node_angle_angle_component'])
         return dmg
+
+    # @staticmethod
+    # def initFromPath(basepath, name, voxel_res, ang_res, mesh_scale=1.0):
+    #     """
+    #         Create a DMG from files in folder basefolder assuming that the files follow
+    #         the following naming convention:
+    #         <type>_<name>_<voxel_res>_<ang_res>.txt
+    #         ---------
+    #         Arguments
+    #         ---------
+    #         basepath, string - path to a folder containing all files
+    #         name, string - common substring of all filenames
+    #         voxel_res, int - voxel resolution
+    #         ang_res, int - angular resolution
+    #         mesh_scale, float - scale to apply on mesh to scale it to meters
+    #         -------
+    #         Returns
+    #         -------
+    #         dmg, DexterousManipulationGraph - fully initialized graph
+    #     """
+    #     dmg = DexterousManipulationGraph()
+    #     # read the dmg from files
+    #     dmg.set_object_shape_file(basepath + '/' + name + '.stl', mesh_scale)
+    #     dmg.read_graph("%s/graph_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
+    #     dmg.read_nodes("%s/node_position_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
+    #     dmg.read_node_to_component("%s/node_component_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
+    #     dmg.read_component_to_normal("%s/component_normal_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
+    #     dmg.read_node_to_angles("%s/node_angle_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res), ang_res)
+    #     dmg.read_supervoxel_angle_to_angular_component(
+    #         "%s/node_angle_angle_component_%s_%i_%i.txt" % (basepath, name, voxel_res, ang_res))
+    #     return dmg
 
     def set_object_shape_file(self, filename, scale=1.0):
         '''
@@ -75,11 +103,12 @@ class DexterousManipulationGraph():
             Arguments
             ---------
             filename, string - path to stl file
-            scale, float - scale to apply to the mesh to scale it to meters
+            scale, float - scale to transform from meters to the scale of the mesh's frame
         '''
         self._object_shape_file = filename
         self._mesh_scale = scale
-        self._caster = pycaster.rayCaster.fromSTL(filename, scale=scale)
+        # the scale argument does not work
+        self._caster = pycaster.rayCaster.fromSTL(filename, scale=1.0)
 
     def read_nodes(self, filename):
         '''reads the Cartesian positions of all the nodes'''
@@ -202,7 +231,8 @@ class DexterousManipulationGraph():
         return int(np.around(angle / self._angle_res) * self._angle_res)
 
     def get_closest_nodes(self, point):
-        '''returns the nodes whose center is the closest to the given point. They can be two if there are nodes with different angular component'''
+        '''returns the nodes whose center is the closest to the given point.
+           They can be two if there are nodes with different angular component'''
         (_, idx) = self._kdtree.query(point)
         supervoxel = self._idx_to_supervoxel[idx]
         # this supervoxel can correspond to more than one node
@@ -226,12 +256,12 @@ class DexterousManipulationGraph():
 
     def ray_shape_intersections(self, start_point, goal_point):
         '''get the intersection of a ray with the object's shape (used for checks on the opposite finger)'''
-        source = start_point
-        destination = goal_point
+        source = self._mesh_scale * start_point
+        destination = self._mesh_scale * goal_point
         intersections = self._caster.castRay(source, destination)
         intersection_points = list()
         for x in intersections:
-            intersection_points.append(np.array(x))
+            intersection_points.append(np.array(x) / self._mesh_scale)
         return intersection_points
 
     def is_valid_angle(self, node, angle, breturn_err=False):
@@ -419,9 +449,10 @@ class DexterousManipulationGraph():
             theta_deg += 360
         return theta_deg
 
-    def get_opposite_node(self, node, dist=None, comp=None):
+    def get_opposite_node(self, node, angle, dist=None, comp=None):
         """
-            Return the node that is opposite of node and either
+            Return the node that is opposite of node and compatible
+            with the given angle at node, and either
                 a. closest to the given distance, or
                 b. in component comp.
             You choose which option by providing only the respective argument.
@@ -435,19 +466,17 @@ class DexterousManipulationGraph():
             -------
             Returns
             -------
-            node, tuple
+            node, tuple - None if no such node exists
         """
+        nodes = self.get_opposite_nodes(node)
+        nodes = [n for n in nodes if self.is_valid_angle(n, self.get_opposing_angle(node, angle, n))]
+        if nodes is None:
+            return None
         if dist is not None:
-            nodes = self.get_opposite_nodes(node)
-            if nodes is None:
-                return None
             node_pos = self._node_to_position[node]
             idx = np.argmin([np.abs(np.linalg.norm(self._node_to_position[n] - node_pos) - dist) for n in nodes])
             return nodes[idx]
         else:
-            nodes = self.get_opposite_nodes(node)
-            if nodes is None:
-                return None
             comp_nodes = filter(lambda n: self._node_to_component[n] == comp, nodes)
             if len(comp_nodes) == 0:
                 return None
@@ -499,7 +528,7 @@ class DexterousManipulationGraph():
         for p in points:
             node_list = self.get_closest_nodes(p)
             opposite_nodes += node_list
-        return opposite_nodes
+        return list(set(opposite_nodes))
 
     def get_neighbors(self, node):
         """
@@ -520,7 +549,7 @@ class DexterousManipulationGraph():
         upper_angle = angle + self._angle_res
         if self.is_valid_angle(node, upper_angle):
             neighbor_angles.append(upper_angle)
-        return  neighbor_angles
+        return neighbor_angles
 
     def get_shortest_path(self, start, goal):
         '''finds the shortest path in only one component'''

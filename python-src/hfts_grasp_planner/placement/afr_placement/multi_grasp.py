@@ -1,7 +1,9 @@
 import rospy
+import random
 import scipy
 import yaml
 import itertools
+import heapq
 import numpy as np
 import openravepy as orpy
 from functools import partial
@@ -28,7 +30,7 @@ class DMGGraspSet(object):
         using the Dexterous Manipulation Graph.
     """
     class Grasp(object):
-        def __init__(self, gid, tf, config, dmg_info):
+        def __init__(self, gid, tf, config, dmg_info, parent, distance):
             """
                 Create a new grasp.
                 ---------
@@ -38,12 +40,16 @@ class DMGGraspSet(object):
                 tf, np.array of shape (4, 4) - transformation eTo from object frame into eef-frame
                 config, np.array of shape (q,) - gripper DOF configuration (it should be q = 1)
                 dmg_info, tuple (node, angle, onode, oangle) - dmg information of this grasp
+                parent, Grasp - parent grasp on path from initial grasp to this grasp (maybe None for root)
+                distance, float - distance to initial grasp
             """
             self.gid = gid
             self.eTo = tf
             self.oTe = utils.inverse_transform(tf)
             self.config = config
             self.dmg_info = dmg_info
+            self.parent = parent
+            self.distance = distance
 
     def __init__(self, manip, target_obj, gripper_file, target_obj_file, finger_info_file, dmg, rot_weight=0.1):
         """
@@ -71,39 +77,74 @@ class DMGGraspSet(object):
         self._my_env = orpy.Environment()
         self._my_env.Load(gripper_file)
         self._my_env.Load(target_obj_file)
+        for body in self._my_env.GetBodies():
+            body.SetTransform(np.eye(4))
+        self._my_gripper = self._my_env.GetRobots()[0]
         # load finger info
-        finger_tfs = DMGGraspSet.load_finger_tf(finger_info_file)
-        reference_link, rTf = finger_tfs[manip.GetName()]
-        # obtain eTf
-        wTr = manip.GetRobot().GetLink(reference_link).GetTransform()
-        wTe = manip.GetEndEffectorTransform()
-        self._eTf = np.dot(np.dot(utils.inverse_transform(wTe), wTr), rTf)
+        finger_info = DMGGraspSet.load_finger_info(finger_info_file)
+        self._fingertip_names, (reference_link, self._rTf) = finger_info[manip.GetName()]
+        self._reference_finger = self._my_gripper.GetLink(reference_link)
+        assert(self._reference_finger is not None)
         # compute grasp set
-        self._grasps = None
+        self._grasps = None  # int id to grasp
         self._compute_grasps()
 
     @staticmethod
-    def load_finger_tf(filename):
+    def load_finger_info(filename):
         with open(filename, 'r') as info_file:
-            finger_info = yaml.load(info_file)
-        finger_tfs = {}
-        for key, info_val in finger_info.iteritems():
-            link_name = info_val['reference_link']
-            rot = np.array(info_val['rotation'])
-            trans = np.array(info_val['translation'])
+            yaml_dict = yaml.load(info_file)
+        finger_info = {}
+        for manip_name, info_val in yaml_dict.iteritems():
+            finger_links = info_val['fingertip_links']
+            tf_dict = info_val['contact_tf']
+            link_name = tf_dict['reference_link']
+            rot = np.array(tf_dict['rotation'])
+            trans = np.array(tf_dict['translation'])
             tf = orpy.matrixFromQuat(rot)
             tf[:3, 3] = trans
-            finger_tfs[key] = (link_name, tf)
-        return finger_tfs
+            finger_info[manip_name] = (finger_links, (link_name, tf))
+        return finger_info
 
-    def _construct_grasp(self, node_a, angle_a, node_b, angle_b, gid):
+    def _compute_eTf(self, config):
         """
-            Construct a grasp from the given DMG nodes and angles.
+            Compute the transform eTf for the given finger configuration.
         """
-        oTf = self._dmg.get_finger_tf(node_a, angle_a)
-        eTo = np.dot(self._eTf, utils.inverse_transform(oTf))
+        # obtain eTf
+        with self._my_gripper:
+            self._my_gripper.SetDOFValues(config)
+            wTr = self._reference_finger.GetTransform()
+            wTe = self._my_gripper.GetTransform()
+            return np.dot(np.dot(utils.inverse_transform(wTe), wTr), self._rTf)
+
+    def _check_grasp_validity(self, grasp):
+        # with self._my_gripper:
+        self._my_gripper.SetTransform(grasp.oTe)
+        # TODO open the gripper a bit
+        self._my_gripper.SetDOFValues(grasp.config)
+        # TODO for more complex grippers we would also need to do self-collision checks
+        collisions = [self._my_env.CheckCollision(
+            link) for link in self._my_gripper.GetLinks() if link.GetName() not in self._fingertip_names]
+        return not reduce(lambda a, b: a and b, collisions, True)
+
+    def _construct_grasp(self, dmg_info, gid, parent, distance):
+        """
+            Construct a grasp from the given DMG node info.
+            ---------
+            Arguments
+            ---------
+            dmg_info, tuple - (node_a, angle_a, node_b, angle_b)
+            gid, int - id for the grasp
+            parent, Grasp - parent grasp
+            distance, float - distance to initial grasp
+        """
+        node_a, angle_a, node_b, _ = dmg_info
         finger_dist = self._dmg.get_finger_distance(node_a, node_b)
-        return DMGGraspSet.Grasp(gid, eTo, np.array([finger_dist / 2.0]), (node_a, angle_a, node_b, angle_b))
+        config = np.array([finger_dist / 2.0])
+        eTf = self._compute_eTf(config)
+        oTf = self._dmg.get_finger_tf(node_a, angle_a)
+        # TODO eTf changes as the finger configuration changes
+        eTo = np.dot(eTf, utils.inverse_transform(oTf))
+        return DMGGraspSet.Grasp(gid, eTo, config, dmg_info, parent, distance)
 
     def _get_adjacent_grasps(self, dmg_info):
         """
@@ -131,10 +172,10 @@ class DMGGraspSet(object):
             #  3. opposite nodes are adjacent
             #  4. opposite angle is valid in opposite node neighbor
             # 2
-            if not self._dmg.is_valid_angle(node, angle):
+            if not self._dmg.is_valid_angle(neigh, angle):
                 continue
             # 3
-            oneigh = self._dmg.get_opposite_node(neigh, comp=ocomp)
+            oneigh = self._dmg.get_opposite_node(neigh, angle, comp=ocomp)
             if oneigh is None:
                 continue
             if oneigh not in self._dmg.get_neighbors(onode):
@@ -151,7 +192,7 @@ class DMGGraspSet(object):
         for nangle in neighbor_angles:
             noangle = self._dmg.get_opposing_angle(node, nangle, onode)
             if self._dmg.is_valid_angle(onode, noangle):
-                neighbor_grasps.append((node, nangle, oneigh, noangle))
+                neighbor_grasps.append((node, nangle, onode, noangle))
                 edge_costs.append(self._dmg.get_angular_resolution() / 180.0 * np.pi * self._rot_weight)
         return neighbor_grasps, edge_costs
 
@@ -160,6 +201,7 @@ class DMGGraspSet(object):
             Explore the DMG to compute grasps than can be reached from the current grasp.
             Stores the resulting grasps in self._grasps
         """
+        # self._my_env.SetViewer('qtcoin')
         self._grasps = []
         # set initial grasp first. This creates two grasps, the observed one and the closest one in the DMG
         robot = self._manip.GetRobot()
@@ -169,24 +211,86 @@ class DMGGraspSet(object):
             eTo = np.dot(utils.inverse_transform(wTe), wTo)
             config = robot.GetDOFValues(self._manip.GetGripperIndices())
             # add the observed initial grasp
-            observed_initial_grasp = DMGGraspSet.Grasp(len(self._grasps), eTo, config, None)
+            observed_initial_grasp = DMGGraspSet.Grasp(len(self._grasps), eTo, config, None, None, 0.0)
             self._grasps.append(observed_initial_grasp)
-            # now obtain the closest dmg grasp
+            # now obtain the dmg info of the closest grasp in the dmg
             # for this, first compute local position of finger
-            oTf = np.dot(utils.inverse_transform(eTo), self._eTf)
+            # TODO the closest DMG grasp may be invalid, in that case we should extend our search for more neighboring grasps
+            eTf = self._compute_eTf(config)
+            oTf = np.dot(utils.inverse_transform(eTo), eTf)
             start_node, start_angle, bvalid = self._dmg.get_closest_node_angle(oTf)
             if not bvalid:
                 rospy.logwarn("Initial grasp is not within the valid angular range of the closest DMG node!")
-            # TODO this may be specific to Yumi
-            finger_dist = 2.0 * config[0]
-            onode = self._dmg.get_opposite_node(start_node, finger_dist)
+            finger_dist = 2.0 * config[0]  # TODO this may be specific to Yumi
+            onode = self._dmg.get_opposite_node(start_node, start_angle, finger_dist)
+            if onode is None:
+                raise ValueError(
+                    "Could not retrieve initial DMG node for initial grasp. There is no opposing valid node.")
             oangle = self._dmg.get_opposing_angle(start_node, start_angle, onode)
-            dmg_initial_grasp = self._construct_grasp(start_node, start_angle, onode, oangle, len(self._grasps))
-            self._grasps.append(dmg_initial_grasp)
-        # TODO explore all reachable grasps from here
-        # TODO implement dijkstra
+            initial_dmg_info = (start_node, start_angle, onode, oangle)
+        # create priority list storing tuples (distance, tie_breaker, dmg_info, parent)
+        # distance is the minimal distance to the start node
+        tb = 0  # tie breaker for heapq comparisons. See https://docs.python.org/2/library/heapq.html#priority-queue-implementation-notes
         open_list = []
-        # TODO do collision checks here
+        # TODO should the distance of the initial dmg grasp be sth larger than 0.0? how to compute that?
+        heapq.heappush(open_list, (0.0, tb, initial_dmg_info, observed_initial_grasp))
+        tb += 1
+        # store which nodes we have already visited
+        closed_set = set()
+        while open_list:
+            d, _, dmg_info, parent = heapq.heappop(open_list)
+            # since we don't have an addressable pq, we may have duplicates in the open_list
+            # hence, skip if we already closed this grasp
+            if dmg_info[:2] in closed_set:
+                continue
+            # else add it as a new grasp
+            new_grasp = self._construct_grasp(dmg_info, len(self._grasps), parent, d)
+            # if it is valid
+            if not self._check_grasp_validity(new_grasp):
+                continue
+            self._grasps.append(new_grasp)
+            closed_set.add(dmg_info[:2])
+            neighbors, costs = self._get_adjacent_grasps(dmg_info)
+            for ndmg_info, cost in itertools.izip(neighbors, costs):
+                if ndmg_info[:2] not in closed_set:
+                    heapq.heappush(open_list, (d + cost, tb, ndmg_info, new_grasp))
+                    tb += 1
+
+    def get_num_grasps(self):
+        """
+            Return the total number of grasps stored in this set.
+        """
+        return len(self._grasps)
+
+    def sample_grasp(self, blacklist=None):
+        """
+            Sample a random grasp uniformly. Optionally, provide a blacklist of grasps
+            not to sample.
+            ---------
+            Arguments
+            ---------
+            blacklist, set of ints - grasps to not sample
+            -------
+            Returns
+            -------
+            g, Grasp - grasp, NOTE: you shouldn't modify the returned struct
+                None if blacklist blocks all possible grasps
+        """
+        random_idx = random.randint(0, len(self._grasps) - 1)
+        if blacklist is None:
+            return self._grasps[random_idx]
+        if len(blacklist) == len(self._grasps):
+            return None
+        running_idx = random_idx
+        while running_idx in blacklist and running_idx < len(self._grasps):
+            running_idx += 1
+        if running_idx == len(self._grasps):
+            # start the same from the beginning
+            running_idx = 0
+            while running_idx in blacklist and running_idx < random_idx:
+                running_idx += 1
+        assert(running_idx not in blacklist)
+        return self._grasps[running_idx]
 
 
 class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
