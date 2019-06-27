@@ -96,3 +96,17 @@ data/*.npy
 pycuda.autoinit
 
 data/generated/*
+models/objects/crayola/crayola.sdf.meta.npy
+models/objects/bunny/bunny.sdf.grid.data.npy
+models/objects/bunny/bunny.sdf.grid.meta.npy
+models/objects/bunny/bunny.sdf.meta.npy
+models/objects/bunny/hfts.npy
+models/objects/bunny/hftsParam.npy
+models/objects/bunny/objCOM.npy
+models/objects/bunny/old_objectModel.ply
+models/objects/crayola/crayola.sdf.grid.data.npy
+models/objects/crayola/crayola.sdf.grid.meta.npy
+models/objects/crayola/hfts.npy
+models/objects/crayola/hftsParam.npy
+models/objects/crayola/objCOM.npy
+models/objects/crayola/objectModel_rot.ply

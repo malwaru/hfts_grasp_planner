@@ -891,7 +891,6 @@ class DummyPlanner(object):
                     solutions.append(best_solution)
                     if self._stats_recorder:
                         self._stats_recorder.register_new_solution(selected_goal)
-
         return objectives, solutions
 
     def _check_objective_invariant(self, goals, best_sol):

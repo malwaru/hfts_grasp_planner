@@ -44,12 +44,11 @@ if __name__ == "__main__":
     # finger_info = load_finger_tf('models/robots/yumi/finger_information.yaml')
     # wTf_r = np.dot(robot.GetLink(finger_info[manip_name][0]).GetTransform(), finger_info[manip_name][1])
     # wTf_l = np.dot(robot.GetLink('gripper_r_finger_l').GetTransform(), finger_info[manip_name][1])
-    # dmg = load_dmg('models/objects/elmers_glue/', 'glue')
-    dmg = dmg_module.DexterousManipulationGraph.loadFromYaml('models/objects/elmers_glue/dmg_info.yaml')
     env.SetViewer('qtcoin')
     grasp_set = mg_mod.DMGGraspSet(manip, target_obj, 'models/robots/yumi/yumi_gripper_r.robot.xml',
                                    'models/objects/elmers_glue/elmers_glue.kinbody.xml',
                                    'models/robots/yumi/finger_information.yaml',
-                                   dmg)
+                                   'models/objects/elmers_glue/dmg_info.yaml')
+    dmg = grasp_set.dmg
     # grasp_set._my_env.SetViewer('qtcoin')
     IPython.embed()

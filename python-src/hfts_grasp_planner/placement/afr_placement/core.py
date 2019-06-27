@@ -785,15 +785,15 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             cache_entry.barm_collision_free = False
             cache_entry.bobj_collision_free = False
             manip = cache_entry.solution.manip
-            manip_data = self._manip_data[manip.GetName()]
             robot = manip.GetRobot()
             env = robot.GetEnv()
             if cache_entry.solution.arm_config is not None:
                 with robot:
                     with orpy.KinBodyStateSaver(self._target_obj):
+                        inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
                         # grab object (sets active manipulator for us)
                         utils.set_grasp(manip, self._target_obj,
-                                        manip_data.inv_grasp_tf, manip_data.grasp_config)
+                                        inv_grasp_tf, cache_entry.solution.grasp_config)
                         robot.SetDOFValues(cache_entry.solution.arm_config, manip.GetArmIndices())
                         col_free = not env.CheckCollision(robot) and not robot.CheckSelfCollision()
                         if not col_free:  # there is some collision

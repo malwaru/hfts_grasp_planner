@@ -1,4 +1,5 @@
 import rospy
+import os
 import random
 import scipy
 import yaml
@@ -22,6 +23,41 @@ import hfts_grasp_planner.placement.afr_placement.core as afr_core
     The considered grasps are obtained from the Dexterous Manipulation Graph of the object
     and a given initial grasp.
 """
+
+
+def load_gripper_info(filename, manip_name):
+    """
+        Load gripper information for the given manipulator.
+        ---------
+        Arguments
+        ---------
+        filename, string - path to file containing gripper information
+        manip_name, string - name of the manipulator
+        -------
+        Returns
+        -------
+        dict with items:
+            gripper_file: <path_to_gripper.robot.xml>
+            fingertip_links: list of stings (fingertip names)
+            contact_tf: (ref_name, tf), where ref_name is the name of a link
+                and tf is the transformation matrix of the finger contact point
+                in that link's frame
+    """
+    basepath = os.path.dirname(filename) + '/'
+    with open(filename, 'r') as info_file:
+        yaml_dict = yaml.load(info_file)
+    gripper_info = {}
+    info_val = yaml_dict[manip_name]
+    gripper_info['fingertip_links'] = info_val['fingertip_links']
+    gripper_info['gripper_file'] = basepath + info_val['gripper_file']
+    tf_dict = info_val['contact_tf']
+    link_name = tf_dict['reference_link']
+    rot = np.array(tf_dict['rotation'])
+    trans = np.array(tf_dict['translation'])
+    tf = orpy.matrixFromQuat(rot)
+    tf[:3, 3] = trans
+    gripper_info['contact_tf'] = (link_name, tf)
+    return gripper_info
 
 
 class DMGGraspSet(object):
@@ -51,7 +87,7 @@ class DMGGraspSet(object):
             self.parent = parent
             self.distance = distance
 
-    def __init__(self, manip, target_obj, gripper_file, target_obj_file, finger_info_file, dmg, rot_weight=0.1):
+    def __init__(self, manip, target_obj, target_obj_file, gripper_info_file, dmg_info_file, rot_weight=0.1):
         """
             Create a new DMGGraspSet for the given manipulator on the given target object.
             The grasp set consists of the grasps that are reachable through in-hand manipulation
@@ -62,48 +98,32 @@ class DMGGraspSet(object):
             ---------
             manip, OpenRAVE manipulator - the manipulator to create the set for
             target_obj, OpenRAVE Kinbody - the target object to create the set for
-            gripper_file, string - path to a kinbody/robot xml file representing only the gripper
-                (used internally for collision checks)
             target_obj_file, string - path to kinbody xml file representing the target object
-            finger_info_file, string - path to finger information file
-            dmg, DexterousManipulationGraph - the DMG created for the target object
+            gripper_info_file, string - path to fripper information file
+            dmg_info_file, string - path to yaml file containing information to load dmg
             rot_weight, float - scaling factor of angles in radians for distance computation
         """
         self._manip = manip
         self._target_obj = target_obj
-        self._dmg = dmg
+        self.dmg = dmg_module.DexterousManipulationGraph.loadFromYaml(dmg_info_file)
         self._rot_weight = rot_weight
+        # load finger info
+        gripper_info = load_gripper_info(gripper_info_file, manip.GetName())
         # set up internal or environment
         self._my_env = orpy.Environment()
-        self._my_env.Load(gripper_file)
+        self._my_env.Load(gripper_info['gripper_file'])
         self._my_env.Load(target_obj_file)
         for body in self._my_env.GetBodies():
             body.SetTransform(np.eye(4))
+        # store finger info
         self._my_gripper = self._my_env.GetRobots()[0]
-        # load finger info
-        finger_info = DMGGraspSet.load_finger_info(finger_info_file)
-        self._fingertip_names, (reference_link, self._rTf) = finger_info[manip.GetName()]
+        self._fingertip_names = gripper_info["fingertip_links"]
+        reference_link, self._rTf = gripper_info["contact_tf"]
         self._reference_finger = self._my_gripper.GetLink(reference_link)
         assert(self._reference_finger is not None)
         # compute grasp set
         self._grasps = None  # int id to grasp
         self._compute_grasps()
-
-    @staticmethod
-    def load_finger_info(filename):
-        with open(filename, 'r') as info_file:
-            yaml_dict = yaml.load(info_file)
-        finger_info = {}
-        for manip_name, info_val in yaml_dict.iteritems():
-            finger_links = info_val['fingertip_links']
-            tf_dict = info_val['contact_tf']
-            link_name = tf_dict['reference_link']
-            rot = np.array(tf_dict['rotation'])
-            trans = np.array(tf_dict['translation'])
-            tf = orpy.matrixFromQuat(rot)
-            tf[:3, 3] = trans
-            finger_info[manip_name] = (finger_links, (link_name, tf))
-        return finger_info
 
     def _compute_eTf(self, config):
         """
@@ -138,10 +158,10 @@ class DMGGraspSet(object):
             distance, float - distance to initial grasp
         """
         node_a, angle_a, node_b, _ = dmg_info
-        finger_dist = self._dmg.get_finger_distance(node_a, node_b)
+        finger_dist = self.dmg.get_finger_distance(node_a, node_b)
         config = np.array([finger_dist / 2.0])
         eTf = self._compute_eTf(config)
-        oTf = self._dmg.get_finger_tf(node_a, angle_a)
+        oTf = self.dmg.get_finger_tf(node_a, angle_a)
         # TODO eTf changes as the finger configuration changes
         eTo = np.dot(eTf, utils.inverse_transform(oTf))
         return DMGGraspSet.Grasp(gid, eTo, config, dmg_info, parent, distance)
@@ -162,9 +182,9 @@ class DMGGraspSet(object):
         neighbor_grasps = []
         edge_costs = []
         node, angle, onode, oangle = dmg_info
-        node_pos = self._dmg.get_position(node)
-        ocomp = self._dmg.get_component(onode)
-        neighbor_nodes = self._dmg.get_neighbors(node)
+        node_pos = self.dmg.get_position(node)
+        ocomp = self.dmg.get_component(onode)
+        neighbor_nodes = self.dmg.get_neighbors(node)
         for neigh in neighbor_nodes:
             # Two grasps are translational adjacent, if
             #  1. nodes are adjacent (iteration over neighbors solves this)
@@ -172,28 +192,28 @@ class DMGGraspSet(object):
             #  3. opposite nodes are adjacent
             #  4. opposite angle is valid in opposite node neighbor
             # 2
-            if not self._dmg.is_valid_angle(neigh, angle):
+            if not self.dmg.is_valid_angle(neigh, angle):
                 continue
             # 3
-            oneigh = self._dmg.get_opposite_node(neigh, angle, comp=ocomp)
+            oneigh = self.dmg.get_opposite_node(neigh, angle, comp=ocomp)
             if oneigh is None:
                 continue
-            if oneigh not in self._dmg.get_neighbors(onode):
+            if oneigh not in self.dmg.get_neighbors(onode):
                 continue
             # 4
-            if not self._dmg.is_valid_angle(oneigh, oangle):
+            if not self.dmg.is_valid_angle(oneigh, oangle):
                 continue
             neighbor_grasps.append((neigh, angle, oneigh, oangle))
-            edge_costs.append(np.linalg.norm(self._dmg.get_position(neigh) - node_pos))
+            edge_costs.append(np.linalg.norm(self.dmg.get_position(neigh) - node_pos))
         # Two grasps are rotationally adjacent, if
         #  1. angles are adjacent on grid
         #  2. opposite angle is within valid range of opposite node
-        neighbor_angles = self._dmg.get_neighbor_angles(node, angle)
+        neighbor_angles = self.dmg.get_neighbor_angles(node, angle)
         for nangle in neighbor_angles:
-            noangle = self._dmg.get_opposing_angle(node, nangle, onode)
-            if self._dmg.is_valid_angle(onode, noangle):
+            noangle = self.dmg.get_opposing_angle(node, nangle, onode)
+            if self.dmg.is_valid_angle(onode, noangle):
                 neighbor_grasps.append((node, nangle, onode, noangle))
-                edge_costs.append(self._dmg.get_angular_resolution() / 180.0 * np.pi * self._rot_weight)
+                edge_costs.append(self.dmg.get_angular_resolution() / 180.0 * np.pi * self._rot_weight)
         return neighbor_grasps, edge_costs
 
     def _compute_grasps(self):
@@ -218,15 +238,15 @@ class DMGGraspSet(object):
             # TODO the closest DMG grasp may be invalid, in that case we should extend our search for more neighboring grasps
             eTf = self._compute_eTf(config)
             oTf = np.dot(utils.inverse_transform(eTo), eTf)
-            start_node, start_angle, bvalid = self._dmg.get_closest_node_angle(oTf)
+            start_node, start_angle, bvalid = self.dmg.get_closest_node_angle(oTf)
             if not bvalid:
                 rospy.logwarn("Initial grasp is not within the valid angular range of the closest DMG node!")
             finger_dist = 2.0 * config[0]  # TODO this may be specific to Yumi
-            onode = self._dmg.get_opposite_node(start_node, start_angle, finger_dist)
+            onode = self.dmg.get_opposite_node(start_node, start_angle, finger_dist)
             if onode is None:
                 raise ValueError(
                     "Could not retrieve initial DMG node for initial grasp. There is no opposing valid node.")
-            oangle = self._dmg.get_opposing_angle(start_node, start_angle, onode)
+            oangle = self.dmg.get_opposing_angle(start_node, start_angle, onode)
             initial_dmg_info = (start_node, start_angle, onode, oangle)
         # create priority list storing tuples (distance, tie_breaker, dmg_info, parent)
         # distance is the minimal distance to the start node
@@ -417,7 +437,10 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 ------------
                 cache_entry.solution.arm_config is set to the improved arm configuration
                 cache_entry.solution.obj_tf is set to the improved object pose
-                TODO
+                cache_entry.solution.objective_value is set to the new objective value
+                cache_entry.eef_tf is set to the updated end-effector pose
+                cache_entry.region_pose is set to the updated pose (TODO what if we leave the region?)
+                cache_entry.region_state is set to the updated state
                 -------
                 Returns
                 -------
@@ -434,10 +457,11 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             arm_configs = []
             with self.robot:
                 with self.object_data.kinbody:
-                    # TODO update to use grasp from solution
+                    inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
                     utils.set_grasp(manip, self.object_data.kinbody,
-                                    manip_data.inv_grasp_tf, manip_data.grasp_config)
-                    reference_pose = np.dot(manip_data.inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+                                    inv_grasp_tf,
+                                    cache_entry.solution.grasp_config)
+                    reference_pose = np.dot(inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
                     manip.SetLocalToolTransform(reference_pose)
                     self.robot.SetActiveDOFs(manip.GetArmIndices())
                     # init jacobian descent
@@ -465,12 +489,12 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                     return []  # else return empty array
 
         def _set_cache_entry_values(self, cache_entry, q, manip_data):
-            # TODO update using grasp from dmg
+            inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
             manip = manip_data.manip
             self.robot.SetActiveDOFValues(q)
             cache_entry.solution.arm_config = q
-            cache_entry.solution.obj_tf = np.matmul(manip.GetEndEffector().GetTransform(),
-                                                    manip_data.inv_grasp_tf)
+            cache_entry.eef_tf = manip.GetEndEffectorTransform()
+            cache_entry.solution.obj_tf = np.matmul(cache_entry.eef_tf, inv_grasp_tf)
             ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
             # TODO we are not constraining the pose to stay in the region here, so technically we would need to compute
             # TODO which region we are actually in now (we might transition into a neighboring region)
@@ -568,7 +592,6 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         self._solutions_cache = []  # array of SolutionCacheEntry objects
         self._call_stats = np.array([0, 0, 0, 0])  # num sol constructions, is_valid, get_relaxation, evaluate
         self._plcmnt_ik_solvers = {}  # maps (manip_id, placement_orientation_id) to a trac_ik solver
-        self._init_ik_solvers()
         # TODO update jacobian optimizer as needed
         self._jacobian_optimizer = MultiGraspAFRRobotBridge.JacobianOptimizer(self._contact_constraint,
                                                                               self._collision_constraint,
@@ -608,16 +631,20 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
-            grasp_tf=manip_data.grasp_tf, grasp_config=manip_data.grasp_config, grasp_id=0)
+            grasp_tf=None, grasp_config=None, grasp_id=None)
         # create a cache entry for this solution
         sol_cache_entry = afr_core.AFRRobotBridge.SolutionCacheEntry(
             key=key, region=region, plcmnt_orientation=po, so2_interval=so2_interval, solution=new_solution)
         self._solutions_cache.append(sol_cache_entry)
         if b_optimize_constraints:
             # TODO use grasp cache in this case
-            pass
+            raise RuntimeError("Not implemented yet")
         else:
-            # TODO in this case simply sample a random grasp all the time
+            # in this case simply sample a random grasp all the time
+            random_grasp = manip_data.grasp_set.sample_grasp()
+            sol_cache_entry.solution.grasp_tf = random_grasp.oTe
+            sol_cache_entry.solution.grasp_config = random_grasp.config
+            sol_cache_entry.solution.grasp_id = random_grasp.gid
             # compute object and end-effector pose
             self._compute_object_pose(sol_cache_entry, b_random=True)
             # compute arm configuration
@@ -676,7 +703,7 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         cache_entry = cache_entry.copy()
         arm_configs = self._jacobian_optimizer.locally_maximize(cache_entry)
         if len(arm_configs) > 0:
-            # The local optimizer was succesful at improving the solution a bit
+            # The local optimizer was successful at improving the solution a bit
             # add new solution to cache
             cache_entry.solution.key = len(self._solutions_cache)
             self._solutions_cache.append(cache_entry)
@@ -688,6 +715,7 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             cache_entry.key = (cache_entry.key[0], cache_entry.key[1], region_id)
             if region_id is None:  # TODO this is a bug
                 return None, []
+            # TODO update grasp cache here
             return cache_entry.solution, arm_configs
         return None, []
 
@@ -758,6 +786,7 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             -------
             val, float - relaxation value in [0, 1], or [0, c] with c < 1 if b_incl_obj=False, and b_obj_normalizer=True
         """
+        # TODO do we want to compute this differently for multi-grasp?
         # first compute normalizer
         normalizer = self._parameters["weight_arm_col"] + \
             self._parameters["weight_obj_col"] + self._parameters["weight_contact"]
@@ -863,14 +892,13 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             cache_entry, SolutionCacheEntry - The following fields are required to be intialized:
                 manip, region, plcmnt_orientation, so2_interval, solution
             b_random, bool - if True, randomly sample object pose from region and so2-interval, else
-                select determenistic representative
+                select deterministic representative
             ------------
             Side effects
             ------------
             cache_entry.solution.obj_tf, numpy array of shape (4,4) - pose of the object is stored here
             cache_entry.eef_tf, numpy array of shape (4, 4) - pose of the end-effector is stored here
         """
-        manip_data = self._manip_data[cache_entry.solution.manip.GetName()]
         if b_random:
             angle = so2hierarchy.sample(cache_entry.so2_interval)
             # compute region pose
@@ -886,6 +914,6 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         # compute object pose
         cache_entry.solution.obj_tf = np.dot(contact_tf, cache_entry.plcmnt_orientation.inv_reference_tf)
         # compute end-effector tf
-        cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, manip_data.grasp_tf)
+        cache_entry.eef_tf = np.dot(cache_entry.solution.obj_tf, cache_entry.solution.grasp_tf)
         # set region state
         cache_entry.region_state = (cache_entry.region_pose[0, 3], cache_entry.region_pose[1, 3], angle)
