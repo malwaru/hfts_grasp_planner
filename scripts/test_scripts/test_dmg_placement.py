@@ -59,7 +59,7 @@ def resolve_paths(problem_desc, yaml_file):
     head, _ = os.path.split(global_yaml)
     for key in ['or_env', 'occ_file', 'sdf_file', 'urdf_file', 'target_obj_file', 'grasp_file',
                 'robot_occtree', 'robot_occgrid', 'reachability_path', 'robot_ball_desc', 'dmg_file',
-                'finger_information']:
+                'gripper_information']:
         if key in problem_desc:
             problem_desc[key] = os.path.normpath(head + '/' + problem_desc[key])
 
@@ -357,12 +357,13 @@ if __name__ == "__main__":
         grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
         grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
         set_grasp(manip, target_object, inverse_transform(grasp_pose), problem_desc['grasp_config'])
+        gripper_info = afr_dmg_mod.load_gripper_info(problem_desc['gripper_information'], manip.GetName())
         grasp_set = afr_dmg_mod.DMGGraspSet(manip, target_object,
                                             problem_desc['target_obj_file'],
-                                            problem_desc['finger_information'],
+                                            gripper_info,
                                             problem_desc['dmg_file'])
         manip_data[manip.GetName()] = afr_dmg_mod.MultiGraspAFRRobotBridge.ManipulatorData(
-            manip, ik_solver, grasp_set)
+            manip, ik_solver, grasp_set, gripper_info['gripper_file'])
         manip_links = [link.GetName() for link in get_manipulator_links(manip)]
         # remove base link - it does not move so
         manip_links.remove(manip.GetBase().GetName())

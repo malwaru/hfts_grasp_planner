@@ -5,6 +5,7 @@ import scipy
 import yaml
 import itertools
 import heapq
+from ordered_set import OrderedSet
 import numpy as np
 import openravepy as orpy
 from functools import partial
@@ -87,7 +88,7 @@ class DMGGraspSet(object):
             self.parent = parent
             self.distance = distance
 
-    def __init__(self, manip, target_obj, target_obj_file, gripper_info_file, dmg_info_file, rot_weight=0.1):
+    def __init__(self, manip, target_obj, target_obj_file, gripper_info, dmg_info_file, rot_weight=0.1):
         """
             Create a new DMGGraspSet for the given manipulator on the given target object.
             The grasp set consists of the grasps that are reachable through in-hand manipulation
@@ -99,7 +100,8 @@ class DMGGraspSet(object):
             manip, OpenRAVE manipulator - the manipulator to create the set for
             target_obj, OpenRAVE Kinbody - the target object to create the set for
             target_obj_file, string - path to kinbody xml file representing the target object
-            gripper_info_file, string - path to fripper information file
+            gripper_info, string or dict - either the path to a yaml file containing gripper information
+                or the dict returned by load_gripper_info(...) defined at the top of this module.
             dmg_info_file, string - path to yaml file containing information to load dmg
             rot_weight, float - scaling factor of angles in radians for distance computation
         """
@@ -107,8 +109,10 @@ class DMGGraspSet(object):
         self._target_obj = target_obj
         self.dmg = dmg_module.DexterousManipulationGraph.loadFromYaml(dmg_info_file)
         self._rot_weight = rot_weight
-        # load finger info
-        gripper_info = load_gripper_info(gripper_info_file, manip.GetName())
+        if type(gripper_info) is str:
+            gripper_info = load_gripper_info(gripper_info, manip.GetName())
+        else:
+            assert(type(gripper_info) is dict)
         # set up internal or environment
         self._my_env = orpy.Environment()
         self._my_env.Load(gripper_info['gripper_file'])
@@ -282,6 +286,23 @@ class DMGGraspSet(object):
         """
         return len(self._grasps)
 
+    def get_grasp(self, gid):
+        """
+            Return the grasp with the given id.
+            Returns None if there is no such grasp.
+            ---------
+            Arguments
+            ---------
+            gid, int - id of the gripper
+            -------
+            Returns
+            -------
+            grasp, Grasp or None
+        """
+        if gid >= len(self._grasps):
+            return None
+        return self._grasps[gid]
+
     def sample_grasp(self, blacklist=None):
         """
             Sample a random grasp uniformly. Optionally, provide a blacklist of grasps
@@ -332,13 +353,17 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             Continuous: For each constraint, a continuous relaxation function is used to compute to what degree the
                 constraint is violated. The returned relaxation is the normalized weighted sum of these.
         joint_limit_margin, float - minimal distance to joint limits (must be >= 0.0)
+        grasp_cache_type, string - 'none', 'global' or 'hierarchy' defining what grasp cache type to use.
+            none: No cache. Always random sampling.
+            global: Simple global cache.
+            hierarchy: Cache that exploits hierarchy.
     """
     class ManipulatorData(object):
         """
             Struct (named tuple) that stores manipulator data.
         """
 
-        def __init__(self, manip, ik_solver, grasp_set):
+        def __init__(self, manip, ik_solver, grasp_set, gripper_file):
             """
                 Create a new instance of manipulator data.
                 ---------
@@ -347,52 +372,84 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 manip - OpenRAVE manipulator
                 ik_solver - ik_module.IKSolver, IK solver for end-effector poses
                 grasp_set - DMGGraspSet, DMG grasp set for this manipulator
+                gripper_file, string - path to a robot xml representing only the gripper
             """
             self.manip = manip
             self.manip_links = utils.get_manipulator_links(manip)
             self.ik_solver = ik_solver
             self.lower_limits, self.upper_limits = self.manip.GetRobot().GetDOFLimits(manip.GetArmIndices())
             self.grasp_set = grasp_set
+            self.gripper_path = gripper_file
 
-    # class SolutionCacheEntry(object):
-    #     """
-    #         Cache all relevant information for a particular solution.
-    #     """
+    class HierarchicalGraspCache(object):
+        """
+            Cache for grasp feasibility that uses the AFR hierarchy for caching.
+        """
 
-    #     def __init__(self, key, region, plcmnt_orientation, so2_interval, solution):
-    #         self.key = key  # afr hierarchy key (the one it was created for)
-    #         # leaf afr hierarchy key (the lowest element in the tree this solution could come from)
-    #         self.leaf_key = None
-    #         self.solution = solution  # PlacementGoal
-    #         self.region = region  # PlacementRegion from key
-    #         self.plcmnt_orientation = plcmnt_orientation  # PlacementOrientation from key
-    #         self.so2_interval = so2_interval  # SO2 interval from key
-    #         self.eef_tf = None  # store end-effector transform
-    #         self.bkinematically_reachable = None  # store whether ik solutions exist
-    #         self.barm_collision_free = None  # store whether the arm is collision-free
-    #         self.bobj_collision_free = None  # store whether the object is collision-free
-    #         self.bbetter_objective = None  # store whether it has better objective than the current best
-    #         self.bstable = None  # store whether pose is actually a stable placement
-    #         self.objective_val = None  # store objective value
-    #         # the following elements are used for gradient-based optimization
-    #         self.jacobian = None  # Jacobian for active manipulator (and object reference pos)
-    #         self.region_pose = None  # pose of the object relative to region frame
-    #         self.region_state = None  # (x, y, theta) within region
+        def __init__(self, hierarchy):
+            self._hierarchy = hierarchy
+            self._cache = {}
 
-    #     def copy(self):
-    #         new_entry = AFRRobotBridge.SolutionCacheEntry(self.key, self.region, self.plcmnt_orientation,
-    #                                                       np.array(self.so2_interval), self.solution.copy())
-    #         new_entry.eef_tf = None if self.eef_tf is None else np.array(new_entry.eef_tf)
-    #         new_entry.bkinematically_reachable = self.bkinematically_reachable
-    #         new_entry.barm_collision_free = self.barm_collision_free
-    #         new_entry.bobj_collision_free = self.bobj_collision_free
-    #         new_entry.bbetter_objective = self.bbetter_objective
-    #         new_entry.bstable = self.bstable
-    #         new_entry.objective_val = self.objective_val
-    #         new_entry.jacobian = np.array(self.jacobian) if self.jacobian is not None else None
-    #         new_entry.region_pose = np.array(self.region_pose) if self.region_pose is not None else None
-    #         new_entry.region_state = self.region_state
-    #         return new_entry
+        def get_cached_grasps(self, key):
+            """
+                Return cached grasps for the given afr key.
+                The returned set is ordered by proximity within the hierarchy.
+                The further in the sequence a grasp is, the further away it was sampled in the hierarchy.
+                Complexity:
+                O(len(key) * #grasps)
+                ---------
+                Arguments
+                ---------
+                key, tuple - key of a placement
+                -------
+                Returns
+                -------
+                OrderedSet of ints - grasp ids that were found valid in this branch of the hierarchy before.
+            """
+            grasps_to_return = OrderedSet()
+            while len(key) > 0:  # we do not cross the manipulator border (i.e. each manipulator has separate grasps)
+                if key in self._cache:
+                    # add all grasps from this level of the hierarchy
+                    for g in self._cache[key]:
+                        grasps_to_return.add(g)
+                key = self._hierarchy.get_parent_key(key)
+            return grasps_to_return
+
+        def add_grasp_to_cache(self, key, gid):
+            """
+                Adds the given grasp id to the cache at the given key.
+                ---------
+                Arguments
+                ---------
+                key, tuple - key of placement
+                gid, int - id of a grasp that was found valid for this placement
+            """
+            while len(key) > 0:
+                if key in self._cache:
+                    old_set = self._cache[key]
+                    if gid in old_set:
+                        # don't need to do anything in this case
+                        return
+                    old_set.add(gid)
+                else:
+                    self._cache[key] = OrderedSet([gid])
+                key = self._hierarchy.get_parent_key(key)
+
+    class GlobalGraspCache(object):
+        """
+            Simple cache that just stores ids of valid grasps globally, independent on where they were found valid.
+            See HierarchicalGraspCache for documentation of individual functions.
+        """
+
+        def __init__(self):
+            self._cache = set()
+
+        def get_cache_grasps(self, key):
+            return self._cache
+
+        def add_grasp_to_cache(self, key, gid):
+            self._cache.add(gid)
+
     class JacobianOptimizer(object):
         def __init__(self, contact_constraint, collision_constraint, obj_fn, robot_data, object_data,
                      grad_epsilon=0.01, step_size=0.01, max_iterations=100, joint_limit_margin=1e-4):
@@ -591,7 +648,6 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             objective_fn, parameters['eps_xi'])
         self._solutions_cache = []  # array of SolutionCacheEntry objects
         self._call_stats = np.array([0, 0, 0, 0])  # num sol constructions, is_valid, get_relaxation, evaluate
-        self._plcmnt_ik_solvers = {}  # maps (manip_id, placement_orientation_id) to a trac_ik solver
         # TODO update jacobian optimizer as needed
         self._jacobian_optimizer = MultiGraspAFRRobotBridge.JacobianOptimizer(self._contact_constraint,
                                                                               self._collision_constraint,
@@ -600,6 +656,40 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                                                                               joint_limit_margin=parameters["joint_limit_margin"])
         self._parameters = parameters
         self._use_jacobian_proj = parameters["proj_type"] == "jac"
+        self._grasp_cache = None
+        if 'grasp_cache_type' not in self._parameters:
+            self._parameters['grasp_cache_type'] = 'hierarchy'
+        if self._parameters['grasp_cache_type'] == 'hierarchy':
+            self._grasp_cache = MultiGraspAFRRobotBridge.HierarchicalGraspCache(self._hierarchy)
+        elif self._parameters['grasp_cache_type'] == 'global':
+            self._grasp_cache = MultiGraspAFRRobotBridge.GlobalGraspCache()
+        # load the grippers into the world for grasp collision checking
+        self._gripper_body = {}
+        env = self._robot_data.robot.GetEnv()
+        for manip_name, manip_data in self._manip_data.iteritems():
+            # TODO what if the environment already contains the gripper?
+            bsuccess = env.Load(manip_data.gripper_path)
+            assert(bsuccess)
+            self._gripper_body[manip_name] = env.GetRobots()[-1]
+            self._gripper_body[manip_name].Enable(False)
+            # self._gripper_body.SetVisible(False)
+
+    def _is_grasp_col_free(self, manip_name, grasp, obj_tf):
+        robot = self._robot_data.robot
+        target_obj = self._object_data.kinbody
+        env = robot.GetEnv()
+        with env:
+            robot.Enable(False)
+            target_obj.Enable(False)
+            gripper = self._gripper_body[manip_name]
+            gripper.SetTransform(np.dot(obj_tf, grasp.oTe))
+            gripper.SetDOFValues(grasp.config)
+            gripper.Enable(True)
+            bvalid = env.CheckCollision(gripper)
+            gripper.Enable(False)
+            robot.Enable(True)
+            target_obj.Enable(True)
+            return bvalid
 
     def construct_solution(self, key, b_optimize_constraints=False):
         """
@@ -621,32 +711,50 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         afr_info = self._hierarchy.get_afr_information(key)
         assert(len(afr_info) >= 3)
         manip = afr_info[0]
-        manip_data = self._manip_data[manip.GetName()]
+        manip_name = manip.GetName()
+        manip_data = self._manip_data[manip_name]
         po = afr_info[1]
         region = afr_info[2]
         so2_interval = np.array([0, 2.0 * np.pi])
         if len(afr_info) == 5:
             region = afr_info[3]
             so2_interval = afr_info[4]
+        initial_grasp = manip_data.grasp_set.get_grasp(0)
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
-            grasp_tf=None, grasp_config=None, grasp_id=None)
+            grasp_tf=initial_grasp.oTe, grasp_config=initial_grasp.config, grasp_id=initial_grasp.gid)
         # create a cache entry for this solution
         sol_cache_entry = afr_core.AFRRobotBridge.SolutionCacheEntry(
             key=key, region=region, plcmnt_orientation=po, so2_interval=so2_interval, solution=new_solution)
         self._solutions_cache.append(sol_cache_entry)
         if b_optimize_constraints:
-            # TODO use grasp cache in this case
-            raise RuntimeError("Not implemented yet")
+            raise RuntimeError("Not implemented")
         else:
-            # in this case simply sample a random grasp all the time
-            random_grasp = manip_data.grasp_set.sample_grasp()
-            sol_cache_entry.solution.grasp_tf = random_grasp.oTe
-            sol_cache_entry.solution.grasp_config = random_grasp.config
-            sol_cache_entry.solution.grasp_id = random_grasp.gid
-            # compute object and end-effector pose
+            # compute object and end-effector pose for initial grasp
             self._compute_object_pose(sol_cache_entry, b_random=True)
+            # check whether the initial grasp is valid for this placement
+            if not self._is_grasp_col_free(manip_name, initial_grasp, new_solution.obj_tf):
+                # if not check grasp cache, or sample a random one
+                if self._grasp_cache is not None:
+                    # Search for a collision-free grasp from the cache
+                    grasp_to_try = None
+                    cached_grasp_ids = self._grasp_cache.get_cached_grasps(key)
+                    for gid in cached_grasp_ids:
+                        grasp = manip_data.grasp_set.get_grasp(gid)
+                        if self._is_grasp_col_free(manip_name, grasp, new_solution.obj_tf):
+                            grasp_to_try = grasp
+                            break
+                    if grasp_to_try is None:
+                        grasp_to_try = manip_data.grasp_set.sample_grasp(blacklist=cached_grasp_ids)
+                else:
+                    # in this case simply sample a random grasp all the time
+                    grasp_to_try = manip_data.grasp_set.sample_grasp()
+                # update grasp_tf, grasp_config, grasp_id and eef
+                new_solution.grasp_tf = grasp_to_try.oTe
+                new_solution.grasp_config = grasp_to_try.config
+                new_solution.grasp_id = grasp_to_try.gid
+                sol_cache_entry.eef_tf = np.dot(new_solution.obj_tf, grasp_to_try.oTe)
             # compute arm configuration
             sol_cache_entry.solution.arm_config = manip_data.ik_solver.compute_ik(sol_cache_entry.eef_tf,
                                                                                   joint_limit_margin=self._parameters['joint_limit_margin'])
@@ -755,6 +863,9 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         if not self._collision_constraint.check_collision(cache_entry) and b_lazy:
             # rospy.logdebug("Solution invalid because it's in collision")
             return False
+        # if a grasp is reachable and collision-free, we add it to our grasp cache
+        if self._grasp_cache is not None:
+            self._grasp_cache.add_grasp_to_cache(cache_entry.key, solution.grasp_id)
         # next check whether the object pose is actually a stable placement
         if not self._contact_constraint.check_contacts(cache_entry) and b_lazy:
             # rospy.logdebug("Solution invalid because it's unstable")
