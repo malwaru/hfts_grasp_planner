@@ -864,7 +864,7 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             # rospy.logdebug("Solution invalid because it's in collision")
             return False
         # if a grasp is reachable and collision-free, we add it to our grasp cache
-        if self._grasp_cache is not None:
+        if self._grasp_cache is not None and cache_entry.barm_collision_free and cache_entry.bkinematically_reachable:
             self._grasp_cache.add_grasp_to_cache(cache_entry.key, solution.grasp_id)
         # next check whether the object pose is actually a stable placement
         if not self._contact_constraint.check_contacts(cache_entry) and b_lazy:
