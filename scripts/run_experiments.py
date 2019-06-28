@@ -152,6 +152,41 @@ def iros_even_simpler_mcts(yaml_template):
         len(objectives) * len(relax_types) * len(cs)
     return yaml_gen(), num_batches
 
+
+def humanoids_baselines(yaml_template):
+    sampler_types = ['simple_mcts_sampler']
+    # objectives = ['False', 'True']
+    objectives = ['False']
+    relax_types = ['sub-binary']
+    # cs = [0.8]
+    cs = [0.5]
+    bodies = ['elmers_glue']
+    envs = ['table_high_clutter']
+    selector_types = ['naive', 'cache_global', 'cache_hierarchy']
+
+    def yaml_gen():
+        for objective in objectives:
+            for env in envs:
+                for body in bodies:
+                    for stype in sampler_types:
+                        for rtype in relax_types:
+                            for c in cs:
+                                for seltype in selector_types:
+                                    yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+                                    yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
+                                    yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+                                    yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+                                    yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
+                                    yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
+                                    yaml_instance = yaml_instance.replace('<RELAX_TYPE>', rtype)
+                                    yaml_instance = yaml_instance.replace('<C>', str(c))
+                                    exp_id = 'paper_mcts' + '_' + rtype + '_' + '_' + str(c)
+                                    yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+                                    yield yaml_instance
+    num_batches = len(sampler_types) * len(IROS_ENVS) * len(IROS_BODIES) * \
+        len(objectives) * len(relax_types) * len(cs)
+    return yaml_gen(), num_batches
+
 # def iros_mcts(yaml_template):
 #     sampler_types = ['mcts_sampler']
 #     objectives = ['False', 'True']
@@ -187,13 +222,15 @@ def iros_even_simpler_mcts(yaml_template):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run placement experiments specified by a list of yaml files")
-    parser.add_argument('yaml_template', type=str, help='Path to a folder containing problem definition templates')
+    parser.add_argument('yaml_template', type=str, help='Path to a file containing problem definition template')
     # parser.add_argument('options', type=str, help='Path to a yaml file containing parameter options')
     parser.add_argument('num_runs', type=int, help='Number of runs for each problem')
     parser.add_argument('id', type=int, help='Experiments id')
     parser.add_argument('offset', type=int, help='Id offset')
+    parser.add_argument('command', type=str, default='/test_scripts/test_placement2.py',
+                        help='Path to script to execute relative to this script\'s path')
     args = parser.parse_args()
-    test_script_path = os.path.abspath(os.path.dirname(__file__)) + "/test_scripts/test_placement2.py"
+    test_script_path = os.path.abspath(os.path.dirname(__file__)) + args.command
     # read template
     with open(args.yaml_template) as template_file:
         yaml_template = template_file.read()
@@ -205,7 +242,8 @@ if __name__ == "__main__":
     # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
     # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
     # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
-    yaml_gen, num_batches = iros_even_simpler_mcts(yaml_template)
+    # yaml_gen, num_batches = iros_even_simpler_mcts(yaml_template)
+    yaml_gen, num_batches = humanoids_baselines(yaml_template)
     for batch_id in xrange(num_batches):
         try:
             yaml_instance = yaml_gen.next()

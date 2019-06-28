@@ -264,7 +264,7 @@ def plan_for_stats(num_iterations, offset, robot_data, object_data, scene_sdf, r
                                                        num_goal_iterations=parameters["num_goal_iterations"],
                                                        stats_recorder=planner_stats)
         else:
-            planner = anytime_planner_mod.MGAnyTimePlacementPlanner(goal_sampler, manips,
+            planner = anytime_planner_mod.MGAnytimePlacementPlanner(goal_sampler, [manip],
                                                                     mplanner="ParallelMGBiRRT",
                                                                     num_goal_samples=parameters["num_goal_samples"],
                                                                     num_goal_iterations=parameters["num_goal_iterations"],
