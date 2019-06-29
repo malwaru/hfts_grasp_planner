@@ -11,13 +11,13 @@ gripper_information: ../../../models/robots/yumi/gripper_information.yaml
 dmg_file: ../../../models/objects/<BODY_NAME>/dmg_info.yaml
 target_obj_file: ../../../models/objects/<BODY_NAME>/<BODY_NAME>.kinbody.xml
 grasp_file: ../grasps/new/<BODY_NAME>.yaml
-grasp_id: 0
+grasp_id: <GRASP_ID>
 plcmnt_volume: <PLCMNT_VOL>
 sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
 time_limit: 60.0
 maximize_clearance: <MAX_CLEARANCE>
-goal_stats_file: '/home/data/data_collections/humanoids_2019/first_trials/<MAX_CLEARANCE>/<ENV_NAME>/<BODY_NAME>/goal_<EXP_ID>'
-plan_stats_file: '/home/data/data_collections/humanoids_2019/first_trials/<MAX_CLEARANCE>/<ENV_NAME>/<BODY_NAME>/plan_<EXP_ID>'
+goal_stats_file: '/home/data/data_collections/humanoids_2019/cache_compare/<MAX_CLEARANCE>/<ENV_NAME>/<BODY_NAME>/<GRASP_ID>/goal_<EXP_ID>'
+plan_stats_file: '/home/data/data_collections/humanoids_2019/cache_compare/<MAX_CLEARANCE>/<ENV_NAME>/<BODY_NAME>/<GRASP_ID>/plan_<EXP_ID>'
 parameters:
   occ_tree_cell_size: 0.005
   relaxation_type: <RELAX_TYPE>

@@ -163,6 +163,7 @@ def humanoids_baselines(yaml_template):
     bodies = ['elmers_glue']
     envs = ['table_high_clutter']
     selector_types = ['naive', 'cache_global', 'cache_hierarchy']
+    grasp_ids = [0, 1]
 
     def yaml_gen():
         for objective in objectives:
@@ -172,17 +173,19 @@ def humanoids_baselines(yaml_template):
                         for rtype in relax_types:
                             for c in cs:
                                 for seltype in selector_types:
-                                    yaml_instance = yaml_template.replace('<ENV_NAME>', env)
-                                    yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
-                                    yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
-                                    yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
-                                    yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
-                                    yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
-                                    yaml_instance = yaml_instance.replace('<RELAX_TYPE>', rtype)
-                                    yaml_instance = yaml_instance.replace('<C>', str(c))
-                                    exp_id = 'paper_mcts' + '_' + rtype + '_' + '_' + str(c)
-                                    yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
-                                    yield yaml_instance
+                                    for gid in grasp_ids:
+                                        yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+                                        yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
+                                        yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+                                        yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+                                        yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
+                                        yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
+                                        yaml_instance = yaml_instance.replace('<RELAX_TYPE>', rtype)
+                                        yaml_instance = yaml_instance.replace('<GRASP_ID>', str(gid))
+                                        yaml_instance = yaml_instance.replace('<C>', str(c))
+                                        exp_id = 'mg_mcts' + '_' + rtype + '_' + seltype + '_' + str(c)
+                                        yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+                                        yield yaml_instance
     num_batches = len(sampler_types) * len(IROS_ENVS) * len(IROS_BODIES) * \
         len(objectives) * len(relax_types) * len(cs)
     return yaml_gen(), num_batches

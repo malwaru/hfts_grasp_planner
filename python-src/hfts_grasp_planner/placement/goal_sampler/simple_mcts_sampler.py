@@ -268,49 +268,6 @@ class SimpleMCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
             self._debug_visualizer.render(bupdate_data=False)
         return new_node
 
-    def _sample(self, node, b_impr_obj):
-        """
-            Sample a new solution from the given node.
-            ---------
-            Arguments
-            ---------
-            node, MCTSNode - node to compute new solution on
-            b_impr_obj, bool - whether objective needs to be improved
-            -------
-            Returns
-            -------
-            new_solution, PlacementSolution - newly sampled placement solution
-        """
-        assert(node.sampleable)
-        bnode_is_leaf = self._hierarchy.is_leaf(node.key)
-        new_solution = self._solution_constructor.construct_solution(node.key, self._b_use_projection)
-        node.solutions.append(new_solution)
-        # first, check whether all other non-objective constraints are fullfilled
-        b_is_valid = self._validator.is_valid(new_solution, False)
-        # next compute whether the objective improvement constraint is fullfilled
-        if b_is_valid:
-            obj_value = self._objective.evaluate(new_solution)
-            if b_impr_obj and self._best_reached_goal is not None:
-                b_improves_obj = obj_value > self._best_reached_goal.objective_value
-            else:
-                b_improves_obj = True
-        else:
-            b_improves_obj = False
-
-        if b_is_valid and b_improves_obj:
-            reward = 1.0
-            # if the solution is all valid, we credit this to the full subbranch that this solution falls into
-            leaf_key = self._solution_constructor.get_leaf_key(new_solution)
-            self._insert_solution(node, leaf_key, new_solution, reward)
-            return new_solution
-        elif node.num_visits == 0 and not bnode_is_leaf:  # constructing from this non-leaf for the first time?
-            reward = self._solution_constructor.get_constraint_relaxation(new_solution, True)
-        else:
-            reward = 0.0
-        # if we got here, the solution is not valid, and we only report the reward
-        node.update_rec(new_solution, reward)
-        return None
-
     def _monte_carlo_rollout(self, node, b_impr_obj):
         child_key = node.key
         # descend in the hierarchy to a leaf
@@ -351,7 +308,6 @@ class SimpleMCTSPlacementSampler(plcmnt_interfaces.PlacementGoalSampler):
         assert(current_node.sampleable)
         # sample it: compute a new solution, propagate result up
         # this is equal to a Monte Carlo rollout + backpropagation
-        # new_solution = self._sample(current_node, b_impr_obj)
         new_solution = self._monte_carlo_rollout(current_node, b_impr_obj)
         if self._debug_visualizer:
             self._debug_visualizer.render(bupdate_data=True)

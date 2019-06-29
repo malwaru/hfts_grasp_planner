@@ -738,7 +738,6 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             lcart_grads[:, 2] = dthetas
             return np.sum(smooth_values), 1.0 / lcart_grads.shape[0] * np.sum(lcart_grads, axis=0)
 
-
     class CollisionConstraint(object):
         """
             This constraint expresses that both the manipulator and the target object is

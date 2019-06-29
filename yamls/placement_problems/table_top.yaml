@@ -23,7 +23,7 @@ gripper_information: ../../models/robots/yumi/gripper_information.yaml
 # grasp_file: grasps/new/crayola.yaml
 # target_obj_file: ../wine_glass/wine_glass.kinbody.xml
 # grasp_file: grasps/new/wine_glass.yaml
-grasp_id: 0
+grasp_id: 1
 plcmnt_volume: [-0.4, 0.29, 0.0, 0.40, 0.78, 0.2]
 sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
 time_limit: 60.0
@@ -46,4 +46,4 @@ parameters:
   sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random
   motion_planner: real
   proj_type: None
-  grasp_selector_type: cache_hierarchy
+  grasp_selector_type: cache_hierarchy  # naive, cache_global, cache_hierarchy, bandit

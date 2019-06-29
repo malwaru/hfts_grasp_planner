@@ -398,7 +398,7 @@ class GlobalGraspCache(object):
     def __init__(self):
         self._cache = set()
 
-    def get_cache_grasps(self, key):
+    def get_cached_grasps(self, key):
         return self._cache
 
     def add_grasp_to_cache(self, key, gid):
@@ -472,22 +472,29 @@ class CacheGraspProvider(object):
         self._pNext = pNext
 
     def select_grasp(self, key, obj_tf):
-        initial_grasp = self._grasp_set.get_grasp(0)
-        # first test initial grasp
-        if self._col_checker.is_gripper_col_free(initial_grasp, obj_tf):
-            # roll a die to decide whether we return this grasp or not
-            if np.random.rand() > self._pNext:
-                return initial_grasp
-        # else get cached grasps and do the same, i.e. if a cached grasp is collision-free return it with a large probability
+        # first get cached grasps and check whether any appears feasible for this placement
         cached_grasp_ids = self._cache.get_cached_grasps(key)
-        for gid in cached_grasp_ids:
-            grasp = self._grasp_set.get_grasp(gid)
-            if self._col_checker.is_gripper_col_free(grasp, obj_tf):
-                # roll a die to decide whether we return this or not
+        if len(cached_grasp_ids) > 0:
+            for gid in cached_grasp_ids:
+                grasp = self._grasp_set.get_grasp(gid)
+                if self._col_checker.is_gripper_col_free(grasp, obj_tf):
+                    # roll a die to decide whether we return this or not
+                    if np.random.rand() > self._pNext:
+                        return grasp
+            tried_grasps = cached_grasp_ids
+        else:
+            # if we have no cached grasps yet, try the initial one
+            initial_grasp = self._grasp_set.get_grasp(0)
+            if self._col_checker.is_gripper_col_free(initial_grasp, obj_tf):
+                # roll a die to decide whether we return this grasp or not
                 if np.random.rand() > self._pNext:
-                    return grasp
+                    return initial_grasp
+            tried_grasps = [0]
         # else return a random grasp that is not the initial grasp or one of the cached ones
-        return self._grasp_set.sample_grasp(blacklist=cached_grasp_ids | set([0]))
+        if len(tried_grasps) < self._grasp_set.get_num_grasps():
+            return self._grasp_set.sample_grasp(blacklist=tried_grasps)
+        # else choose a random grasp
+        return self._grasp_set.get_grasp(random.choice(tried_grasps))
 
     def report_grasp_validity(self, gid, key, bvalid):
         if bvalid:
@@ -499,40 +506,101 @@ class BanditGraspProvider(object):
         A grasp provider that uses multi-armed bandits to select a grasp to try.
     """
 
-    def __init__(self, grasp_set, hierarchy, col_checker, gamma=0.5, c=1.41):
+    def __init__(self, grasp_set, hierarchy, col_checker, lamb=0.5, gamma=0.8, c=1.41):
         self._hierarchy = hierarchy
         self._col_checker = col_checker
         self._grasp_set = grasp_set
         self._hierarchy = hierarchy
-        #_stores for each leaf how many times it has been visited
+        # _stores for each leaf how many times it has been visited
         self._leaf_visits = {}
+        # stores for each face how many times it has been visited, and how many times a grasp has failed
+        self._face_visits = {}
         # stores for each element in the hierarchy a dictionary that maps grasp id
         # to tuple (#success, #sampled)
         self._success_rates = {}
         self._gamma = gamma
         self._c = c
+        self._lambda = lamb
 
     def select_grasp(self, key, obj_tf):
-        priors = self._collect_prior(key)
+        priors, num_face_visits, num_grasp_failures = self._collect_priors(key)
+        # return the initial grasp if we have never tried one for this face
+        if num_face_visits == 0:
+            return self._grasp_set.get_grasp(0)
+        # else evaluate our grasp choices
         if key in self._success_rates:
             local_success_rates = self._success_rates[key]
         else:
             local_success_rates = {}
-        grasp_choices = set(priors.keys()) | set(local_success_rates.keys())
-        npprios = np.array([priors[g] for g in grasp_choices if g in priors else 0.0])
-        nplrates = np.array([local_success_rates[g] for g in grasp_choices if g in local_success_rates])
-        pass
+        num_leaf_visits = self._leaf_visits[key] if key in self._leaf_visits else 1
+        # what are our unique choices?
+        grasp_choices = OrderedSet(priors.keys()) | OrderedSet(local_success_rates.keys())
+        # filter grasp_choices based on gripper collision
+        filtered_candidates = filter(lambda gid: self._col_checker.is_gripper_col_free(
+            self._grasp_set.get_grasp(gid), obj_tf), grasp_choices)
+        grasp_choices = OrderedSet(filtered_candidates)
+        # how many do we have left?
+        num_choices = len(grasp_choices)
+        if num_choices == 0:
+            # if have no viable options, sample a new one
+            grasp = self._grasp_set.sample_grasp(grasp_choices)
+            # if there is no viable grasp at all, return initial grasp
+            if grasp is None:
+                return self._grasp_set.get_grasp[0]
+            return grasp
+        # else put priors for each grasp_choice in a numpy array
+        nppriors = np.array([priors[g] if g in priors else 0.0 for g in grasp_choices])
+        # same for local rates
+        npsuccesses = np.array(
+            [local_success_rates[g][0] if g in local_success_rates else 0 for g in grasp_choices], dtype=np.float)
+        # visit counts
+        npvisits = np.array(
+            [local_success_rates[g][1] if g in local_success_rates else 0 for g in grasp_choices], dtype=np.float)
+        prior_weights = np.power(self._lambda, npvisits)
+        local_rates = np.zeros(num_choices)
+        visited_bandits = npvisits.nonzero()[0]
+        local_rates[visited_bandits] = npsuccesses[visited_bandits] / npvisits[visited_bandits]
+        exploration_vals = np.sqrt(2.0 * np.log(num_leaf_visits) / (npvisits + 1.0))
+        # compute ucb scores
+        ucb_scores = prior_weights * nppriors + (1.0 - prior_weights) * local_rates + self._c * exploration_vals
+        # choose the grasp that maximizes ucb score
+        maximizing_bandit = np.argmax(ucb_scores)
+        chosen_grasp = grasp_choices[maximizing_bandit]
+        grasp_ucb_score = ucb_scores[maximizing_bandit]
+        # before returning this grasp, consider sampling a new one
+        # TODO given that we filtered the grasps above, it doesn't seem sensible to have a sample-new-grasp arm with
+        # TODO with such high score (considering that priors are usually rather small)
+        if num_grasp_failures > 0 and len(grasp_choices) < self._grasp_set.get_num_grasps():
+            # TODO one can construct scenarios where a kinematically reachable grasp without collisions
+            # TODO can not be reached with a motion plan. In this case, we would need to try different grasps.
+            # TODO Accordingly, the new_grasp_score should also be able to grow even if all grasps are always
+            # TODO collision-free and reachable.
+            new_grasp_score = self._c * np.sqrt(np.log(num_grasp_failures) / num_choices)
+            if new_grasp_score > grasp_ucb_score:
+                return self._grasp_set.sample_grasp(grasp_choices)
+        return self._grasp_set.get_grasp(chosen_grasp)
 
     def report_grasp_validity(self, gid, key, bvalid):
         assert(self._hierarchy.is_leaf(key))
-        rates = self._success_rates[key]
-        if gid not in rates:
-            rates[gid] = bvalid
+        # first count a face visit
+        face_key = key[:2]
+        if face_key not in self._face_visits:
+            self._face_visits[face_key] = [1, int(not bvalid)]
         else:
-            rates[gid] += bvalid
-        key = self._hierarchy.get_parent_key(key)
+            self._face_visits[face_key][0] += 1
+            self._face_visits[face_key][1] += int(not bvalid)
+        # second increase leaf visits
+        if key in self._leaf_visits:
+            self._leaf_visits[key] += 1
+        else:
+            self._leaf_visits[key] = 1
+        # next adjust success rates
         while len(key) > 1:
-            rates = self._success_rates[key]
+            if key in self._success_rates:
+                rates = self._success_rates[key]
+            else:
+                rates = {}
+                self._success_rates[key] = rates
             if gid in rates:
                 success, visits = rates[gid]
             else:
@@ -540,18 +608,33 @@ class BanditGraspProvider(object):
             rates[gid] = (success + bvalid, visits + 1)
             key = self._hierarchy.get_parent_key(key)
 
-    def _collect_prior(self, key):
+    def _collect_priors(self, key):
         """
             Ascend the hierarchy from key and collect priors on grasp success.
+            ---------
+            Arguments
+            ---------
+            key, tuple - afr key, must be referring to a leaf
+            -------
+            Returns
+            -------
+            priors, dict - mapping grasp id to success belief (float in range [0, 1])
+            num_face_samples, int - number of times this face has been sampled for placement
+            num_failed_grasps, int - number of times a grasp sampled for this face has been the reason for failure
         """
         priors = {}
+        face_key = key[:2]
+        num_face_visits, num_failed_grasps = self._face_visits[face_key] if face_key in self._face_visits else (0, 0)
         key = self._hierarchy.get_parent_key(key)
         discount = self._gamma
         while len(key) > 1:
-            for gid, (success, visits) in self._success_rates[key]:
-                if gid not in priors:
-                    priors[gid] = discount * success / visits
-        return priors
+            if key in self._success_rates:
+                for gid, (success, visits) in self._success_rates[key].iteritems():
+                    if gid not in priors:
+                        priors[gid] = discount * float(success) / float(visits)
+            key = self._hierarchy.get_parent_key(key)
+            discount *= self._gamma
+        return priors, num_face_visits, num_failed_grasps
 
 
 class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
@@ -829,8 +912,8 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             self._grasp_selectors = {mn: CacheGraspProvider(
                 md.grasp_set, "hierarchical", self._hierarchy, self._gripper_col_checkers[mn]) for mn, md in self._manip_data.iteritems()}
         elif self._parameters['grasp_selector_type'] == 'bandit':
-            # TODO
-            raise ValueError("Grasp selector of type %s not implemented yet." % self._parameters['grasp_selector_type'])
+            self._grasp_selectors = {mn: BanditGraspProvider(
+                md.grasp_set, self._hierarchy, self._gripper_col_checkers[mn]) for mn, md in self._manip_data.iteritems()}
         else:
             raise ValueError("Unknown grasp selector type %s." % self._parameters['grasp_selector_type'])
 
@@ -862,7 +945,6 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         if len(afr_info) == 5:
             region = afr_info[3]
             so2_interval = afr_info[4]
-        initial_grasp = manip_data.grasp_set.get_grasp(0)
         # construct a solution without valid values yet
         new_solution = placement_interfaces.PlacementGoalSampler.PlacementGoal(
             manip=manip, arm_config=None, obj_tf=None, key=len(self._solutions_cache), objective_value=None,
@@ -977,7 +1059,7 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         """
         self._objective_constraint.best_value = val
 
-    def is_valid(self, solution, b_improve_objective, b_lazy=True):
+    def is_valid(self, solution, b_improve_objective):
         """
             Return whether the given PlacementSolution is valid.
             ---------
@@ -985,8 +1067,6 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             ---------
             solution, PlacementSolution - solution to evaluate
             b_improve_objective, bool - If True, the solution has to be better than the current minimal objective.
-            b_lazy, bool - If True, only checks for validity until one constraint is violated and returns,
-                else all constraints are evaluated (and saved in cache_entry)
             -------
             Returns
             -------
@@ -997,28 +1077,29 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         afr_info = self._hierarchy.get_afr_information(cache_entry.key)
         manip_name = afr_info[0].GetName()
         self._call_stats[1] += 1
+        bgrasp_needs_feedback = False
         # kinematic reachability?
-        breachable = self._reachability_constraint.check_reachability(cache_entry)
+        if cache_entry.bkinematically_reachable is None:
+            self._reachability_constraint.check_reachability(cache_entry)
+            bgrasp_needs_feedback = True
         # collision free?
-        bcol_free = self._collision_constraint.check_collision(cache_entry)
-        # let the grasp selector know about the grasp's validity for this placement
-        self._grasp_selectors[manip_name].report_grasp_validity(
-            solution.grasp_id, cache_entry.key, breachable and bcol_free)
-        # lazy return
-        if (not breachable or not bcol_free) and b_lazy:
-            return False
+        if cache_entry.barm_collision_free is None or cache_entry.bobj_collision_free is None:
+            self._collision_constraint.check_collision(cache_entry)
+            bgrasp_needs_feedback = True
+        # let the grasp selector know about the grasp's validity for this placement, if this is the first time we evaluate it
+        if bgrasp_needs_feedback:
+            bgrasp_valid = cache_entry.bkinematically_reachable and cache_entry.barm_collision_free
+            self._grasp_selectors[manip_name].report_grasp_validity(solution.grasp_id, cache_entry.key, bgrasp_valid)
         # next check whether the object pose is actually a stable placement
-        bcontact_ok = self._contact_constraint.check_contacts(cache_entry)
-        if not bcontact_ok and b_lazy:
-            # rospy.logdebug("Solution invalid because it's unstable")
-            return False
+        if cache_entry.bstable is None:
+            self._contact_constraint.check_contacts(cache_entry)
         # finally check whether the objective is an improvement
-        bobj_improved = True
-        if b_improve_objective:
+        if b_improve_objective and cache_entry.bbetter_objective is None:
             if cache_entry.objective_val is None:  # objective has not been evaluated yet
                 self.evaluate(solution)
-            bobj_improved = self._objective_constraint.check_objective_improvement(cache_entry)
-        return bobj_improved and bcol_free and bcontact_ok and breachable
+            self._objective_constraint.check_objective_improvement(cache_entry)
+        return cache_entry.bkinematically_reachable and cache_entry.barm_collision_free\
+            and cache_entry.bobj_collision_free and (cache_entry.bbetter_objective or not b_improve_objective)
 
     def get_constraint_relaxation(self, solution, b_incl_obj=False, b_obj_normalizer=False):
         """
@@ -1057,7 +1138,7 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         cache_entry = self._solutions_cache[solution.key]
         assert(cache_entry.solution == solution)
         self._call_stats[2] += 1
-        self.is_valid(solution, b_incl_obj, b_lazy=False)  # ensure all validity flags are set
+        self.is_valid(solution, b_incl_obj)  # ensure all validity flags are set
         val = 0.0
         if not cache_entry.bkinematically_reachable:  # not a useful solution without an arm configuration
             return 0.0
