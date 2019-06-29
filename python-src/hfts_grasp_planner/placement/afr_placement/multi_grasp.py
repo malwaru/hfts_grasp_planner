@@ -455,7 +455,7 @@ class NaiveGraspProvider(object):
 
 class CacheGraspProvider(object):
     """
-        A grasp provider that constructs a cache of feasible grasps, 
+        A grasp provider that constructs a cache of feasible grasps,
         and samples this cache to provide grasps.
         Cache types can be 'global' or 'hierarchical'.
     """
@@ -499,11 +499,59 @@ class BanditGraspProvider(object):
         A grasp provider that uses multi-armed bandits to select a grasp to try.
     """
 
-    def __init__(self, grasp_set, hierarchy, col_checker, c=1.41):
+    def __init__(self, grasp_set, hierarchy, col_checker, gamma=0.5, c=1.41):
+        self._hierarchy = hierarchy
+        self._col_checker = col_checker
         self._grasp_set = grasp_set
         self._hierarchy = hierarchy
-        self._leaf_bandit_data = {}  # stores for each leaf
+        #_stores for each leaf how many times it has been visited
+        self._leaf_visits = {}
+        # stores for each element in the hierarchy a dictionary that maps grasp id
+        # to tuple (#success, #sampled)
         self._success_rates = {}
+        self._gamma = gamma
+        self._c = c
+
+    def select_grasp(self, key, obj_tf):
+        priors = self._collect_prior(key)
+        if key in self._success_rates:
+            local_success_rates = self._success_rates[key]
+        else:
+            local_success_rates = {}
+        grasp_choices = set(priors.keys()) | set(local_success_rates.keys())
+        npprios = np.array([priors[g] for g in grasp_choices if g in priors else 0.0])
+        nplrates = np.array([local_success_rates[g] for g in grasp_choices if g in local_success_rates])
+        pass
+
+    def report_grasp_validity(self, gid, key, bvalid):
+        assert(self._hierarchy.is_leaf(key))
+        rates = self._success_rates[key]
+        if gid not in rates:
+            rates[gid] = bvalid
+        else:
+            rates[gid] += bvalid
+        key = self._hierarchy.get_parent_key(key)
+        while len(key) > 1:
+            rates = self._success_rates[key]
+            if gid in rates:
+                success, visits = rates[gid]
+            else:
+                success, visits = 0, 0
+            rates[gid] = (success + bvalid, visits + 1)
+            key = self._hierarchy.get_parent_key(key)
+
+    def _collect_prior(self, key):
+        """
+            Ascend the hierarchy from key and collect priors on grasp success.
+        """
+        priors = {}
+        key = self._hierarchy.get_parent_key(key)
+        discount = self._gamma
+        while len(key) > 1:
+            for gid, (success, visits) in self._success_rates[key]:
+                if gid not in priors:
+                    priors[gid] = discount * success / visits
+        return priors
 
 
 class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
