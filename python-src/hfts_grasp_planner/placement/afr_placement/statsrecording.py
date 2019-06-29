@@ -64,7 +64,7 @@ class GoalSamplingStatsRecorder(object):
                             x, y, z, ex, ey, ez,  # pose
                             self._validator.get_num_validity_calls(False),
                             self._validator.get_num_relaxation_calls(False),
-                            self._objective_fn.get_num_evaluate_calls(False).
+                            self._objective_fn.get_num_evaluate_calls(False),
                             solution.grasp_id))
 
     def save_stats(self, file_name):
