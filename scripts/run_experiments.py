@@ -160,10 +160,10 @@ def humanoids_baselines(yaml_template):
     relax_types = ['sub-binary']
     # cs = [0.8]
     cs = [0.5]
-    bodies = ['elmers_glue']
-    envs = ['table_high_clutter']
+    bodies = ['elmers_glue', 'crayola_24']
+    envs = ['table_high_clutter', 'cabinet_high_clutter']
     selector_types = ['naive', 'cache_global', 'cache_hierarchy']
-    grasp_ids = [0, 1]
+    grasp_ids = {'elmers_glue': [0, 1], 'crayola_24': [0]}
 
     def yaml_gen():
         for objective in objectives:
@@ -173,7 +173,7 @@ def humanoids_baselines(yaml_template):
                         for rtype in relax_types:
                             for c in cs:
                                 for seltype in selector_types:
-                                    for gid in grasp_ids:
+                                    for gid in grasp_ids[body]:
                                         yaml_instance = yaml_template.replace('<ENV_NAME>', env)
                                         yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
                                         yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
@@ -186,8 +186,8 @@ def humanoids_baselines(yaml_template):
                                         exp_id = 'mg_mcts' + '_' + rtype + '_' + seltype + '_' + str(c)
                                         yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
                                         yield yaml_instance
-    num_batches = len(sampler_types) * len(IROS_ENVS) * len(IROS_BODIES) * \
-        len(objectives) * len(relax_types) * len(cs)
+    num_batches = sum([len(sampler_types) * len(envs) * len(bodies) *
+                       len(objectives) * len(relax_types) * len(cs) * len(selector_types) * len(grasps) for grasps in grasp_ids.values()])
     return yaml_gen(), num_batches
 
 # def iros_mcts(yaml_template):

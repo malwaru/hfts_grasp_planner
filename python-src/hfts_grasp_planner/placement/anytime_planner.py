@@ -30,7 +30,6 @@ class MGMotionPlanner(object):
         if self._planner_interface == None:
             raise ValueError("Could not create planner with name %s" % algorithm_name)
         self._simplifier = orpy.RaveCreatePlanner(self._env, "OMPL_Simplifier")
-        self._initialized = False  # whether this object has been initialized
         self._grasped_obj = None
         self._known_grasps = None
         self._dof = 0
@@ -53,7 +52,6 @@ class MGMotionPlanner(object):
             self._robot.SetActiveDOFs(self._manip.GetArmIndices())
             if start_config is not None:
                 self._robot.SetActiveDOFValues(start_config)
-            self._initialized = True
             self._grasped_obj = grasped_obj
             self._planner_interface.SendCommand("initPlan %i %i" %
                                                 (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId()))
@@ -141,6 +139,26 @@ class MGMotionPlanner(object):
             self._planner_interface.SendCommand(command_str)
             for g in goal_ids:
                 self._goals.pop(g)
+
+    def pause(self, pause):
+        """
+            Pause the motion planner until next plan call.
+            Only relevant in case of asynchronous planners.
+            ---------
+            Arguments
+            ---------
+            pause, bool - True = pause it, False = unpause. 
+                You do not need to unpause, as this happens automatically
+                when you call plan(..).
+        """
+        self._planner_interface.SendCommand("pausePlanning")
+
+    def clear(self):
+        """
+            Free all allocated data.
+            After calling this function, setup needs to be called again.
+        """
+        self._planner_interface.SendCommand("clear")
 
 
 class PathSimplifier(object):
@@ -241,6 +259,8 @@ class MGAnytimePlacementPlanner(object):
         """
             Plan a new solution to a placement. The algorithm plans from the current robot configuration.
             The target volume etc. need to be specified on the goal sampler directly.
+            NOTE: Subsequent calls of this function do not share the same motion planning state.
+            The motion planners are reset at the upon termination of this function.
             ---------
             Arguments
             ---------
@@ -305,6 +325,9 @@ class MGAnytimePlacementPlanner(object):
             # lastly, inform goal sampler about the goals we reached this round
             self.goal_sampler.set_reached_goals(connected_goals)
             iter_idx += 1
+        # clear motion planners
+        for planner in self._motion_planners.values():
+            planner.clear()
         if best_solution is not None:
             simplifier = self._simplifiers[best_solution[1].manip.GetName()]
             simplifier.simplify(best_solution[0], best_solution[1], target_object)

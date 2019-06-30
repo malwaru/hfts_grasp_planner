@@ -50,6 +50,7 @@ namespace mp {
         typedef std::shared_ptr<WaypointPath> WaypointPathPtr;
         virtual ~MultiGraspMP() = 0;
         virtual void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit = 0.0f) = 0;
+        virtual void pausePlanning() = 0;
         virtual void addGrasp(const Grasp& grasp) = 0;
         virtual void addGoal(const Goal& goal) = 0;
         virtual void removeGoals(const std::vector<unsigned int>& goal_ids) = 0;

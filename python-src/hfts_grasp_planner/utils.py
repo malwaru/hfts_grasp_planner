@@ -422,6 +422,9 @@ def set_grasp(manip, body, inv_grasp_tf, hand_config):
         hand_config, np.arrayf of shape (h,) - hand configuration with h = manip.GetGripperDOF()
     """
     robot = manip.GetRobot()
+    grabbed_bodies = robot.GetGrabbed()
+    if body in grabbed_bodies:
+        robot.Release(body)
     robot.SetActiveManipulator(manip.GetName())
     body.SetTransform(np.dot(manip.GetEndEffectorTransform(), inv_grasp_tf))
     robot.SetDOFValues(hand_config, manip.GetGripperIndices())

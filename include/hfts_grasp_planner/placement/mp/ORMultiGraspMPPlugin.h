@@ -26,6 +26,11 @@ namespace mp {
         bool initPlan(std::ostream& sout, std::istream& sinput);
 
         /**
+         * Free all allocated resources. After calling this, you need to call initPlan again.
+         */
+        bool clear(std::ostream& sout, std::istream& sin);
+
+        /**
          * Plan (start or continue) until either a timeout is reached or some new solutions were found.
          * Input format: max_time
          * Output format: id0 ... idk
@@ -36,6 +41,12 @@ namespace mp {
          * The actual paths can be retrieved calling getPath(..).
          */
         bool plan(std::ostream& sout, std::istream& sinput);
+
+        /**
+         * In case the underlying planner is run asynchronously, this function notifies
+         * the planner to pause planning until either plan is called again, or the planner is destructed.
+         */
+        bool pausePlanning(std::ostream& sout, std::istream& sinput);
 
         /**
          * Return the path to a given goal. If no path to the goal has been found yet, an empty string is returned.

@@ -51,6 +51,11 @@ void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr
     }
 }
 
+void SequentialMGBiRRT::pausePlanning()
+{
+    // nothing to do, we only plan in plan()
+}
+
 void SequentialMGBiRRT::addGrasp(const Grasp& grasp)
 {
     auto iter = _planners.find(grasp.id);
@@ -157,6 +162,7 @@ void SequentialMGBiRRT::removeGoals(const std::vector<unsigned int>& goal_ids)
 ParallelMGBiRRT::AsynchPlanner::AsynchPlanner(ompl::ORRedirectableBiRRTPtr planner)
     : _planner(planner)
     , _terminate(false)
+    , _paused(false)
 {
     _thread = std::thread(std::bind(&AsynchPlanner::run, this));
 }
@@ -228,7 +234,7 @@ void ParallelMGBiRRT::AsynchPlanner::run()
             _goals_to_remove.clear();
         }
         // if we have goals left, plan
-        if (_planner->getNumGoals() > 0) {
+        if (_planner->getNumGoals() > 0 and not _paused) {
             // we plane for some time or until termination is requested
             // std::time_t end_time_t = std::chrono::steady_clock::to_time_t(end_point);
             // RAVELOG_DEBUG("Thread " + thread_id + " plans until " << std::put_time(std::local_time(end_time_t), "%F, %T"));
@@ -246,13 +252,22 @@ void ParallelMGBiRRT::AsynchPlanner::run()
             }
         } else {
             // sleep until further notice
-            RAVELOG_DEBUG("Thread " + thread_id + " has no goal, going to sleep");
+            RAVELOG_DEBUG("Thread " + thread_id + " either has no goal or was asked to pause, going to sleep");
             std::unique_lock<std::mutex> lock(_goal_modification_mutex);
             _goal_modification_cv.wait(lock);
             lock.unlock();
             RAVELOG_DEBUG("Thread " + thread_id + " woke up.");
             // in case we are awoken spuriously, we will just go to sleep in the next iteration again
         }
+    }
+}
+
+void ParallelMGBiRRT::AsynchPlanner::pause(bool bpause)
+{
+    bool before_paused = _paused;
+    _paused = bpause;
+    if (!bpause and before_paused) {
+        _goal_modification_cv.notify_all(); // wake thread up in case it was asleep
     }
 }
 
@@ -273,6 +288,10 @@ void ParallelMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>
 {
     new_paths.clear();
     if (not _goals.empty()) {
+        // wake up all threads in case they were paused
+        for (auto& key_planner : _planners) {
+            key_planner.second->pause(false);
+        }
         // sleep for the duration of time_limit to give asynchronous motion planners some time
         std::this_thread::sleep_for(std::chrono::duration<double>(time_limit));
         // collect paths
@@ -287,6 +306,14 @@ void ParallelMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>
                 } // else ignore
             }
         }
+    }
+}
+
+void ParallelMGBiRRT::pausePlanning()
+{
+    // pause all planners
+    for (auto& key_planner : _planners) {
+        key_planner.second->pause(true);
     }
 }
 

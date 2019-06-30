@@ -30,6 +30,11 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
         "      set 0.0 if no timeout should be used"
         " idX, int - ids of goals to which a new solution was found\n"
         "The actual paths can be retrieved calling getPath(..).");
+    RegisterCommand("pausePlanning", boost::bind(&ORMultiGraspMPPlugin::pausePlanning, this, _1, _2),
+        "In casse the underlying planner is run asynchronously, this function notifies"
+        "the planner to pause plannung until either plan is called again, or the planner is destructed.");
+    RegisterCommand("clear", boost::bind(&ORMultiGraspMPPlugin::clear, this, _1, _2),
+        "Clears all resources. After calling this you need to call initPlan again.");
     RegisterCommand("getPath", boost::bind(&ORMultiGraspMPPlugin::getPath, this, _1, _2),
         "Return the path to a given goal. If no path to the goal has been found yet, an empty string is returned.\n"
         "Input format: gid\n"
@@ -109,6 +114,14 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
     return true;
 }
 
+bool ORMultiGraspMPPlugin::clear(std::ostream& sout, std::istream& sin)
+{
+    RAVELOG_DEBUG("Clearing all planner data");
+    _planner.reset();
+    _solutions.clear();
+    return false;
+}
+
 bool ORMultiGraspMPPlugin::plan(std::ostream& sout, std::istream& sinput)
 {
     double timeout;
@@ -125,6 +138,14 @@ bool ORMultiGraspMPPlugin::plan(std::ostream& sout, std::istream& sinput)
         }
     }
     return true;
+}
+
+bool ORMultiGraspMPPlugin::pausePlanning(std::ostream& sout, std::istream& sinput)
+{
+    if (_planner) {
+        _planner->pausePlanning();
+    }
+    return false;
 }
 
 bool ORMultiGraspMPPlugin::getPath(std::ostream& sout, std::istream& sinput)

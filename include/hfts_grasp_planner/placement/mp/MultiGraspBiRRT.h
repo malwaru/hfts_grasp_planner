@@ -31,6 +31,7 @@ namespace mp {
         ~SequentialMGBiRRT();
 
         void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit) override;
+        void pausePlanning() override;
         void addGrasp(const Grasp& grasp) override;
         void addGoal(const Goal& goal) override;
         void removeGoals(const std::vector<unsigned int>& goal_ids) override;
@@ -79,6 +80,11 @@ namespace mp {
              */
             void getNewPaths(std::vector<std::pair<unsigned int, WaypointPathPtr>>& paths);
 
+            /**
+             * Pause or unpause the thread.
+             */
+            void pause(bool bpause);
+
         protected:
             void run(); // loop that the planner thread is executing
 
@@ -93,6 +99,7 @@ namespace mp {
             std::vector<std::pair<unsigned int, WaypointPathPtr>> _new_paths;
             // thread and thread termination
             std::atomic<bool> _terminate;
+            std::atomic<bool> _paused;
             std::thread _thread;
             // actual planning algorithm
             ompl::ORRedirectableBiRRTPtr _planner;
@@ -102,6 +109,7 @@ namespace mp {
         ~ParallelMGBiRRT();
 
         void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit) override;
+        void pausePlanning() override;
         void addGrasp(const Grasp& grasp) override;
         // TODO it would be better to add goals as a batch
         void addGoal(const Goal& goal) override;

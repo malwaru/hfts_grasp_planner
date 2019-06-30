@@ -74,6 +74,8 @@ def load_grasp(problem_desc):
             grasp_id = problem_desc['grasp_id']
         else:
             grasp_id = 0
+        if grasp_id >= len(grasp_yaml):
+            raise IOError("Invalid grasp id: " + str(grasp_id))
         problem_desc['grasp_pose'] = grasp_yaml[grasp_id]['grasp_pose']
         # grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
         # grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
@@ -193,7 +195,7 @@ def show_all_trajs(ghost, robot, mplanner, ghost_obj, target_obj, vel_scale=0.4)
     ghost_obj.SetVisible(True)
 
 
-def side_transition(goal_tf, cabinet, duration, fps=30):
+def side_transition(viewer, goal_tf, cabinet, duration, fps=30):
     num_steps = duration * fps
     alpha_vals = np.linspace(1.0, 0.2, num_steps)
     alpha_t = 0
@@ -276,6 +278,13 @@ def plan_for_stats(num_iterations, offset, robot_data, object_data, scene_sdf, r
         _, _ = planner.plan(problem_desc["time_limit"], object_data.kinbody)
         goal_stats.save_stats(problem_desc["goal_stats_file"] + "_" + str(idx + offset) + ".csv")
         planner_stats.save_stats(problem_desc["plan_stats_file"] + "_" + str(idx + offset) + ".csv")
+        # free resources
+        del planner
+        del goal_sampler
+        del planner_stats
+        del goal_stats
+        del afr_bridge
+        del hierarchy
 
 
 if __name__ == "__main__":
@@ -352,7 +361,7 @@ if __name__ == "__main__":
         manip_data = {}
         manip = robot.GetActiveManipulator()
         ik_solver = ik_module.IKSolver(manip, problem_desc['urdf_file'])
-        # set initial grasp
+        # set initial grasp (needed for grasp set))
         # grasp_pose is oTe
         grasp_pose = orpy.matrixFromQuat(problem_desc["grasp_pose"][3:])
         grasp_pose[:3, 3] = problem_desc["grasp_pose"][:3]
@@ -436,16 +445,16 @@ if __name__ == "__main__":
                 # set_body_alpha(target_ghost, 0.4)
                 # target_ghost.Enable(False)
                 # env.AddKinBody(target_ghost)
-                cam_tf = np.array([[-0.9999906, -0.00261649, -0.00345688,  0.00483596],
-                                   [0.00313553,  0.11418095, -0.99345502,  1.61701882],
-                                   [0.00299408, -0.99345652, -0.11417167,  0.52455425],
-                                   [0.,  0.,  0.,  1.]])
+                # cam_tf = np.array([[-0.9999906, -0.00261649, -0.00345688,  0.00483596],
+                #                    [0.00313553,  0.11418095, -0.99345502,  1.61701882],
+                #                    [0.00299408, -0.99345652, -0.11417167,  0.52455425],
+                #                    [0.,  0.,  0.,  1.]])
                 # cam_tf = np.array([[ 0.99836227, -0.00712139,  0.05676323,  0.01027336],
                 #                    [-0.04739557, -0.6586312 ,  0.75097177, -0.25150079],
                 #                    [ 0.03203807, -0.7524322 , -0.65789007,  1.15394711],
                 #                    [ 0.        ,  0.        ,  0.        ,  1.        ]])
-                viewer = env.GetViewer()
-                viewer.SetCamera(cam_tf)
+                # viewer = env.GetViewer()
+                # viewer.SetCamera(cam_tf)
             # goal_sampler = rnd_sampler_mod.RandomPlacementSampler(hierarchy, afr_bridge, afr_bridge, afr_bridge, [
             #                                                       manip.GetName() for manip in manips], True, False)
             goal_sampler = simple_mcts_sampler_mod.SimpleMCTSPlacementSampler(hierarchy, afr_bridge, afr_bridge,
@@ -478,7 +487,9 @@ if __name__ == "__main__":
             # rospy.loginfo("cProfile complete")
             IPython.embed()
         else:
+            print "Running %i iterations of the planning algorithm" % args.num_runs
             plan_for_stats(args.num_runs, args.offset, robot_data, object_data, scene_sdf, regions, orientations,
                            obj_fn, global_region_info, problem_desc)
+            print "Finished %i iterations of the planning algorithm" % args.num_runs
     finally:
         orpy.RaveDestroy()

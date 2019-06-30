@@ -8,6 +8,7 @@ robot_occgrid: ../../data/generated/robot_occgrids/Yumi
 reachability_path: ../../data/generated/gnat_reachability/
 robot_ball_desc: ../../models/robots/yumi/ball_description.yaml
 robot_name: Yumi
+gripper_information: ../../models/robots/yumi/gripper_information.yaml
 # target_obj_file: ../scaled_table/scaled_table.kinbody.xml
 # grasp_file: grasps/new/scaled_table.yaml
 # target_obj_file: ../pencil_basket/pencil_basket.kinbody.xml
@@ -16,10 +17,11 @@ robot_name: Yumi
 # grasp_file: grasps/new/elmers_glue.yaml
 # target_obj_file: ../crayola/crayola.kinbody.xml
 # grasp_file: grasps/new/crayola.yaml
-# target_obj_file: ../crayola_24/crayola_24.kinbody.xml
-# grasp_file: grasps/new/crayola_24.yaml
-target_obj_file: ../../models/objects/wine_glass/wine_glass.kinbody.xml
-grasp_file: grasps/new/wine_glass.yaml
+dmg_file: ../../models/objects/crayola_24/dmg_info.yaml
+target_obj_file: ../../models/objects/crayola_24/crayola_24.kinbody.xml
+grasp_file: grasps/new/crayola_24.yaml
+# target_obj_file: ../../models/objects/wine_glass/wine_glass.kinbody.xml
+# grasp_file: grasps/new/wine_glass.yaml
 grasp_id: 0
 plcmnt_volume: [-0.4, 0.45, 0.25, 0.53, 1.0, 0.54]
 sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
@@ -31,17 +33,19 @@ plan_stats_file: '/tmp/test_plan_stats'
 parameters:
   occ_tree_cell_size: 0.005
   relaxation_type: sub-binary
-  weight_arm_col: 0.25
-  weight_obj_col: 0.25
-  weight_contact: 0.25
+  weight_arm_col: 0.1
+  weight_obj_col: 0.15
+  weight_contact: 0.15
   weight_objective: 0.25
+  weight_reachable: 0.1
   eps_xi: 1.0
   joint_limit_margin: 0.0001
   c: 0.8
   objective_impr_f: 0.1
   num_goal_samples: 12
   num_goal_iterations: 24
-  mp_timeout: 5.0
+  mp_timeout: 0.0
   sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random
   motion_planner: real
   proj_type: None
+  grasp_selector_type: cache_hierarchy  # naive, cache_global, cache_hierarchy, bandit

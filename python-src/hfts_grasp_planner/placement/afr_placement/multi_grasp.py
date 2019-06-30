@@ -129,6 +129,10 @@ class DMGGraspSet(object):
         self._grasps = None  # int id to grasp
         self._compute_grasps()
 
+    def __del__(self):
+        self._my_gripper = None
+        self._my_env.Destroy()
+
     def _compute_eTf(self, config):
         """
             Compute the transform eTf for the given finger configuration.
@@ -360,7 +364,7 @@ class HierarchicalGraspCache(object):
             OrderedSet of ints - grasp ids that were found valid in this branch of the hierarchy before.
         """
         grasps_to_return = OrderedSet()
-        while len(key) > 0:  # we do not cross the manipulator border (i.e. each manipulator has separate grasps)
+        while len(key) > 1:  # we do not cross the manipulator border (i.e. each manipulator has separate grasps)
             if key in self._cache:
                 # add all grasps from this level of the hierarchy
                 for g in self._cache[key]:
@@ -377,7 +381,7 @@ class HierarchicalGraspCache(object):
             key, tuple - key of placement
             gid, int - id of a grasp that was found valid for this placement
         """
-        while len(key) > 0:
+        while len(key) > 1:
             if key in self._cache:
                 old_set = self._cache[key]
                 if gid in old_set:
@@ -420,13 +424,18 @@ class GripperCollisionChecker(object):
         self._gripper = self._env.GetRobots()[-1]
         self._robot.Enable(False)
         self._target_obj.Enable(False)
+        # self._env.SetViewer("qtcoin")
+
+    def __del__(self):
+        self._gripper = None
+        self._env.Destroy()
 
     def is_gripper_col_free(self, grasp, obj_tf):
         with self._env:
             self._gripper.SetTransform(np.dot(obj_tf, grasp.oTe))
             self._gripper.SetDOFValues(grasp.config)
-            bvalid = self._env.CheckCollision(self._gripper)
-            return bvalid
+            bcollision = self._env.CheckCollision(self._gripper)
+            return not bcollision
 
 
 class NaiveGraspProvider(object):
@@ -479,7 +488,8 @@ class CacheGraspProvider(object):
                 grasp = self._grasp_set.get_grasp(gid)
                 if self._col_checker.is_gripper_col_free(grasp, obj_tf):
                     # roll a die to decide whether we return this or not
-                    if np.random.rand() > self._pNext:
+                    pdie = np.random.rand()
+                    if pdie > self._pNext:
                         return grasp
             tried_grasps = cached_grasp_ids
         else:
@@ -1099,7 +1109,8 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 self.evaluate(solution)
             self._objective_constraint.check_objective_improvement(cache_entry)
         return cache_entry.bkinematically_reachable and cache_entry.barm_collision_free\
-            and cache_entry.bobj_collision_free and (cache_entry.bbetter_objective or not b_improve_objective)
+            and cache_entry.bobj_collision_free and cache_entry.bstable \
+            and (cache_entry.bbetter_objective or not b_improve_objective)
 
     def get_constraint_relaxation(self, solution, b_incl_obj=False, b_obj_normalizer=False):
         """
@@ -1124,7 +1135,8 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         # TODO do we want to compute this differently for multi-grasp?
         # first compute normalizer
         normalizer = self._parameters["weight_arm_col"] + \
-            self._parameters["weight_obj_col"] + self._parameters["weight_contact"]
+            self._parameters["weight_obj_col"] + self._parameters["weight_contact"] + \
+            self._parameters["weight_reachable"]
         if b_incl_obj or b_obj_normalizer:
             normalizer += self._parameters["weight_objective"]
         # check if have binary relaxation
@@ -1140,30 +1152,30 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         self._call_stats[2] += 1
         self.is_valid(solution, b_incl_obj)  # ensure all validity flags are set
         val = 0.0
-        if not cache_entry.bkinematically_reachable:  # not a useful solution without an arm configuration
-            return 0.0
         # compute binary or continuous sub relaxatoins
         if self._parameters["relaxation_type"] == "sub-binary":
             val += self._parameters["weight_arm_col"] * float(cache_entry.barm_collision_free)
             val += self._parameters["weight_obj_col"] * float(cache_entry.bobj_collision_free)
             val += self._parameters["weight_contact"] * float(cache_entry.bstable)
+            val += self._parameters["weight_reachable"] * float(cache_entry.bkinematically_reachable)
             if b_incl_obj:
                 valid_sol = float(cache_entry.bobj_collision_free) * float(cache_entry.bstable)
                 val += valid_sol * self._parameters["weight_objective"] * float(cache_entry.bbetter_objective)
         else:  # compute continuous relaxation
-            assert(self._parameters["relaxation_type"] == "continuous")
-            contact_val = self._contact_constraint.get_relaxation(cache_entry)
-            arm_col_val, obj_col_val = self._collision_constraint.get_relaxation(cache_entry)
-            # rospy.logdebug("contact value: %f, arm-collision value: %f, obj_collision value: %f" %
-            #                (contact_val, arm_col_val, obj_col_val))
-            val += self._parameters["weight_arm_col"] * arm_col_val
-            val += self._parameters["weight_obj_col"] * obj_col_val
-            val += self._parameters["weight_contact"] * contact_val
-            solution.data = {'arm_col': arm_col_val, "obj_col": obj_col_val, "contact": contact_val, "total": val}
-            if b_incl_obj:
-                valid_sol = float(cache_entry.bobj_collision_free) * float(cache_entry.bstable)
-                val += valid_sol * self._parameters["weight_objective"] * \
-                    self._objective_constraint.get_relaxation(cache_entry)
+            raise ValueError("Continuous relaxation not supported")
+            # assert(self._parameters["relaxation_type"] == "continuous")
+            # contact_val = self._contact_constraint.get_relaxation(cache_entry)
+            # arm_col_val, obj_col_val = self._collision_constraint.get_relaxation(cache_entry)
+            # # rospy.logdebug("contact value: %f, arm-collision value: %f, obj_collision value: %f" %
+            # #                (contact_val, arm_col_val, obj_col_val))
+            # val += self._parameters["weight_arm_col"] * arm_col_val
+            # val += self._parameters["weight_obj_col"] * obj_col_val
+            # val += self._parameters["weight_contact"] * contact_val
+            # solution.data = {'arm_col': arm_col_val, "obj_col": obj_col_val, "contact": contact_val, "total": val}
+            # if b_incl_obj:
+            #     valid_sol = float(cache_entry.bobj_collision_free) * float(cache_entry.bstable)
+            #     val += valid_sol * self._parameters["weight_objective"] * \
+            #         self._objective_constraint.get_relaxation(cache_entry)
         return val / normalizer
 
     def get_constraint_weights(self):

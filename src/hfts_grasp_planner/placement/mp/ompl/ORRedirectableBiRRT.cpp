@@ -128,8 +128,9 @@ bool ORRedirectableBiRRT::_handlePlanningStatus(::ompl::base::PlannerStatus stat
             _state_space->copyToReals(config, ompl_path.getState(i));
             path.push_back(config);
         }
+        std::stringstream ss;
         RAVELOG_DEBUG("New path leads to ");
-        _simple_setup->getSpaceInformation()->printState(ompl_path.getState(ompl_path.getStateCount() - 1));
+        _simple_setup->getSpaceInformation()->printState(ompl_path.getState(ompl_path.getStateCount() - 1), ss);
         // get the goal id that we connected
         auto goal = _goal_storage.getGoal(path.back());
         if (!goal) {
