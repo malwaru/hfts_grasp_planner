@@ -186,8 +186,8 @@ def humanoids_baselines(yaml_template):
                                         exp_id = 'mg_mcts' + '_' + rtype + '_' + seltype + '_' + str(c)
                                         yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
                                         yield yaml_instance
-    num_batches = sum([len(sampler_types) * len(envs) * len(bodies) *
-                       len(objectives) * len(relax_types) * len(cs) * len(selector_types) * len(grasps) for grasps in grasp_ids.values()])
+    num_batches = sum([len(sampler_types) * len(envs) * len(objectives) * len(relax_types) *
+                       len(cs) * len(selector_types) * len(grasps) for grasps in grasp_ids.values()])
     return yaml_gen(), num_batches
 
 # def iros_mcts(yaml_template):
