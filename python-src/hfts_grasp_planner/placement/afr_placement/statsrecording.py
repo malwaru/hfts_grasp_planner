@@ -95,6 +95,7 @@ class PlacementMotionStatsRecorder(object):
             - objective value
             - global pose (x, y, z, ex, ey, ez)
             - grasp id
+            - number of grasps
     """
 
     def __init__(self):
@@ -105,11 +106,11 @@ class PlacementMotionStatsRecorder(object):
         self._stats = []
         self._start_time = time.time()
 
-    def register_new_solution(self, sol):
+    def register_new_solution(self, sol, num_grasps=1):
         x, y, z = sol.obj_tf[:3, 3]
         ex, ey, ez = tf_mod.euler_from_matrix(sol.obj_tf)
         self._stats.append((time.time() - self._start_time, sol.sample_num,
-                            sol.objective_value, x, y, z, ex, ey, ez, sol.grasp_id))
+                            sol.objective_value, x, y, z, ex, ey, ez, sol.grasp_id, num_grasps))
 
     def save_stats(self, file_name):
         """
@@ -126,6 +127,6 @@ class PlacementMotionStatsRecorder(object):
             os.makedirs(dir_name)
         with open(file_name, 'w') as the_file:
             the_file.write(
-                'runtime,#samples,objective,x,y,z,ex,ey,ez,grasp_id\n')
+                'runtime,#samples,objective,x,y,z,ex,ey,ez,grasp_id,#grasps\n')
             for stat in self._stats:
                 the_file.write(str(stat).replace('(', '').replace(')', '') + '\n')

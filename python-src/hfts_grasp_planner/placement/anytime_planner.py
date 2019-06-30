@@ -160,6 +160,12 @@ class MGMotionPlanner(object):
         """
         self._planner_interface.SendCommand("clear")
 
+    def get_num_known_grasps(self):
+        """
+            Returns the total number of known grasps.
+        """
+        return len(self._known_grasps)
+
 
 class PathSimplifier(object):
     """
@@ -319,9 +325,10 @@ class MGAnytimePlacementPlanner(object):
                         connected_goals.append(improved_goal)
                         if self._stats_recorder:
                             # record both reached and improved goal (before and after local optimization)
-                            self._stats_recorder.register_new_solution(reached_goal)
+                            self._stats_recorder.register_new_solution(reached_goal, planner.get_num_known_grasps())
                             if reached_goal != improved_goal:
-                                self._stats_recorder.register_new_solution(improved_goal)
+                                self._stats_recorder.register_new_solution(
+                                    improved_goal, planner.get_num_known_grasps())
             # lastly, inform goal sampler about the goals we reached this round
             self.goal_sampler.set_reached_goals(connected_goals)
             iter_idx += 1
