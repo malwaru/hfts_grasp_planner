@@ -1,0 +1,8 @@
+<KinBody name="cabinet">
+  <Body type="static" name="cabinet">
+    <Geom type="trimesh">
+      <Render>cabinet.stl</Render>
+      <Data>cabinet.stl</Data>
+    </Geom>
+  </Body>
+</KinBody>

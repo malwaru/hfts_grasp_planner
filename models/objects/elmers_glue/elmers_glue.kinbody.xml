@@ -1,4 +1,4 @@
-<KinBody name="elmers_washable_no_run_school_glue">
+<KinBody name="elmers_glue">
   <Body type="dynamic">
     <Geom type="trimesh">
       <Data>glue.stl 0.001</Data>

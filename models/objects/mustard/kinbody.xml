@@ -1,8 +1,8 @@
-<KinBody name="mustard_bottle">
-  <Body type="static" name="mustard_bottle">
+<KinBody name="mustard">
+  <Body type="static" name="mustard">
     <Geom type="trimesh">
-      <Render>textured.dae</Render>
-      <Data>textured.dae</Data>
+      <Render>mustard.stl</Render>
+      <Data>mustard.stl</Data>
     </Geom>
   </Body>
 </KinBody>

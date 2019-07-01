@@ -1,0 +1,50 @@
+<launch>
+  <node pkg="apriltags_ros" type="apriltag_detector_node" name="apriltag_detector" output="screen">
+    <!-- Remap topic required by the node to custom topics -->
+    <remap from="image_rect" to="/kinect2/hd/image_color_rect" />
+    <remap from="camera_info" to="/kinect2/hd/camera_info" />
+
+    <!-- Optional: Subscribe to the compressed stream-->
+    <param name="/kinect2/hd/image_color_rect/compressed" type="str" value="compressed" />
+
+    <!-- Select the tag family: 16h5, 25h7, 25h9, 36h9, or 36h11(default) -->
+    <param name="tag_family" type="str" value="36h11" />
+
+    <!-- Enable projected optical measurements for more accurate tag transformations -->
+    <!-- This exists for backwards compatability and should be left true for new setups -->
+    <param name="projected_optics" type="bool" value="true" />
+
+    <!-- Describe the tags -->
+    <rosparam param="tag_descriptions">[
+      {id: 0, size: 0.048, frame_id: cheezit_0},
+      {id: 1, size: 0.048, frame_id: cheezit_1},
+      {id: 2, size: 0.0451, frame_id: cabinet_2},
+      {id: 3, size: 0.0451, frame_id: cabinet_3},
+      {id: 4, size: 0.0451, frame_id: cracker_box_4},
+      {id: 5, size: 0.02, frame_id: elmers_5},
+      {id: 6, size: 0.0451, frame_id: cracker_box_6},
+      {id: 7, size: 0.02, frame_id: elmers_7},
+      {id: 8, size: 0.0451, frame_id: sugar_box_8},
+      {id: 9, size: 0.0451, frame_id: sugar_box_9},
+      {id: 10, size: 0.03, frame_id: sugar_box_10},
+      {id: 11, size: 0.03, frame_id: sugar_box_11},
+      {id: 13, size: 0.0451, frame_id: mustard_13},
+      {id: 14, size: 0.0451, frame_id: mustard_14},
+      {id: 15, size: 0.03, frame_id: mustard_15},
+      {id: 16, size: 0.03, frame_id: mustard_16}]
+    </rosparam>
+  </node>
+
+  <node pkg="hfts_grasp_planner" type="object_tf_publisher.py" name="markers_to_objects_publisher" output="screen">
+    <param name="model_path" type="str" value="$(find hfts_grasp_planner)/models/objects/" />
+    <param name="tag_topic" type="str" value="/tag_detections"/>
+    <rosparam param="object_names">[
+        "cabinet",
+        "elmers_glue",
+        "cracker_box",
+        "mustard",
+        "sugar_box"]
+    </rosparam>
+  </node>
+</launch>
+

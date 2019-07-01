@@ -9,7 +9,7 @@ import rospy
 import os
 import operator
 import itertools
-import skfmm
+# import skfmm
 import numpy as np
 import openravepy as orpy
 from itertools import izip, product
