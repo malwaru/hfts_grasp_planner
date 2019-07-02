@@ -873,96 +873,96 @@ class AnyTimePlacementPlanner(object):
                 rospy.logwarn("Unknown parameter: %s" % key)
 
 
-class DummyPlanner(object):
-    """
-        Dummy placement planner that pretends to plan motions.
-        It samples several goals, and then randomly decides that one of them was reached by a motion planner.
-        Subsequently, the goal sampler is informed about this and queried again.
-    """
+# class DummyPlanner(object):
+#     """
+#         Dummy placement planner that pretends to plan motions.
+#         It samples several goals, and then randomly decides that one of them was reached by a motion planner.
+#         Subsequently, the goal sampler is informed about this and queried again.
+#     """
 
-    def __init__(self, goal_sampler, num_goal_samples=10, num_goal_iterations=10, stats_recorder=None):
-        """
-            num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
-            num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
-        """
-        self._goal_sampler = goal_sampler
-        self._stats_recorder = stats_recorder
-        self.num_goal_samples = num_goal_samples
-        self.num_goal_iterations = num_goal_iterations
+#     def __init__(self, goal_sampler, num_goal_samples=10, num_goal_iterations=10, stats_recorder=None):
+#         """
+#             num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
+#             num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
+#         """
+#         self._goal_sampler = goal_sampler
+#         self._stats_recorder = stats_recorder
+#         self.num_goal_samples = num_goal_samples
+#         self.num_goal_iterations = num_goal_iterations
 
-    def plan(self, timeout, target_object):
-        """
-            Run pseudo planning.
-            ---------
-            Arguments
-            ---------
-            timeout, float - maximum time
-            target_object, Kinbody - body to place
-        """
-        objectives = []
-        solutions = []
-        goal_set = {}
-        best_solution = None
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            new_goals, _ = self._goal_sampler.sample(self.num_goal_samples, self.num_goal_iterations, True)
-            self._check_objective_invariant(new_goals, best_solution)
-            goal_set = self._merge_goal_sets(goal_set, new_goals)
-            if len(goal_set) > 0:
-                all_sols = []
-                for (_, sols) in goal_set.iteritems():
-                    all_sols.extend(sols)
-                all_sols = self._filter_goals(all_sols, best_solution)
-                if len(all_sols) > 0:
-                    selected_goal = random.choice(all_sols)
-                    self._goal_sampler.set_reached_goals([selected_goal])
-                    best_solution = selected_goal
-                    objectives.append(best_solution.objective_value)
-                    solutions.append(best_solution)
-                    if self._stats_recorder:
-                        self._stats_recorder.register_new_solution(selected_goal)
-        return objectives, solutions
+#     def plan(self, timeout, target_object):
+#         """
+#             Run pseudo planning.
+#             ---------
+#             Arguments
+#             ---------
+#             timeout, float - maximum time
+#             target_object, Kinbody - body to place
+#         """
+#         objectives = []
+#         solutions = []
+#         goal_set = {}
+#         best_solution = None
+#         start_time = time.time()
+#         while time.time() - start_time < timeout:
+#             new_goals, _ = self._goal_sampler.sample(self.num_goal_samples, self.num_goal_iterations, True)
+#             self._check_objective_invariant(new_goals, best_solution)
+#             goal_set = self._merge_goal_sets(goal_set, new_goals)
+#             if len(goal_set) > 0:
+#                 all_sols = []
+#                 for (_, sols) in goal_set.iteritems():
+#                     all_sols.extend(sols)
+#                 all_sols = self._filter_goals(all_sols, best_solution)
+#                 if len(all_sols) > 0:
+#                     selected_goal = random.choice(all_sols)
+#                     self._goal_sampler.set_reached_goals([selected_goal])
+#                     best_solution = selected_goal
+#                     objectives.append(best_solution.objective_value)
+#                     solutions.append(best_solution)
+#                     if self._stats_recorder:
+#                         self._stats_recorder.register_new_solution(selected_goal)
+#         return objectives, solutions
 
-    def _check_objective_invariant(self, goals, best_sol):
-        if best_sol is None:
-            return
-        for (key, goal_set) in goals.iteritems():
-            for goal in goal_set:
-                assert(goal.objective_value >= best_sol.objective_value)
+#     def _check_objective_invariant(self, goals, best_sol):
+#         if best_sol is None:
+#             return
+#         for (key, goal_set) in goals.iteritems():
+#             for goal in goal_set:
+#                 assert(goal.objective_value >= best_sol.objective_value)
 
-    def _merge_goal_sets(self, old_goals, new_goals):
-        """
-            Merge new_goals into old_goals.
-            ---------
-            Arguments
-            ---------
-            old_goals, dict - manip_name -> list of goals
-            new_goals, dict - manip_name -> list of goals
-            -------
-            Returns
-            -------
-            old_goals
-        """
-        for (key, goals) in new_goals.iteritems():
-            if key in old_goals:
-                old_goals[key].extend(goals)
-            else:
-                old_goals[key] = goals
-        return old_goals
+#     def _merge_goal_sets(self, old_goals, new_goals):
+#         """
+#             Merge new_goals into old_goals.
+#             ---------
+#             Arguments
+#             ---------
+#             old_goals, dict - manip_name -> list of goals
+#             new_goals, dict - manip_name -> list of goals
+#             -------
+#             Returns
+#             -------
+#             old_goals
+#         """
+#         for (key, goals) in new_goals.iteritems():
+#             if key in old_goals:
+#                 old_goals[key].extend(goals)
+#             else:
+#                 old_goals[key] = goals
+#         return old_goals
 
-    def _filter_goals(self, goals, best_solution):
-        """
-            Filter the given list of goals based on objective value.
-            ---------
-            Arguments
-            ---------
-            goals, list of PlacementGoals
-            best_solution, tuple (traj, PlacementGoal), where PlacementGoal is the best reached so far. The tuple may be None
-            -------
-            Returns
-            -------
-            remaining_goals, list of PlacementGoals (might be empty)
-        """
-        if best_solution is None:
-            return goals
-        return [x for x in goals if x.objective_value > best_solution.objective_value]
+#     def _filter_goals(self, goals, best_solution):
+#         """
+#             Filter the given list of goals based on objective value.
+#             ---------
+#             Arguments
+#             ---------
+#             goals, list of PlacementGoals
+#             best_solution, tuple (traj, PlacementGoal), where PlacementGoal is the best reached so far. The tuple may be None
+#             -------
+#             Returns
+#             -------
+#             remaining_goals, list of PlacementGoals (might be empty)
+#         """
+#         if best_solution is None:
+#             return goals
+#         return [x for x in goals if x.objective_value > best_solution.objective_value]

@@ -438,6 +438,21 @@ class GripperCollisionChecker(object):
             return not bcollision
 
 
+class DummyGraspProvider(object):
+    """
+        A dummy grasp provider that always returns the initial grasp.
+    """
+
+    def __init__(self, grasp_set):
+        self._grasp_set = grasp_set
+
+    def select_grasp(self, key, obj_tf):
+        return self._grasp_set.get_grasp(0)
+
+    def report_grasp_validity(self, gid, key, bvalid):
+        pass
+
+
 class NaiveGraspProvider(object):
     """
         A naiive grasp provider simply uniformly samples a new grasp.
@@ -758,56 +773,63 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             lower, upper = manip_data.lower_limits + self.joint_limit_margin, manip_data.upper_limits - self.joint_limit_margin
             manip = manip_data.manip
             arm_configs = []
-            with self.robot:
-                with self.object_data.kinbody:
-                    inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
-                    utils.set_grasp(manip, self.object_data.kinbody,
-                                    inv_grasp_tf,
-                                    cache_entry.solution.grasp_config)
-                    reference_pose = np.dot(inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
-                    manip.SetLocalToolTransform(reference_pose)
-                    self.robot.SetActiveDOFs(manip.GetArmIndices())
-                    # init jacobian descent
-                    q_current = cache_entry.solution.arm_config
-                    # iterate as long as the gradient is not None, zero or we are in collision or out of joint limits
-                    # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
-                    for _ in xrange(self.max_iterations):
-                        in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                        if in_limits:
-                            q_grad = self._compute_gradient(cache_entry, q_current, manip_data)
-                            grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
-                            if q_grad is None or grad_norm < self.grad_epsilon:
-                                break
-                            arm_configs.append(np.array(q_current))
-                            q_current -= self.step_size * q_grad / grad_norm  # update q_current
-                        else:
-                            break
-                    manip.SetLocalToolTransform(np.eye(4))
-                    manip.GetRobot().Release(self.object_data.kinbody)
-                    if len(arm_configs) > 1:  # first element is start configuration
-                        self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
-                        return arm_configs[1:]
-                    # we failed in the first iteration, just set it back to what we started from
-                    self._set_cache_entry_values(cache_entry, cache_entry.solution.arm_config, manip_data)
-                    return []  # else return empty array
+            # with self.robot:
+            #     with self.object_data.kinbody:
+            inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
+            utils.set_grasp(manip, self.object_data.kinbody,
+                            inv_grasp_tf,
+                            cache_entry.solution.grasp_config)
+            reference_pose = np.dot(inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+            manip.SetLocalToolTransform(reference_pose)
+            self.robot.SetActiveDOFs(manip.GetArmIndices())
+            # init jacobian descent
+            q_current = cache_entry.solution.arm_config
+            # iterate as long as the gradient is not None, zero or we are in collision or out of joint limits
+            # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+            for it in xrange(self.max_iterations):
+                in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                if in_limits:
+                    q_grad = self._compute_gradient(cache_entry, q_current, manip_data, it != 0)
+                    grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
+                    if q_grad is None or grad_norm < self.grad_epsilon:
+                        break
+                    arm_configs.append(np.array(q_current))
+                    q_current -= self.step_size * q_grad / grad_norm  # update q_current
+                else:
+                    break
+            if len(arm_configs) > 1:  # first element is start configuration
+                self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
+                manip.SetLocalToolTransform(np.eye(4))
+                manip.GetRobot().Release(self.object_data.kinbody)
+                return arm_configs[1:]
+            # we failed in the first iteration, just set it back to what we started from
+            self._set_cache_entry_values(cache_entry, cache_entry.solution.arm_config, manip_data)
+            manip.SetLocalToolTransform(np.eye(4))
+            manip.GetRobot().Release(self.object_data.kinbody)
+            return []  # else return empty array
 
         def _set_cache_entry_values(self, cache_entry, q, manip_data):
+            """
+                Sets cache entry values for the given q.
+                Assumes that the manipulator has a local tool transform set to the reference pose of
+                the placement face.
+            """
             inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
             manip = manip_data.manip
             self.robot.SetActiveDOFValues(q)
             cache_entry.solution.arm_config = q
-            cache_entry.eef_tf = manip.GetEndEffectorTransform()
+            cache_entry.eef_tf = manip.GetEndEffector().GetTransform()  # pose of the link exluding local transform!!!
             cache_entry.solution.obj_tf = np.matmul(cache_entry.eef_tf, inv_grasp_tf)
             ref_pose = manip.GetEndEffectorTransform()  # this takes the local tool transform into account
             # TODO we are not constraining the pose to stay in the region here, so technically we would need to compute
             # TODO which region we are actually in now (we might transition into a neighboring region)
             cache_entry.region_pose = np.matmul(utils.inverse_transform(cache_entry.region.base_tf), ref_pose)
-            ex, ey, ez = tf_mod.euler_from_matrix(cache_entry.region_pose)
+            _, _, ez = tf_mod.euler_from_matrix(cache_entry.region_pose)
             theta = utils.normalize_radian(ez)
             cache_entry.region_state = (cache_entry.region_pose[0, 3], cache_entry.region_pose[1, 3], theta)
             cache_entry.solution.objective_value = self.obj_fn(cache_entry.solution.obj_tf)
 
-        def _compute_gradient(self, cache_entry, q_current, manip_data):
+        def _compute_gradient(self, cache_entry, q_current, manip_data, bimprove_objective=True):
             """
                 Compute gradient for the current configuration.
                 -------
@@ -846,7 +868,9 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
                 return None
             # _, cart_grad_col = self.collision_constraint.get_cart_obj_collision_gradient(cache_entry)
             # ------ 3. Objective Improvement constraint - objective must be an improvement
-            if cache_entry.solution.objective_value < self._last_obj_value:
+            # TODO bimprove_objective is a hack for the case that the initial objective value is slightly smaller than
+            # TODO it is when we evaluate the objective here. Why can this happen? (Imprecise arm configuration?)
+            if cache_entry.solution.objective_value < self._last_obj_value and bimprove_objective:
                 return None
             cart_grad_xi = -self.obj_fn.get_gradient(cache_entry.solution.obj_tf, cache_entry.region_state,
                                                      cache_entry.plcmnt_orientation.inv_reference_tf)
@@ -857,10 +881,10 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             extended_cart[5] = cart_grad[2]
             qgrad = np.matmul(inv_jac, extended_cart)
             # ------ 5. Arm collision constraint - arm must not be in collision
-            _, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
-            col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
-                                     np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
-            qgrad += col_grad
+            # _, col_grad = self.collision_constraint.get_chomps_collision_gradient(cache_entry, q_current)
+            # col_grad[:] = np.matmul((np.eye(col_grad.shape[0]) -
+            #                          np.matmul(inv_jac, np.matmul(self.damping_matrix, jacobian))), col_grad)
+            # qgrad += col_grad
             # remove any motion that changes the base orientation/z height of the object
             jacobian[[0, 1, 5], :] = 0.0  # motion in x, y, ez is allowed
             qgrad[:] = np.matmul((np.eye(qgrad.shape[0]) - np.matmul(inv_jac, jacobian)), qgrad)
@@ -924,6 +948,8 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
         elif self._parameters['grasp_selector_type'] == 'bandit':
             self._grasp_selectors = {mn: BanditGraspProvider(
                 md.grasp_set, self._hierarchy, self._gripper_col_checkers[mn]) for mn, md in self._manip_data.iteritems()}
+        elif self._parameters['grasp_selector_type'] == 'dummy':
+            self._grasp_selectors = {mn: DummyGraspProvider(md.grasp_set) for mn, md in self._manip_data.iteritems()}
         else:
             raise ValueError("Unknown grasp selector type %s." % self._parameters['grasp_selector_type'])
 

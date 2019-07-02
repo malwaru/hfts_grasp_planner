@@ -8,6 +8,7 @@ robot_occgrid: ../../data/generated/robot_occgrids/Yumi
 reachability_path: ../../data/generated/gnat_reachability/
 robot_ball_desc: ../../models/robots/yumi/ball_description.yaml
 robot_name: Yumi
+manipulator: left_arm_with_gripper
 gripper_information: ../../models/robots/yumi/gripper_information.yaml
 # target_obj_file: ../scaled_table/scaled_table.kinbody.xml
 # grasp_file: grasps/new/scaled_table.yaml
@@ -23,10 +24,11 @@ grasp_file: grasps/new/crayola_24.yaml
 # target_obj_file: ../../models/objects/wine_glass/wine_glass.kinbody.xml
 # grasp_file: grasps/new/wine_glass.yaml
 grasp_id: 0
-plcmnt_volume: [-0.4, 0.45, 0.25, 0.53, 1.0, 0.54]
+# plcmnt_volume: [-0.4, 0.45, 0.25, 0.53, 1.0, 0.54]
+plcmnt_volume: [-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]
 sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
 time_limit: 20.0
-maximize_clearance: False
+objective_fn: deep_shelf  # maximize_clearance, minimize_clearance, deep_shelf
 goal_stats_file: '/tmp/test_goal_stats'
 plan_stats_file: '/tmp/test_plan_stats'
 # initial_obj_pose: [-0.65, 0.01, 0.63, 1.0, 0.0, 0.0, 0.0]
@@ -48,4 +50,4 @@ parameters:
   sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random
   motion_planner: real
   proj_type: None
-  grasp_selector_type: cache_hierarchy  # naive, cache_global, cache_hierarchy, bandit
+  grasp_selector_type: cache_hierarchy  # naive, cache_global, cache_hierarchy, bandit, dummy

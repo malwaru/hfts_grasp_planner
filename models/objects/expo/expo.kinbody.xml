@@ -1,0 +1,9 @@
+<KinBody name="expo">
+    <Body type="dynamic">
+        <Geom type="trimesh">
+            <Data>expo.stl 0.001</Data>
+            <Render>expo.stl 0.001</Render>
+            <transparency>0</transparency>
+        </Geom>
+    </Body>
+</KinBody>

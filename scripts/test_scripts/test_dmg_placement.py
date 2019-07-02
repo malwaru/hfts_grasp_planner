@@ -27,6 +27,7 @@ import hfts_grasp_planner.placement.goal_sampler.simple_mcts_sampler as simple_m
 import hfts_grasp_planner.placement.goal_sampler.mcts_visualization as mcts_visualizer_mod
 import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
 import hfts_grasp_planner.placement.clearance as clearance_mod
+import hfts_grasp_planner.placement.objectives as objectives_mod
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
 
 
@@ -305,7 +306,6 @@ if __name__ == "__main__":
         problem_desc = yaml.load(f)
         resolve_paths(problem_desc, args.problem_desc)
         load_grasp(problem_desc)
-
     try:
         env = orpy.Environment()
         env.Load(problem_desc['or_env'])
@@ -359,6 +359,8 @@ if __name__ == "__main__":
         # extract manipulators
         link_names = []
         manip_data = {}
+        if 'manipulator' in problem_desc:
+            robot.SetActiveManipulator(problem_desc['manipulator'])
         manip = robot.GetActiveManipulator()
         ik_solver = ik_module.IKSolver(manip, problem_desc['urdf_file'])
         # set initial grasp (needed for grasp set))
@@ -402,8 +404,18 @@ if __name__ == "__main__":
         object_data = afr_placement_mod.AFRRobotBridge.ObjectData(target_object, obj_occgrid)
         # create objective function
         now = time.time()
-        obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
-                                                  b_max=problem_desc['maximize_clearance'])
+        if 'objective_fn' in problem_desc:
+            if problem_desc['objective_fn'] == 'minimize_clearance':
+                obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
+                                                          b_max=False)
+            elif problem_desc['objective_fn'] == 'maximize_clearance':
+                obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
+                                                          b_max=True)
+            elif problem_desc['objective_fn'] == 'deep_shelf':
+                obj_fn = objectives_mod.DeepShelfObjective(target_object, occ_target_volume, obj_occgrid, b_max=False)
+        else:
+            obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
+                                                      b_max=False)
         rospy.logdebug("Creation of objective function took %fs" % (time.time() - now))
         # print "Check the placement regions!"
         # IPython.embed()
