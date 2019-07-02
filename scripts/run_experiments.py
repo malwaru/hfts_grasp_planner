@@ -154,40 +154,50 @@ def iros_even_simpler_mcts(yaml_template):
 
 
 def humanoids_baselines(yaml_template):
-    sampler_types = ['simple_mcts_sampler']
+    # sampler_types = ['simple_mcts_sampler']
     # objectives = ['False', 'True']
-    objectives = ['False']
-    relax_types = ['sub-binary']
-    # cs = [0.8]
-    cs = [0.5]
-    bodies = ['elmers_glue', 'crayola_24']
+    # objectives = ['False']
+    # relax_types = ['sub-binary']
+    bodies = ['elmers_glue', 'expo']
     envs = ['table_high_clutter', 'cabinet_high_clutter']
-    selector_types = ['naive', 'cache_global', 'cache_hierarchy']
-    grasp_ids = {'elmers_glue': [0, 1], 'crayola_24': [0]}
+    selector_types = ['naive', 'cache_global', 'cache_hierarchy', 'dummy']
+    grasp_ids = {'elmers_glue': [0, 1], 'expo': [0]}
 
     def yaml_gen():
-        for objective in objectives:
-            for env in envs:
-                for body in bodies:
-                    for stype in sampler_types:
-                        for rtype in relax_types:
-                            for c in cs:
-                                for seltype in selector_types:
-                                    for gid in grasp_ids[body]:
-                                        yaml_instance = yaml_template.replace('<ENV_NAME>', env)
-                                        yaml_instance = yaml_instance.replace('<MAX_CLEARANCE>', objective)
-                                        yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
-                                        yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
-                                        yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', stype)
-                                        yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
-                                        yaml_instance = yaml_instance.replace('<RELAX_TYPE>', rtype)
-                                        yaml_instance = yaml_instance.replace('<GRASP_ID>', str(gid))
-                                        yaml_instance = yaml_instance.replace('<C>', str(c))
-                                        exp_id = 'mg_mcts' + '_' + rtype + '_' + seltype + '_' + str(c)
-                                        yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
-                                        yield yaml_instance
-    num_batches = sum([len(sampler_types) * len(envs) * len(objectives) * len(relax_types) *
-                       len(cs) * len(selector_types) * len(grasps) for grasps in grasp_ids.values()])
+        for env in envs:
+            for body in bodies:
+                for seltype in selector_types:
+                    for gid in grasp_ids[body]:
+                        yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+                        yaml_instance = yaml_instance.replace('<OBJECTIVE_FN>', "maximize_clearance")
+                        yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+                        yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+                        yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', 'simple_mcts_sampler')
+                        yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
+                        yaml_instance = yaml_instance.replace('<RELAX_TYPE>', 'sub-binary')
+                        yaml_instance = yaml_instance.replace('<GRASP_ID>', str(gid))
+                        yaml_instance = yaml_instance.replace('<TIME_LIMIT>', '60.0')
+                        yaml_instance = yaml_instance.replace('<C>', '0.5')
+                        exp_id = 'mg_mcts' + '_' + seltype
+                        yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+                        yield yaml_instance
+        for seltype in selector_types:
+            yaml_instance = yaml_template.replace('<ENV_NAME>', 'cabinet_high_clutter')
+            yaml_instance = yaml_instance.replace('<OBJECTIVE_FN>', "deep_shelf")
+            yaml_instance = yaml_instance.replace('<BODY_NAME>', 'expo')
+            yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', '[-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]')
+            yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', 'simple_mcts_sampler')
+            yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
+            yaml_instance = yaml_instance.replace('<RELAX_TYPE>', 'sub-binary')
+            yaml_instance = yaml_instance.replace('<GRASP_ID>', '0')
+            yaml_instance = yaml_instance.replace('<TIME_LIMIT>', '180.0')
+            yaml_instance = yaml_instance.replace('<C>', '0.5')
+            exp_id = 'mg_mcts' + '_' + seltype
+            yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+            yield yaml_instance
+
+    num_batches = sum([len(envs) * len(selector_types) * len(grasps) for grasps in grasp_ids.values()]) \
+        + len(selector_types)
     return yaml_gen(), num_batches
 
 # def iros_mcts(yaml_template):
