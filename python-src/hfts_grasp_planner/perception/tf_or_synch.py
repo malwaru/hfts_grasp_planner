@@ -97,7 +97,7 @@ if __name__ == '__main__':
     rospy.init_node("TestORBridge")
     env = openravepy.Environment()
     env.SetViewer('qtcoin')
-    object_names = ['elmers_glue', 'sugar_box', 'mustard', 'cabinet', 'cracker_box']
+    object_names = ['elmers_glue', 'sugar_box', 'mustard', 'cabinet', 'cracker_box', 'expo']
     data_path = '/home/joshua/projects/placement_ws/src/hfts_grasp_planner/models/objects/'
     perception = TFSynchronizer(env, object_names, data_path, 'kinect2_rgb_optical_frame')
     perception.start()

@@ -31,7 +31,11 @@
       {id: 13, size: 0.0451, frame_id: mustard_13},
       {id: 14, size: 0.0451, frame_id: mustard_14},
       {id: 15, size: 0.03, frame_id: mustard_15},
-      {id: 16, size: 0.03, frame_id: mustard_16}]
+      {id: 16, size: 0.03, frame_id: mustard_16},
+      {id: 17, size: 0.02, frame_id: expo_17},
+      {id: 18, size: 0.02, frame_id: expo_18},
+      {id: 19, size: 0.02, frame_id: expo_19},
+      {id: 20, size: 0.02, frame_id: expo_20}]
     </rosparam>
   </node>
 
@@ -43,7 +47,8 @@
         "elmers_glue",
         "cracker_box",
         "mustard",
-        "sugar_box"]
+        "sugar_box",
+        "expo"]
     </rosparam>
   </node>
 </launch>
