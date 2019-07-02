@@ -412,7 +412,7 @@ if __name__ == "__main__":
                 obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
                                                           b_max=True)
             elif problem_desc['objective_fn'] == 'deep_shelf':
-                obj_fn = objectives_mod.DeepShelfObjective(target_object, occ_target_volume, obj_occgrid, b_max=False)
+                obj_fn = objectives_mod.DeepShelfObjective(target_object, occ_target_volume, obj_occgrid, b_max=True)
         else:
             obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
                                                       b_max=False)

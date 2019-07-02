@@ -186,7 +186,7 @@ def compute_placement_orientations(body, user_filters=None, min_normal_similarit
         -------
         list of PlacementOrientations
     """
-    # first compute the convex hull of the body
+    # first compute the center of mass and convex hull of the body
     links = body.GetLinks()
     assert(len(links) == 1)  # the object is assumed to be a rigid body
     meshes = [geom.GetCollisionMesh() for geom in links[0].GetGeometries()]
@@ -196,19 +196,22 @@ def compute_placement_orientations(body, user_filters=None, min_normal_similarit
     for mesh in meshes:
         vertices[offset:mesh.vertices.shape[0] + offset] = mesh.vertices
         offset += mesh.vertices.shape[0]
+    # we assume the center of mass is the geometric center
+    local_com = np.sum(vertices, axis=0) / vertices.shape[0]
+    vertices = vertices - local_com  # shift vertices to mass frame
     convex_hull = scipy.spatial.ConvexHull(vertices)  # TODO do we need to add any flags?
     assert (convex_hull.equations[:, -1] < 0.0).all()
     # merge faces
     clusters, _, _ = chull_utils.merge_faces(convex_hull, min_normal_similarity)
     placement_orientations = []
     # compute local center of mass
-    tf = body.GetTransform()
-    tf_inv = utils.inverse_transform(tf)
-    local_com = np.dot(tf_inv[:3, :3], body.GetCenterOfMass()) + tf_inv[:3, 3]
+    # tf = body.GetTransform()
+    # tf_inv = utils.inverse_transform(tf)
+    # local_com = np.dot(tf_inv[:3, :3], body.GetCenterOfMass()) + tf_inv[:3, 3]
     # retrieve clusters to store placement faces
     for (_, vertices) in clusters:
         plane = np.empty((len(vertices) + 1, 3), dtype=float)
-        plane[1:] = convex_hull.points[list(vertices)]
+        plane[1:] = convex_hull.points[list(vertices)] + local_com  # shift vertices back to object frame
         # compute the normal from all vertices to ensure its not off
         normalized_vertices = plane[1:] - np.mean(plane[1:], axis=0)
         _, _, v = np.linalg.svd(normalized_vertices)
@@ -248,6 +251,8 @@ if __name__ == "__main__":
         for link in body.GetLinks():
             for geom in link.GetGeometries():
                 geom.SetTransparency(0.8)
+        # body.SetTransform(np.eye(4))
+        tf = body.GetTransform()
         env.SetViewer('qtcoin')
         orientations = compute_placement_orientations(body)
         print "Showing %i placement planes" % len(orientations)
@@ -255,8 +260,8 @@ if __name__ == "__main__":
             vertices, indices = chull_utils.construct_plane_mesh(
                 orientation.placement_face[1:], orientation.placement_face[0])
             color = np.random.rand(3)
-            handle_mesh = env.drawtrimesh(vertices, indices, color)
-            ref_frame = np.dot(body.GetTransform(), orientation.reference_tf)
+            handle_mesh = env.drawtrimesh(np.dot(vertices, tf[:3, :3].transpose()) + tf[:3, 3], indices, color)
+            ref_frame = np.dot(tf, orientation.reference_tf)
             handle_frame = orpy.misc.DrawAxes(env, ref_frame)
             # handle_com = orpy.misc.DrawCircle(env, orientation.projected_com,
             #                                   orientation.placement_face[0], orientation.com_distance_2d)

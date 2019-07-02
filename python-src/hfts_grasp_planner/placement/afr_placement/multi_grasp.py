@@ -773,40 +773,40 @@ class MultiGraspAFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             lower, upper = manip_data.lower_limits + self.joint_limit_margin, manip_data.upper_limits - self.joint_limit_margin
             manip = manip_data.manip
             arm_configs = []
-            # with self.robot:
-            #     with self.object_data.kinbody:
-            inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
-            utils.set_grasp(manip, self.object_data.kinbody,
-                            inv_grasp_tf,
-                            cache_entry.solution.grasp_config)
-            reference_pose = np.dot(inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
-            manip.SetLocalToolTransform(reference_pose)
-            self.robot.SetActiveDOFs(manip.GetArmIndices())
-            # init jacobian descent
-            q_current = cache_entry.solution.arm_config
-            # iterate as long as the gradient is not None, zero or we are in collision or out of joint limits
-            # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
-            for it in xrange(self.max_iterations):
-                in_limits = (q_current >= lower).all() and (q_current <= upper).all()
-                if in_limits:
-                    q_grad = self._compute_gradient(cache_entry, q_current, manip_data, it != 0)
-                    grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
-                    if q_grad is None or grad_norm < self.grad_epsilon:
-                        break
-                    arm_configs.append(np.array(q_current))
-                    q_current -= self.step_size * q_grad / grad_norm  # update q_current
-                else:
-                    break
-            if len(arm_configs) > 1:  # first element is start configuration
-                self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
-                manip.SetLocalToolTransform(np.eye(4))
-                manip.GetRobot().Release(self.object_data.kinbody)
-                return arm_configs[1:]
-            # we failed in the first iteration, just set it back to what we started from
-            self._set_cache_entry_values(cache_entry, cache_entry.solution.arm_config, manip_data)
-            manip.SetLocalToolTransform(np.eye(4))
-            manip.GetRobot().Release(self.object_data.kinbody)
-            return []  # else return empty array
+            with self.robot:
+                with self.object_data.kinbody:
+                    inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
+                    utils.set_grasp(manip, self.object_data.kinbody,
+                                    inv_grasp_tf,
+                                    cache_entry.solution.grasp_config)
+                    reference_pose = np.dot(inv_grasp_tf, cache_entry.plcmnt_orientation.reference_tf)
+                    manip.SetLocalToolTransform(reference_pose)
+                    self.robot.SetActiveDOFs(manip.GetArmIndices())
+                    # init jacobian descent
+                    q_current = cache_entry.solution.arm_config
+                    # iterate as long as the gradient is not None, zero or we are in collision or out of joint limits
+                    # while q_grad is not None and grad_norm > self.epsilon and b_in_limits:
+                    for it in xrange(self.max_iterations):
+                        in_limits = (q_current >= lower).all() and (q_current <= upper).all()
+                        if in_limits:
+                            q_grad = self._compute_gradient(cache_entry, q_current, manip_data, it != 0)
+                            grad_norm = np.linalg.norm(q_grad) if q_grad is not None else 0.0
+                            if q_grad is None or grad_norm < self.grad_epsilon:
+                                break
+                            arm_configs.append(np.array(q_current))
+                            q_current -= self.step_size * q_grad / grad_norm  # update q_current
+                        else:
+                            break
+                    if len(arm_configs) > 1:  # first element is start configuration
+                        self._set_cache_entry_values(cache_entry, arm_configs[-1], manip_data)
+                        manip.SetLocalToolTransform(np.eye(4))
+                        manip.GetRobot().Release(self.object_data.kinbody)
+                        return arm_configs[1:]
+                    # we failed in the first iteration, just set it back to what we started from
+                    self._set_cache_entry_values(cache_entry, cache_entry.solution.arm_config, manip_data)
+                    manip.SetLocalToolTransform(np.eye(4))
+                    manip.GetRobot().Release(self.object_data.kinbody)
+                    return []  # else return empty array
 
         def _set_cache_entry_values(self, cache_entry, q, manip_data):
             """

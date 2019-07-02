@@ -18,9 +18,9 @@ gripper_information: ../../models/robots/yumi/gripper_information.yaml
 # grasp_file: grasps/new/elmers_glue.yaml
 # target_obj_file: ../crayola/crayola.kinbody.xml
 # grasp_file: grasps/new/crayola.yaml
-dmg_file: ../../models/objects/crayola_24/dmg_info.yaml
-target_obj_file: ../../models/objects/crayola_24/crayola_24.kinbody.xml
-grasp_file: grasps/new/crayola_24.yaml
+dmg_file: ../../models/objects/expo/dmg_info.yaml
+target_obj_file: ../../models/objects/expo/expo.kinbody.xml
+grasp_file: grasps/new/expo.yaml
 # target_obj_file: ../../models/objects/wine_glass/wine_glass.kinbody.xml
 # grasp_file: grasps/new/wine_glass.yaml
 grasp_id: 0
@@ -39,7 +39,7 @@ parameters:
   weight_obj_col: 0.15
   weight_contact: 0.15
   weight_objective: 0.25
-  weight_reachable: 0.1
+  weight_reachable: 0.2
   eps_xi: 1.0
   joint_limit_margin: 0.0001
   c: 0.8

@@ -3,6 +3,7 @@ import openravepy as orpy
 import numpy as np
 import hfts_grasp_planner.utils as utils
 import yaml
+import sys
 import argparse
 
 
@@ -35,8 +36,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     env = orpy.Environment()
-    env.Load(args.robot)
-    env.Load(args.body)
+    if not env.Load(args.robot):
+        print "Could not load robot: ", args.robot
+        orpy.RaveDestroy()
+        sys.exit(1)
+    if not env.Load(args.body):
+        print "Could not load body: ", args.body
+        orpy.RaveDestroy()
+        sys.exit(1)
     env.SetViewer('qtcoin')
 
     robot = env.GetRobots()[0]
