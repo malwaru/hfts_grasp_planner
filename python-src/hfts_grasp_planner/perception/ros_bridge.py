@@ -2,9 +2,81 @@
 
 # Import required Python code.
 import roslib, rospy, tf, tf_conversions, threading, numpy
+from sensor_msgs.msg import JointState
+from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal, JointTolerance
 import os
+import actionlib
 
-class TFSynchronizer:
+class TrajectoryActionBridge(object):
+    def __init__(self, action_name, pos_tol=0.02, vel_tol=0.02):
+        self._action_client = actionlib.SimpleActionClient(action_name, FollowJointTrajectoryAction)
+        self.pos_tol = pos_tol
+        self.vel_tol = vel_tol
+
+    def execute_ros_traj(self, ros_traj):
+        action_goal = FollowJointTrajectoryGoal()
+        action_goal.trajectory = ros_traj
+        for n in ros_traj.joint_names:
+            jt = JointTolerance()
+            jt.name = n
+            jt.position = self.pos_tol
+            jt.velocity = self.vel_tol
+            action_goal.path_tolerance.append(jt)
+        goal_stat = self._action_client.send_goal_and_wait(action_goal)
+        if goal_stat == actionlib.GoalStatus.SUCCEEDED:
+            rospy.loginfo("Trajectory execution succeeded")        
+        elif goal_stat == actionlib.GoalStatus.ABORTED:
+            rospy.logwarn("Trajectory execution aborted")
+        else:
+            rospy.logwarn("Unknown result %i" % goal_stat)
+
+
+class RobotStateSynchronizer(object):
+    def __init__(self, or_robot, topic_name, joint_name_map=None):
+        """
+            Create a new RobotStateSynchronizer for the given OpenRAVE robot.
+            ---------
+            Arguments
+            ---------
+            or_robot, orpy.Robot
+            topic_name, string - name of the joint states topic
+            joint_name_map(optional), dict - dictionary mapping joint names from ROS side
+                to joint names in OpenRAVE model
+        """
+        self._listener = rospy.Subscriber(topic_name, JointState, self._receive_joint_state)
+        self._robot = or_robot
+        self._joint_name_map = joint_name_map
+        self._joint_name_to_dof = {}
+        self._joint_name_to_dof = {j.GetName(): j.GetDOFIndex() for j in or_robot.GetJoints()}
+        self._active = True
+
+    def _receive_joint_state(self, msg):
+        if self._active:
+            indices = []
+            values = []
+            for i in range(len(msg.name)):
+                name = msg.name[i]
+                if self._joint_name_map is not None and name in self._joint_name_map:
+                    name = self._joint_name_map[name]
+                if name in self._joint_name_to_dof:
+                    indices.append(self._joint_name_to_dof[name])
+                    values.append(msg.position[i])
+                else:
+                    rospy.logdebug("Unknown joint %s" % name)
+            self._robot.SetDOFValues(values, indices)
+
+    def set_active(self, bactive):
+        """
+            Enable of disable robot state synchronization.
+            ---------
+            Arguments
+            ---------
+            bactive, bool - if True, enable, else disable
+        """
+        self._active = bactive
+
+
+class TFSynchronizer(object):
     def __init__(self, or_env, object_names, data_folder, tf_base_frame, wTb=None):
         """
             Create a new TFSynchronizer for the given OpenRAVE environment.
@@ -91,8 +163,7 @@ class TFSynchronizer:
             self._is_running = False
             self._thread.join()
 
-# Main function.
-if __name__ == '__main__':
+def test_tf():
     import openravepy, IPython
     rospy.init_node("TestORBridge")
     env = openravepy.Environment()
@@ -104,5 +175,17 @@ if __name__ == '__main__':
     IPython.embed()
     perception.end()
 
+def test_robot_state():
+    import openravepy, IPython
+    rospy.init_node("TestORBridge")
+    env = openravepy.Environment()
+    env.SetViewer('qtcoin')
+    env.Load("/home/joshua/projects/placement_ws/src/hfts_grasp_planner/models/robots/yumi/yumi.xml")
+    state_synch = RobotStateSynchronizer(env.GetRobots()[0], '/joint_states')
+    state_synch.set_active(True)
+    IPython.embed()
 
 
+# Main function.
+if __name__ == '__main__':
+    test_robot_state()
