@@ -1,4 +1,16 @@
 <launch>
+  <!-- launching the kinect -->
+  <include file="$(find kinect2_bridge)/launch/kinect2_bridge.launch">
+    <arg name="publish_tf" value="true"/>
+  </include>
+
+  <!-- launch camera tf publisher -->
+  <node name="robot_tf_publisher" pkg="camera_tag_calibration" type="calibration_tf_publisher" output="screen">
+    <param name="base_frame" value="world"/>
+    <param name="end_frame" value="kinect2_link"/>
+    <param name="file_name" value="/calibration/kinect2.txt"/>
+  </node>
+
   <node pkg="apriltags_ros" type="apriltag_detector_node" name="apriltag_detector" output="screen">
     <!-- Remap topic required by the node to custom topics -->
     <remap from="image_rect" to="/kinect2/hd/image_color_rect" />
