@@ -105,8 +105,6 @@ class DMGGraspSet(object):
             dmg_info_file, string - path to yaml file containing information to load dmg
             rot_weight, float - scaling factor of angles in radians for distance computation
         """
-        self._manip = manip
-        self._target_obj = target_obj
         self.dmg = dmg_module.DexterousManipulationGraph.loadFromYaml(dmg_info_file)
         self._rot_weight = rot_weight
         if type(gripper_info) is str:
@@ -127,7 +125,11 @@ class DMGGraspSet(object):
         assert(self._reference_finger is not None)
         # compute grasp set
         self._grasps = None  # int id to grasp
-        self._compute_grasps()
+        wTe = manip.GetEndEffectorTransform()
+        wTo = target_obj.GetTransform()
+        robot = manip.GetRobot()
+        config = robot.GetDOFValues(manip.GetGripperIndices())
+        self._compute_grasps(wTe, wTo, config)
 
     def __del__(self):
         self._my_gripper = None
@@ -147,6 +149,12 @@ class DMGGraspSet(object):
     def _check_grasp_validity(self, grasp):
         # with self._my_gripper:
         self._my_gripper.SetTransform(grasp.oTe)
+        min_limits, max_limits = self._my_gripper.GetDOFLimits()
+        bgreater = grasp.config >= min_limits
+        bsmaller = grasp.config <= max_limits
+        bin_limits = np.logical_and.reduce(bgreater) and np.logical_and.reduce(bsmaller)
+        if not bin_limits:
+            return False
         # TODO open the gripper a bit
         self._my_gripper.SetDOFValues(grasp.config)
         # TODO for more complex grippers we would also need to do self-collision checks
@@ -170,7 +178,6 @@ class DMGGraspSet(object):
         config = np.array([finger_dist / 2.0])
         eTf = self._compute_eTf(config)
         oTf = self.dmg.get_finger_tf(node_a, angle_a)
-        # TODO eTf changes as the finger configuration changes
         eTo = np.dot(eTf, utils.inverse_transform(oTf))
         return DMGGraspSet.Grasp(gid, eTo, config, dmg_info, parent, distance)
 
@@ -224,7 +231,7 @@ class DMGGraspSet(object):
                 edge_costs.append(self.dmg.get_angular_resolution() / 180.0 * np.pi * self._rot_weight)
         return neighbor_grasps, edge_costs
 
-    def _compute_grasps(self):
+    def _compute_grasps(self, wTe, wTo, config):
         """
             Explore the DMG to compute grasps than can be reached from the current grasp.
             Stores the resulting grasps in self._grasps
@@ -232,30 +239,25 @@ class DMGGraspSet(object):
         # self._my_env.SetViewer('qtcoin')
         self._grasps = []
         # set initial grasp first. This creates two grasps, the observed one and the closest one in the DMG
-        robot = self._manip.GetRobot()
-        with robot:
-            wTe = self._manip.GetEndEffectorTransform()
-            wTo = self._target_obj.GetTransform()
-            eTo = np.dot(utils.inverse_transform(wTe), wTo)
-            config = robot.GetDOFValues(self._manip.GetGripperIndices())
-            # add the observed initial grasp
-            observed_initial_grasp = DMGGraspSet.Grasp(len(self._grasps), eTo, config, None, None, 0.0)
-            self._grasps.append(observed_initial_grasp)
-            # now obtain the dmg info of the closest grasp in the dmg
-            # for this, first compute local position of finger
-            # TODO the closest DMG grasp may be invalid, in that case we should extend our search for more neighboring grasps
-            eTf = self._compute_eTf(config)
-            oTf = np.dot(utils.inverse_transform(eTo), eTf)
-            start_node, start_angle, bvalid = self.dmg.get_closest_node_angle(oTf)
-            if not bvalid:
-                rospy.logwarn("Initial grasp is not within the valid angular range of the closest DMG node!")
-            finger_dist = 2.0 * config[0]  # TODO this may be specific to Yumi
-            onode = self.dmg.get_opposite_node(start_node, start_angle, finger_dist)
-            if onode is None:
-                raise ValueError(
-                    "Could not retrieve initial DMG node for initial grasp. There is no opposing valid node.")
-            oangle = self.dmg.get_opposing_angle(start_node, start_angle, onode)
-            initial_dmg_info = (start_node, start_angle, onode, oangle)
+        eTo = np.dot(utils.inverse_transform(wTe), wTo)
+        # add the observed initial grasp
+        observed_initial_grasp = DMGGraspSet.Grasp(len(self._grasps), eTo, config, None, None, 0.0)
+        self._grasps.append(observed_initial_grasp)
+        # now obtain the dmg info of the closest grasp in the dmg
+        # for this, first compute local position of finger
+        # TODO the closest DMG grasp may be invalid, in that case we should extend our search for more neighboring grasps
+        eTf = self._compute_eTf(config)
+        oTf = np.dot(utils.inverse_transform(eTo), eTf)
+        start_node, start_angle, bvalid = self.dmg.get_closest_node_angle(oTf)
+        if not bvalid:
+            rospy.logwarn("Initial grasp is not within the valid angular range of the closest DMG node!")
+        finger_dist = 2.0 * config[0]  # TODO this may be specific to Yumi
+        onode = self.dmg.get_opposite_node(start_node, start_angle, finger_dist)
+        if onode is None:
+            raise ValueError(
+                "Could not retrieve initial DMG node for initial grasp. There is no opposing valid node.")
+        oangle = self.dmg.get_opposing_angle(start_node, start_angle, onode)
+        initial_dmg_info = (start_node, start_angle, onode, oangle)
         # create priority list storing tuples (distance, tie_breaker, dmg_info, parent)
         # distance is the minimal distance to the start node
         tb = 0  # tie breaker for heapq comparisons. See https://docs.python.org/2/library/heapq.html#priority-queue-implementation-notes
