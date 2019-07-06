@@ -52,7 +52,7 @@ GRIPPER_INFO_FILE = MODEL_FOLDER + '/robots/yumi/gripper_information.yaml'
 ROBOT_BASE_LINK = 'yumi_base_link'
 
 # Planning scene information
-ENV_FILE = MODEL_FOLDER + '/robots/yumi/yumi_kinect.xml'
+ENV_FILE = MODEL_FOLDER + '/environments/rpl_lab_experiment.xml'
 
 # ROS Topics and service names
 YUMI_TRAJ_ACTION_LEFT = '/yumi/joint_traj_vel_controller_l/follow_joint_trajectory'
