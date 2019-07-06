@@ -339,6 +339,42 @@ class DMGGraspSet(object):
         assert(running_idx not in blacklist)
         return self._grasps[running_idx]
 
+    def return_inhand_path(self, gid):
+        """
+            Return the in-hand path from the grasp with given id to the initial DMG grasp (id=1).
+            ---------
+            Arguments
+            ---------
+            gid, int - id of the grasp
+            -------
+            Returns
+            -------
+            path, tuple (translations, rotations) - translations is a sequence of np.arrays of shape (3,) describing 
+                translational pushes, rotations is a sequence of floats (radians) describing rotational pushes
+        """
+        if gid == 0 or gid == 1 or gid > len(self._grasps):
+            return [], []
+        translations = []
+        rotations = []
+        current_grasp = self._grasps[gid]
+        current_pos = self.dmg.get_position(current_grasp.dmg_info[0])
+        current_angle = current_grasp.dmg_info[1]
+        parent_grasp = current_grasp.parent
+        while parent_grasp.gid != 0:  # do this until the parent grasp is the initial one
+            parent_pos = self.dmg.get_position(parent_grasp.dmg_info[0])
+            parent_angle = parent_grasp.dmg_info[1]
+            delta_pos = current_pos - parent_pos
+            delta_angle = self.dmg.get_delta_angle(parent_angle, current_angle)
+            translations.append(delta_pos)
+            rotations.append(delta_angle / 180.0 * np.pi)
+            current_grasp = parent_grasp
+            parent_grasp = parent_grasp.parent
+            current_pos = parent_pos
+            current_angle = parent_angle
+        translations.reverse()
+        rotations.reverse()
+        return translations, rotations
+
 
 class HierarchicalGraspCache(object):
     """

@@ -551,6 +551,19 @@ class DexterousManipulationGraph():
             neighbor_angles.append(upper_angle)
         return neighbor_angles
 
+    def get_delta_angle(self, angle1, angle2):
+        """
+            Return the rotation required to move from angle1 to angle2, assuming that
+            both angles are adjacent.
+        """
+        if abs(angle1 - angle2) <= self._angle_res:
+            return angle2 - angle1
+        if angle1 == 0:
+            return -self._angle_res
+        elif angle1 == 360 - self._angle_res:
+            return self._angle_res
+        raise ValueError("Invalid adjacent angles: %i, %i" % (angle1, angle2))
+
     def get_shortest_path(self, start, goal):
         '''finds the shortest path in only one component'''
         # sanity check on the component (if they are different no in-hand path can be found)

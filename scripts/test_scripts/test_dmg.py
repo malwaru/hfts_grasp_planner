@@ -1,6 +1,7 @@
 #! /usr/bin/python
 
 import hfts_grasp_planner.dmg.dmg_class as dmg_module
+import hfts_grasp_planner.dmg.dmg_path as dmg_path_module
 import hfts_grasp_planner.placement.afr_placement.multi_grasp as mg_mod
 from hfts_grasp_planner.utils import inverse_transform
 import openravepy as orpy
@@ -30,7 +31,7 @@ if __name__ == "__main__":
     robot = env.GetRobots()[0]
     manip_name = robot.GetActiveManipulator().GetName()
     manip = robot.GetManipulator(manip_name)
-    target_obj = env.GetKinBody('elmers_washable_no_run_school_glue')
+    target_obj = env.GetKinBody('elmers_glue')
     obj_tf = np.array([[0.,  0., -1.,  0.57738787],
                        [-0.96246591, -0.27140261,  0.,  0.43454561],
                        [-0.27140261,  0.96246591,  0.,  0.74675405],
@@ -45,10 +46,10 @@ if __name__ == "__main__":
     # wTf_r = np.dot(robot.GetLink(finger_info[manip_name][0]).GetTransform(), finger_info[manip_name][1])
     # wTf_l = np.dot(robot.GetLink('gripper_r_finger_l').GetTransform(), finger_info[manip_name][1])
     env.SetViewer('qtcoin')
-    grasp_set = mg_mod.DMGGraspSet(manip, target_obj, 'models/robots/yumi/yumi_gripper_r.robot.xml',
+    grasp_set = mg_mod.DMGGraspSet(manip, target_obj,
                                    'models/objects/elmers_glue/elmers_glue.kinbody.xml',
-                                   'models/robots/yumi/finger_information.yaml',
+                                   'models/robots/yumi/gripper_information.yaml',
                                    'models/objects/elmers_glue/dmg_info.yaml')
-    dmg = grasp_set.dmg
+    # dmg = grasp_set.dmg
     # grasp_set._my_env.SetViewer('qtcoin')
     IPython.embed()
