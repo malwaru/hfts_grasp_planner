@@ -3,7 +3,7 @@
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import std_msgs.msg as std_msgs
 import hfts_grasp_planner.perception.ros_bridge as ros_bridge
-from hfts_grasp_planner.utils import set_body_alpha
+from hfts_grasp_planner.utils import set_body_alpha, set_grasp
 from hfts_grasp_planner.ik_solver import IKSolver
 from hfts_grasp_planner.placement.afr_placement.multi_grasp import DMGGraspSet
 import openravepy as orpy
@@ -44,7 +44,7 @@ TARGET_OBJ_FILE = MODEL_FOLDER + '/objects/' + TARGET_OBJ_NAME + '/expo.kinbody.
 DMG_INFO_FILE = MODEL_FOLDER + '/objects/' + TARGET_OBJ_NAME + '/dmg_info.yaml'
 
 # Perception information
-PERCEIVED_OBJ_NAMES = ['cabinet', 'expo', 'cracker_box', 'mustard', 'elmers_glue', 'sugar_box']
+PERCEIVED_OBJ_NAMES = ['expo', 'cracker_box', 'mustard', 'elmers_glue', 'sugar_box']
 
 # Robot information
 ROBOT_URDF = MODEL_FOLDER + '/robots/yumi/yumi.urdf'
@@ -52,7 +52,7 @@ GRIPPER_INFO_FILE = MODEL_FOLDER + '/robots/yumi/gripper_information.yaml'
 ROBOT_BASE_LINK = 'yumi_base_link'
 
 # Planning scene information
-ENV_FILE = MODEL_FOLDER + '/robots/yumi/yumi_kinect.xml'
+ENV_FILE = MODEL_FOLDER + '/environments/rpl_lab_experiment.xml'
 
 # ROS Topics and service names
 YUMI_TRAJ_ACTION_LEFT = '/yumi/joint_traj_vel_controller_l/follow_joint_trajectory'
@@ -84,10 +84,10 @@ class MotionPlannerWrapper(object):
 
     def __init__(self, robot, urdf_file, action_names, vel_factor=0.05):
         self._real_robot = robot 
-        # self._real_robot.Enable(False)
         self._env = robot.GetEnv()
         self._robot_clone = create_robot_clone(robot.GetEnv(), robot.GetName())
-        self._robot_clone.Enable(False)
+        self._real_robot.Enable(False)
+        # self._robot_clone.Enable(False)
         self._planners = {}
         self._ik_solvers = {}
         self._action_interfaces = {}
@@ -124,6 +124,12 @@ class MotionPlannerWrapper(object):
         self._robot_clone.SetActiveDOFs(manip_dofs)
         self._robot_clone.SetActiveManipulator(manip_name)
         start_config = self._real_robot.GetDOFValues(manip_dofs)
+        with self._real_robot, self._robot_clone:
+            self._real_robot.Enable(True)
+            self._robot_clone.Enable(False)
+            if self._env.CheckCollision(self._real_robot) or self._real_robot.CheckSelfCollision():
+                rospy.logerr("Can not plan anywhere. Start configuration in collision")
+                return None
         if target_config is None:
             if target_pose is None:
                 target_config = self._robot_clone.GetActiveDOFValues()
@@ -156,7 +162,7 @@ class MotionPlannerWrapper(object):
         if bblock:
             duration = traj.GetDuration()
             rospy.loginfo("Sleeping for %fs for trajectory to finish" % duration)
-            rospy.sleep(duration)
+            rospy.sleep(duration + 1.0)
             # check now whether we reached our goal
             target_config = np.array(ros_traj.points[-1].positions)
             arm_indices = self._real_robot.GetManipulator(manip_name).GetArmIndices()
@@ -210,7 +216,11 @@ def create_grasp_set(robot, mplanner, manip_name):
     # first place the object in robot hand
     rospy.loginfo("Please place the object in the gripper of %s and press enter" % manip_name)
     raw_input()
+    # grasp
     mplanner.set_gripper_effort(manip_name, SQUEEZE_EFFORT)
+    # disable the target object for collision
+    target_obj = robot.GetEnv().GetKinBody(TARGET_OBJ_NAME)
+    target_obj.Enable(False)
     target_config = DETECT_GRASP_CONFIGS[manip_name]
     traj = mplanner.plan(manip_name, target_config=target_config)
     if traj is None:
@@ -224,8 +234,10 @@ def create_grasp_set(robot, mplanner, manip_name):
     rospy.sleep(0.1)
     # now create the grasp set from the observed transformation
     manip = robot.GetManipulator(manip_name)
-    target_obj = robot.GetEnv().GetKinBody(TARGET_OBJ_NAME)
-    return DMGGraspSet(manip, target_obj, TARGET_OBJ_FILE, GRIPPER_INFO_FILE, DMG_INFO_FILE)
+    grasp_set = DMGGraspSet(manip, target_obj, TARGET_OBJ_FILE, GRIPPER_INFO_FILE, DMG_INFO_FILE)
+    initial_grasp = grasp_set.get_grasp(0)
+    set_grasp(manip, target_obj, initial_grasp.eTo, initial_grasp.config)
+    return grasp_set
 
 if __name__ == "__main__":
     try:
