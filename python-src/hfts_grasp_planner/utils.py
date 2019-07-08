@@ -418,7 +418,7 @@ def set_grasp(manip, body, inv_grasp_tf, hand_config):
         ---------
         manip, OpenRAVE Manipulator - manipulator that should grasp the body
         body, OpenRAVE Kinbody - body to grasp
-        inv_grasp_tf, np.array of shape (4,4) - object pose in end-effector frame
+        inv_grasp_tf, np.array of shape (4,4) - object pose in end-effector frame (eTo)
         hand_config, np.arrayf of shape (h,) - hand configuration with h = manip.GetGripperDOF()
     """
     robot = manip.GetRobot()

@@ -349,14 +349,16 @@ class DMGGraspSet(object):
             -------
             Returns
             -------
-            path, tuple (translations, rotations) - translations is a sequence of np.arrays of shape (3,) describing 
-                translational pushes, rotations is a sequence of floats (radians) describing rotational pushes
+            grasps, list of Grasps - the grasps that the path transitions through (length n + 1)
+            translations, list of np.arrays of shape (3,) describing translational pushes (length n)
+            rotations, list of floats (radians) describing rotational pushes (length n)
         """
         if gid == 0 or gid == 1 or gid > len(self._grasps):
             return [], []
         translations = []
         rotations = []
         current_grasp = self._grasps[gid]
+        grasps = [current_grasp]
         current_pos = self.dmg.get_position(current_grasp.dmg_info[0])
         current_angle = current_grasp.dmg_info[1]
         parent_grasp = current_grasp.parent
@@ -367,13 +369,41 @@ class DMGGraspSet(object):
             delta_angle = self.dmg.get_delta_angle(parent_angle, current_angle)
             translations.append(delta_pos)
             rotations.append(delta_angle / 180.0 * np.pi)
+            grasps.append(parent_grasp)
             current_grasp = parent_grasp
             parent_grasp = parent_grasp.parent
             current_pos = parent_pos
             current_angle = parent_angle
         translations.reverse()
         rotations.reverse()
-        return translations, rotations
+        grasps.reverse()
+        return grasps, translations, rotations
+
+    def return_pusher_path(self, gid):
+        """
+            Return a list of pushes that transfer the object from the initial grasp to
+            the grasp with id gid.
+            ---------
+            Arguments
+            ---------
+            gid, int - id of the grasp to reach
+            -------
+            Returns
+            -------
+            gras_path, a list of Grasps that the pushing path transitions through
+            pushes, a list of tuples (start, end, rot_center), 
+                where start and end are np.array of shape (4, 4) representing the initial and final pose of the pusher
+                rot_center is either None or a np.array of shape (3,) denoting the center of rotation for a rotational push
+        """
+        if gid > len(self._grasps) or len(self._grasps) <= 1:
+            return None
+        # get initial grasp on dmg first
+        start_grasp = self._grasps[1]
+        grasp_path, translations, rotations = self.return_inhand_path(gid)
+        finger_positions = np.empty((2, 3))
+        finger_positions[0] = self.dmg.get_position(start_grasp.dmg_info[0])
+        finger_positions[1] = self.dmg.get_position(start_grasp.dmg_info[2])
+        return grasp_path, self.dmg.convert_path((translations, rotations), start_grasp.eTo, finger_positions)
 
 
 class HierarchicalGraspCache(object):
