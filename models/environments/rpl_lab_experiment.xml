@@ -20,7 +20,7 @@
     </KinBody>
 
     <KinBody name="cabinet">
-        <Translation>0.03866   0.708   -0.46</Translation>
+        <Translation>0.0682 0.7704911828041077 -0.587</Translation>
         <RotationAxis>0 0 1 0</RotationAxis>
         <Body type="static">
             <Geom type="trimesh">
