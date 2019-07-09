@@ -178,7 +178,7 @@ class IKSolver(object):
                                                       z=pose_in_base[2, 3],
                                                       rx=quat[1], ry=quat[2],
                                                       rz=quat[3], rw=quat[0],
-                                                      **tol)
+                                                      **kwargs)
                     if sol is not None:
                         np_sol = np.array(sol)
                         in_limits = np.logical_and.reduce(np.logical_and(

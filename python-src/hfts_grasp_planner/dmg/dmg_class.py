@@ -9,6 +9,7 @@ from stl import mesh
 from mpl_toolkits import mplot3d
 import scipy.spatial
 import hfts_grasp_planner.external.transformations as transformations
+import hfts_grasp_planner.dmg.dmg_path as dmg_path_module
 
 
 class DexterousManipulationGraph():
@@ -25,19 +26,18 @@ class DexterousManipulationGraph():
         self._node_to_angle_intervals = None
         self._supervoxel_angle_to_angular_component = None
         self._angle_res = None
-
         # data structures for the nearest neighbor
         self._kdtree = None
         self._idx_to_supervoxel = None
         self._supervoxel_to_angular_component = None
-
         # stuff for opposite finger component
         self._caster = None
         self._mesh_scale = 1.0
         self._object_shape_file = None
-
         # length of the gripper's finger
         self._finger_length = 0.04  # Yumi's finger
+        # utility to compute push paths
+        self._push_path_computer = None
 
     @staticmethod
     def loadFromYaml(yaml_file):
@@ -109,6 +109,7 @@ class DexterousManipulationGraph():
         self._mesh_scale = scale
         # the scale argument does not work
         self._caster = pycaster.rayCaster.fromSTL(filename, scale=1.0)
+        self._push_path_computer = dmg_path_module.DMGPushPath(filename)
 
     def read_nodes(self, filename):
         '''reads the Cartesian positions of all the nodes'''
@@ -724,3 +725,28 @@ class DexterousManipulationGraph():
         '''use to visualize the figures'''
         plt.draw()
         plt.show(block=block)
+
+    def convert_path(self, inhand_path, initial_grasp_pose, fingertip_contact):
+        """
+            Convert a given inhand path into a sequence of pushing poses for the second end-effector.
+            An inhand path is a sequence of translations and rotations. A translation is a directional
+            vector in the original object frame. A rotation is an angle in radians around the normal
+            at the fingertip contact.
+            ---------
+            Arguments
+            ---------
+            inhand_path, tuple (translations, rotations), 
+                where translations is a list of np.arrays of shape (3,)
+                rotations is a list of floats  - Both lists are assumed to have the same length
+            initial_grasp_pose, np.array of shape (4, 4) - the pose of the grasping gipper in the original object frame oTe 
+            fingertip_contacts, np.array of shape (2, 3) - the initial positions of the figertips in the original object frame
+            -------
+            Returns
+            -------
+            pushes, a list of tuples (start, end, rot_center), 
+                where start and end are np.array of shape (4, 4) representing the initial and final pose of the pusher
+                rot_center is either None or a np.array of shape (3,) denoting the center of rotation for a rotational push
+        """
+        if self._push_path_computer is None:
+            raise RuntimeError("Could not convert path. Object model not initialized.")
+        return self._push_path_computer.convert_path(inhand_path, initial_grasp_pose, fingertip_contact)
