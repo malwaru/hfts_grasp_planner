@@ -168,10 +168,13 @@ class DMGPushPath():
 
         pusher_poses = []
 
-        self._gripper_to_fingertip = np.eye(4)
-        self._gripper_to_fingertip[2, 3] = - \
-            np.linalg.norm(fingertip_middle_point - current_object_to_gripper[0:3, 3:4].T[0])
-        self._fingertip_to_gripper = np.linalg.inv(self._gripper_to_fingertip)
+        self._fingertip_to_gripper = np.eye(4)
+        self._fingertip_to_gripper[:3, 3] = np.dot(
+            current_object_to_gripper[:3, :3], fingertip_middle_point) + current_object_to_gripper[:3, 3]
+        self._gripper_to_fingertip = np.linalg.inv(self._fingertip_to_gripper)
+        # self._gripper_to_fingertip[2, 3] = - \
+        #     np.linalg.norm(fingertip_middle_point - current_object_to_gripper[:3, 3].T[0])
+        # self._fingertip_to_gripper = np.linalg.inv(self._gripper_to_fingertip)
 
         # the first rotation
         # if len(rotations) > 0:
@@ -210,10 +213,13 @@ class DMGPushPath():
 
             # after a translation comes a rotation
             if abs(r) > 0.00001:
-                pose1, pose2 = self.rotationPushPoses(r, current_object_to_gripper,
+                pose1, pose2 = self.rotationPushPoses(-r, current_object_to_gripper,
                                                       current_grasp_pose, current_fingertip_contacts)
                 if pose1 is not None:
-                    pusher_poses.append((pose1, pose2, np.mean(current_fingertip_contacts, axis=0)))
+                    # rot_center = np.mean(current_fingertip_contacts, axis=0)
+                    # rot_center = np.dot(current_object_to_gripper[:3, :3],
+                    #                     rot_center) + current_object_to_gripper[:3, 3]
+                    pusher_poses.append((pose1, pose2, self._fingertip_to_gripper[:3, 3]))
                 # the fingertip contacts do not vary, but the pose does (around the x axis)
                 x_axis = np.array([1, 0, 0])
                 current_object_to_fingertip = np.dot(self._gripper_to_fingertip, current_object_to_gripper)
