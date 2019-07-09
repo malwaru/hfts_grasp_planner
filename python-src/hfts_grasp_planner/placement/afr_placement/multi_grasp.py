@@ -403,7 +403,7 @@ class DMGGraspSet(object):
         finger_positions = np.empty((2, 3))
         finger_positions[0] = self.dmg.get_position(start_grasp.dmg_info[0])
         finger_positions[1] = self.dmg.get_position(start_grasp.dmg_info[2])
-        return grasp_path, self.dmg.convert_path((translations, rotations), start_grasp.eTo, finger_positions)
+        return grasp_path, self.dmg.convert_path((translations, rotations), start_grasp.oTe, finger_positions)
 
 
 class HierarchicalGraspCache(object):

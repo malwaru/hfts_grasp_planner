@@ -1,7 +1,7 @@
 #! /usr/bin/python
-
 import hfts_grasp_planner.dmg.dmg_class as dmg_module
 import hfts_grasp_planner.dmg.dmg_path as dmg_path_module
+import hfts_grasp_planner.dmg.dual_arm_pushing as dmg_pushing_module
 import hfts_grasp_planner.placement.afr_placement.multi_grasp as mg_mod
 from hfts_grasp_planner.utils import inverse_transform
 import openravepy as orpy
@@ -26,11 +26,25 @@ def load_finger_tf(filename):
 
 if __name__ == "__main__":
     env = orpy.Environment()
+    urdf_file = 'models/robots/yumi/yumi.urdf'
     env.Load('models/environments/table_low_clutter.xml')
     env.Load('models/objects/elmers_glue/elmers_glue.kinbody.xml')
     robot = env.GetRobots()[0]
-    manip_name = robot.GetActiveManipulator().GetName()
-    manip = robot.GetManipulator(manip_name)
+    manips = robot.GetManipulators()
+    grasping_manip = manips[0]
+    pushing_manip = manips[1]
+    # load pushing tf
+    with open('models/robots/yumi/gripper_information.yaml', 'r') as info_file:
+        gripper_info = yaml.load(info_file)
+        pushing_tf_dict = gripper_info[pushing_manip.GetName()]['pushing_tf']
+        wTr = robot.GetLink(pushing_tf_dict['reference_link']).GetTransform()
+        pose = np.empty(7)
+        pose[:4] = pushing_tf_dict['rotation']
+        pose[4:] = pushing_tf_dict['translation']
+        rTp = orpy.matrixFromPose(pose)
+        wTp = np.dot(wTr, rTp)
+        wTe = pushing_manip.GetEndEffector().GetTransform()
+        eTp = np.dot(inverse_transform(wTe), wTp)
     target_obj = env.GetKinBody('elmers_glue')
     obj_tf = np.array([[0.,  0., -1.,  0.57738787],
                        [-0.96246591, -0.27140261,  0.,  0.43454561],
@@ -46,10 +60,13 @@ if __name__ == "__main__":
     # wTf_r = np.dot(robot.GetLink(finger_info[manip_name][0]).GetTransform(), finger_info[manip_name][1])
     # wTf_l = np.dot(robot.GetLink('gripper_r_finger_l').GetTransform(), finger_info[manip_name][1])
     env.SetViewer('qtcoin')
-    grasp_set = mg_mod.DMGGraspSet(manip, target_obj,
+    grasp_set = mg_mod.DMGGraspSet(grasping_manip, target_obj,
                                    'models/objects/elmers_glue/elmers_glue.kinbody.xml',
                                    'models/robots/yumi/gripper_information.yaml',
                                    'models/objects/elmers_glue/dmg_info.yaml')
-    # dmg = grasp_set.dmg
-    # grasp_set._my_env.SetViewer('qtcoin')
+    pushing_computer = dmg_pushing_module.DualArmPushingComputer(robot, grasping_manip, pushing_manip, urdf_file, eTp)
+    grasp_path, push_path = grasp_set.return_pusher_path(3)
+    inhand_config = np.array([1.21007779e+00, -1.57321833e+00, -1.30163680e+00,  9.27653204e-01,
+                              -1.00904288e+00,  7.37689903e-01,  2.51809821e-09])
+    robot.SetDOFValues(inhand_config, grasping_manip.GetArmIndices())
     IPython.embed()
