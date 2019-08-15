@@ -166,6 +166,7 @@ class AnyTimePlacementPlanner(object):
         Parameters:
             num_goal_samples, int  - number of goal samples to query for in every iteration
             num_goal_iterations, int  - max number of iterations the goal sampler can run in each iteration
+            do_local_opt, bool - if True, do local optimization, else not
             vel_scale, float - percentage of max velocity
             mp_timeout, float - computation time each motion planner has in each iteration
     """
@@ -193,7 +194,7 @@ class AnyTimePlacementPlanner(object):
         self.goal_sampler = goal_sampler
         self._motion_planners = {}  # store separate motion planner for each manipulator
         self._params = {"num_goal_samples": 2, "num_goal_iterations": 50, "vel_scale": 0.1,
-                        "mp_timeout": 5.0}
+                        "mp_timeout": 5.0, "do_local_opt": True}
         for manip in manips:
             self._motion_planners[manip.GetName()] = RedirectableOMPLPlanner(mplanner, manip)
         self._robot = manips[0].GetRobot()
@@ -252,7 +253,10 @@ class AnyTimePlacementPlanner(object):
                             # by invariant a newly reached goal should always have better objective
                             assert(best_solution is None or
                                    best_solution[1].objective_value < reached_goal.objective_value)
-                            traj, improved_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
+                            if self._params["do_local_opt"]:
+                                traj, improved_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
+                            else:
+                                traj, improved_goal = traj, reached_goal
                             self.solutions.append((traj, improved_goal))
                             best_solution = (traj, improved_goal)
                             rospy.logdebug("Found new solution - it has objective value %f" %

@@ -125,8 +125,8 @@ def iros_mcts_simple(yaml_template):
 
 def iros_even_simpler_mcts(yaml_template):
     sampler_types = ['simple_mcts_sampler']
-    # objectives = ['False', 'True']
-    objectives = ['True']
+    objectives = ['False', 'True']
+    # objectives = ['True']
     relax_types = ['sub-binary']
     # cs = [0.8]
     cs = [0.5]

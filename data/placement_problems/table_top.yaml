@@ -1,12 +1,12 @@
 or_env: ../environments/table_high_clutter.xml
 urdf_file: ../../models/yumi/yumi.urdf
 gripper_file: ../../models/yumi/yumi_gripper_l.robot.xml
-sdf_file: ../sdfs/table_high_clutter
-occ_file: ../occupancy_grids/table_high_clutter
-robot_occtree: ../robot_occtrees/Yumi
-robot_occgrid: ../robot_occgrids/Yumi
+sdf_file: ../generated/sdfs/table_high_clutter
+occ_file: ../generated/occupancy_grids/table_high_clutter
+robot_occtree: ../generated/robot_occtrees/Yumi
+robot_occgrid: ../generated/robot_occgrids/Yumi
 robot_ball_desc: ../../models/yumi/ball_description.yaml
-reachability_path: ../gnat_reachability/
+reachability_path: ../generated/gnat_reachability/
 data_path: ../
 urdf_path: object/
 robot_name: Yumi
@@ -45,5 +45,6 @@ parameters:
   num_goal_iterations: 24
   mp_timeout: 5.0
   sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random
+  do_local_opt: False
   motion_planner: real
   proj_type: None

@@ -269,6 +269,7 @@ def plan_for_stats(num_iterations, offset, robot_data, object_data, scene_sdf, r
             planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips,
                                                                   num_goal_samples=parameters["num_goal_samples"],
                                                                   num_goal_iterations=parameters["num_goal_iterations"],
+                                                                  do_local_opt=parameters["do_local_opt"],
                                                                   mp_timeout=parameters["mp_timeout"],
                                                                   stats_recorder=planner_stats)
         goal_stats.reset()
@@ -475,6 +476,7 @@ if __name__ == "__main__":
             motion_planner = anytime_planner_mod.AnyTimePlacementPlanner(goal_sampler, manips,
                                                                          num_goal_samples=parameters["num_goal_samples"],
                                                                          num_goal_iterations=parameters["num_goal_iterations"],
+                                                                         do_local_opt=parameters["do_local_opt"],
                                                                          mp_timeout=parameters["mp_timeout"],
                                                                          stats_recorder=planner_stats)
             dummy_planner = anytime_planner_mod.DummyPlanner(goal_sampler, num_goal_samples=parameters["num_goal_samples"],
