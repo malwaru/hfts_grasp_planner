@@ -7,13 +7,15 @@
 
 namespace placement {
 namespace mp {
+    typedef std::vector<double> Config;
+
     class MultiGraspMP {
     public:
         struct Grasp {
             unsigned int id;
             OpenRAVE::geometry::RaveVector<double> pos;
             OpenRAVE::geometry::RaveVector<double> quat;
-            std::vector<double> gripper_values;
+            Config gripper_values;
 
             std::string print() const
             {
@@ -32,7 +34,7 @@ namespace mp {
         struct Goal {
             unsigned int id;
             unsigned int grasp_id;
-            std::vector<double> config;
+            Config config;
             std::string print() const
             {
                 std::stringstream ss;
@@ -46,7 +48,7 @@ namespace mp {
                 return ss.str();
             }
         };
-        typedef std::vector<std::vector<double>> WaypointPath;
+        typedef std::vector<Config> WaypointPath;
         typedef std::shared_ptr<WaypointPath> WaypointPathPtr;
         virtual ~MultiGraspMP() = 0;
         virtual void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit = 0.0f) = 0;
