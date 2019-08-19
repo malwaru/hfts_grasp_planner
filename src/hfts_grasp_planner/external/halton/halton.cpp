@@ -6,7 +6,7 @@
 
 using namespace std;
 
-#include "halton.hpp"
+#include <hfts_grasp_planner/external/halton/halton.hpp>
 
 //****************************************************************************80
 

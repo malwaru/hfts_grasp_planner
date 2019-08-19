@@ -27,8 +27,11 @@ openrave_plugin(ormultigraspmp
   ORMultiGraspMPPlugin.cpp
   MultiGraspMP.cpp
   MultiGraspBiRRT.cpp
+  mgsearch/MultiGraspRoadmap.cpp
+  Astar.cpp
   ompl/ORRedirectableBiRRT.cpp
   ../../external/ompl/geometric/RedirectableRRTConnect.cpp
+  ../../external/halton/halton.cpp
 )
 
 set_target_properties(ormultigraspmp PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS}" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")

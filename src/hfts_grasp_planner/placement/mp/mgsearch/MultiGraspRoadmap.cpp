@@ -88,7 +88,7 @@ Roadmap::NodePtr Roadmap::addGoalNode(const MultiGraspMP::Goal& goal)
 
 Roadmap::NodePtr Roadmap::addNode(const Config& config)
 {
-    NodePtr new_node = std::make_shared<Node>(_node_id_counter++, config);
+    NodePtr new_node = std::shared_ptr<Node>(new Node(_node_id_counter++, config));
     _nn.add(new_node);
     return new_node;
 }
@@ -157,7 +157,7 @@ bool Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id)
         cost = _cost_computer->cost(node_a->config, node_b->config, grasp_id);
         edge->conditional_costs.insert(std::make_pair(grasp_id, cost));
     } else {
-        cost = iter.second;
+        cost = iter->second;
     }
     return not std::isinf(cost);
 }

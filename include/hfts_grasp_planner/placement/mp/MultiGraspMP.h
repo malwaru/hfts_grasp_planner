@@ -51,10 +51,28 @@ namespace mp {
         typedef std::vector<Config> WaypointPath;
         typedef std::shared_ptr<WaypointPath> WaypointPathPtr;
         virtual ~MultiGraspMP() = 0;
+        /**
+         * Plan (start or continue) until either a timeout is reached or some new solutions were found.
+         * @param new_paths - new solutions are stored in this vector
+         * @param time_limit - maximal planning duration, if supported
+         */
         virtual void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit = 0.0f) = 0;
+        /**
+         * In case the underlying planner is run asynchronously, this function notifies the planner
+         * to pause planning until either plan is called again, or the planner is desctructed.
+         */
         virtual void pausePlanning() = 0;
+        /**
+         * Add a new grasp to plan for.
+         */
         virtual void addGrasp(const Grasp& grasp) = 0;
+        /**
+         * Add a new goal to plan to.
+         */
         virtual void addGoal(const Goal& goal) = 0;
+        /**
+         * Remove the goals with the given IDs.
+         */
         virtual void removeGoals(const std::vector<unsigned int>& goal_ids) = 0;
         // virtual void getReachedGoals(const std::vector<unsigned int>& goals, bool new_only) const = 0;
     };

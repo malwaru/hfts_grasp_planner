@@ -1,10 +1,10 @@
+#pragma once
 #include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
 #include <vector>
 
 namespace placement {
 namespace mp {
     namespace mgsearch {
-
         class StateValidityChecker {
         public:
             virtual ~StateValidityChecker() = 0;

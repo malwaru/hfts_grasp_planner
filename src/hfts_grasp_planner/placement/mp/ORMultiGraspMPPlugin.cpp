@@ -1,9 +1,12 @@
+#include <hfts_grasp_planner/placement/mp/Astar.h>
 #include <hfts_grasp_planner/placement/mp/MultiGraspBiRRT.h>
 #include <hfts_grasp_planner/placement/mp/ORMultiGraspMPPlugin.h>
 #include <iostream>
 
 #define PARALLEL_BIRRT "parallelmgbirrt"
 #define SEQUENTIAL_BIRRT "sequentialmgbirrt"
+#define ASTAR "astar"
+#define LAZY_ASTAR "lazyastar"
 
 using namespace OpenRAVE;
 using namespace placement::mp;
@@ -31,7 +34,7 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
         " idX, int - ids of goals to which a new solution was found\n"
         "The actual paths can be retrieved calling getPath(..).");
     RegisterCommand("pausePlanning", boost::bind(&ORMultiGraspMPPlugin::pausePlanning, this, _1, _2),
-        "In casse the underlying planner is run asynchronously, this function notifies"
+        "In case the underlying planner is run asynchronously, this function notifies"
         "the planner to pause plannung until either plan is called again, or the planner is destructed.");
     RegisterCommand("clear", boost::bind(&ORMultiGraspMPPlugin::clear, this, _1, _2),
         "Clears all resources. After calling this you need to call initPlan again.");
@@ -107,6 +110,8 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
         _planner = std::make_shared<ParallelMGBiRRT>(query_env, robot_id, obj_id);
     } else if (_algorithm_name == SEQUENTIAL_BIRRT) {
         _planner = std::make_shared<SequentialMGBiRRT>(query_env, robot_id, obj_id);
+    } else if (_algorithm_name == ASTAR) {
+        _planner = std::make_shared<Astar>(query_env, robot_id, obj_id);
     } else {
         RAVELOG_ERROR("Unknown algorithm " + _algorithm_name + ". Can not plan.");
         throw std::logic_error("Unknown planning algorithm name " + _algorithm_name);
@@ -242,6 +247,8 @@ InterfaceBasePtr CreateInterfaceValidated(InterfaceType type, const std::string&
         return InterfaceBasePtr(new ORMultiGraspMPPlugin(penv, PARALLEL_BIRRT));
     } else if (type == PT_Module && interfacename == SEQUENTIAL_BIRRT) {
         return InterfaceBasePtr(new ORMultiGraspMPPlugin(penv, SEQUENTIAL_BIRRT));
+    } else if (type == PT_Module && interfacename == ASTAR) {
+        return InterfaceBasePtr(new ORMultiGraspMPPlugin(penv, ASTAR));
     }
     // TODO for other planning algoirthms check here and create plugin accordingly
     return InterfaceBasePtr();
@@ -252,6 +259,7 @@ void GetPluginAttributesValidated(PLUGININFO& info)
     // std::cout << "GetPluginAttributedValidated" << std::endl;
     info.interfacenames[PT_Module].push_back(PARALLEL_BIRRT);
     info.interfacenames[PT_Module].push_back(SEQUENTIAL_BIRRT);
+    info.interfacenames[PT_Module].push_back(ASTAR);
     // TODO add other planners here, too
 }
 
