@@ -58,6 +58,8 @@ namespace mp {
                 NodeWeakPtr node_a;
                 NodeWeakPtr node_b;
                 Edge(NodePtr a, NodePtr b);
+                // Convenience function returning the node that isn't n
+                NodePtr getNeighbor(NodePtr n) const;
             };
 
             Roadmap(OpenRAVE::RobotBasePtr robot, StateValidityCheckerPtr validity_checker,
@@ -69,37 +71,41 @@ namespace mp {
             /**
              * Add a new goal node.
              * @param goal - goal information
-             * @return node - a node representing the goal (node->is_goal = true, node->goal_id == goal.id, node->config == goal.config)
+             * @return node - a node representing the goal
+             *  (node->is_goal = true, node->goal_id == goal.id, node->config == goal.config)
+             *  The returned pointer is weak. To check validity of the node use checkNode.
              */
-            NodePtr addGoalNode(const MultiGraspMP::Goal& goal);
+            NodeWeakPtr addGoalNode(const MultiGraspMP::Goal& goal);
             /**
              * Add a new node at the given configuration.
              * Use this function to add the start node.
              */
-            NodePtr addNode(const Config& config);
+            NodeWeakPtr addNode(const Config& config);
             /**
              * Check the given node for validity, and update roadmap if necessary.
              * In addition, update the node's adjacency list.
              * @param node - the node to check
              * @return true, if the node is valid (base), else false. In case of false, the node is removed
-             * from the roadmap and node is set to nullptr.
+             *  from the roadmap and node is set to nullptr.
+             *  If this function returned true, you can safely acquire a lock on node, else node is no longer valid.
              */
-            bool checkNode(NodePtr node);
+            bool checkNode(NodeWeakPtr node);
             /**
              * Check the given edge for validity, and update roadmap if necessary.
              * This means the base cost of the edge is computed.
              * @param edge - the edge to check
              * @return true, if the edge is valid (base), else false. In case of false, the edge is removed
-             * from the roadmap and edge is set to nullptr.
+             *  from the roadmap and edge is set to nullptr.
+             *  If this function returned true, you can safely acquire a lock on edge, else edge is no longer valid.
              */
-            bool checkEdge(EdgePtr edge);
+            bool checkEdge(EdgeWeakPtr edge);
             /**
              * Compute the edge cost for the given edge given the grasp.
              * @param edge - the edge to compute cost for
              * @param grasp_id - the grasp id to compute the cost for
-             * @return true, if the edge cost is finite, return true, else false.
+             * @return pair (valid, cost) - valid = true if cost is finite
              */
-            bool computeCost(EdgePtr edge, unsigned int grasp_id);
+            std::pair<bool, double> computeCost(EdgePtr edge, unsigned int grasp_id);
 
         private:
             OpenRAVE::RobotBasePtr _robot;
@@ -116,6 +122,7 @@ namespace mp {
             void deleteNode(NodePtr node);
             void deleteEdge(EdgePtr edge);
         };
+        typedef std::shared_ptr<Roadmap> RoadmapPtr;
     }
 }
 }

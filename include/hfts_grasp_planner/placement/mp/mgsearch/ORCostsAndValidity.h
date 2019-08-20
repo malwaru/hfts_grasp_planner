@@ -5,7 +5,7 @@
 namespace placement {
 namespace mp {
     namespace mgsearch {
-        class ORSceneInterface : public StateValidityChecker, EdgeCostComputer {
+        class ORSceneInterface : public StateValidityChecker, public EdgeCostComputer {
         public:
             ORSceneInterface(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
             ~ORSceneInterface();
@@ -32,16 +32,24 @@ namespace mp {
             double integrateCosts(const Config& a, const Config& b) const;
         };
 
+        typedef std::shared_ptr<ORSceneInterface> ORSceneInterfacePtr;
+
         class MGGoalDistance : public CostToGoHeuristic {
         public:
             MGGoalDistance();
             ~MGGoalDistance();
             void addGoal(const MultiGraspMP::Goal& goal);
-            void removeGoal(unsigned int goal_id);
+            void removeGoal(const MultiGraspMP::Goal& goal);
             // interface functions
             double costToGo(const Config& a) const override;
             double costToGo(const Config& a, unsigned int grasp_id) const override;
+
+        private:
+            // grasp id -> gnat per grasp
+            std::unordered_map<unsigned int, std::shared_ptr<::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal>>> _goals;
+            ::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal> _all_goals;
         };
+        typedef std::shared_ptr<MGGoalDistance> MGGoalDistancePtr;
     }
 }
 }

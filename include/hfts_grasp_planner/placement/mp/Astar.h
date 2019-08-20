@@ -2,6 +2,8 @@
 #include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/Interfaces.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
+#include <hfts_grasp_planner/placement/mp/mgsearch/ORCostsAndValidity.h>
+#include <set>
 
 namespace placement {
 namespace mp {
@@ -17,11 +19,17 @@ namespace mp {
         void removeGoals(const std::vector<unsigned int>& goal_ids) override;
 
     private:
-        OpenRAVE::EnvironmentBasePtr _base_env;
+        OpenRAVE::EnvironmentBasePtr _env;
+        OpenRAVE::RobotBasePtr _robot;
         unsigned int _robot_id;
         unsigned int _obj_id;
-        // std::vector<Grasp> _grasps;
-        // std::unordered_map<unsigned int, Goal> _goals;
+        mgsearch::ORSceneInterfacePtr _scene_interface;
+        mgsearch::MGGoalDistancePtr _goal_distance;
+        mgsearch::RoadmapPtr _roadmap;
+        std::set<unsigned int> _grasp_ids;
+        std::unordered_map<unsigned int, Goal> _goals;
+        mgsearch::Roadmap::NodePtr _start_node;
+        std::unordered_map<unsigned int, mgsearch::Roadmap::NodePtr> _goal_nodes;
     };
     typedef std::shared_ptr<Astar> AstarPtr;
     typedef std::shared_ptr<const Astar> AstarConstPtr;

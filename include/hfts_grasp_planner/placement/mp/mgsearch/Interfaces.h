@@ -1,4 +1,5 @@
 #pragma once
+#include <Eigen/Core>
 #include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
 #include <vector>
 
@@ -39,6 +40,8 @@ namespace mp {
             virtual double costToGo(const Config& a, unsigned int grasp_id) const = 0;
         };
         typedef std::shared_ptr<CostToGoHeuristic> CostToGoHeuristicPtr;
+
+        double cSpaceDistance(const Config& a, const Config& b);
     }
 }
 }

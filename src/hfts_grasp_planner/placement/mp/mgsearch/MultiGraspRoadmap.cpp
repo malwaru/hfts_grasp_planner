@@ -5,12 +5,7 @@ using namespace placement::mp::mgsearch;
 
 double distanceFn(const Roadmap::NodePtr& a, const Roadmap::NodePtr& b)
 {
-    double dist = 0.0;
-    for (unsigned int i = 0; i < a->config.size(); ++i) {
-        double dq = a->config.at(i) - b->config.at(i);
-        dist += dq * dq;
-    }
-    return sqrt(dist);
+    return cSpaceDistance(a->config, b->config);
 }
 
 Roadmap::Edge::Edge(Roadmap::NodePtr a, Roadmap::NodePtr b)
@@ -19,6 +14,18 @@ Roadmap::Edge::Edge(Roadmap::NodePtr a, Roadmap::NodePtr b)
     , node_a(a)
     , node_b(b)
 {
+}
+
+Roadmap::NodePtr Roadmap::Edge::getNeighbor(NodePtr n) const
+{
+    auto a = node_a.lock();
+    assert(a);
+    if (a->uid == n->uid)
+        return a;
+    auto b = node_b.lock();
+    assert(b);
+    assert(b->uid == n->uid);
+    return b;
 }
 
 Roadmap::Roadmap(OpenRAVE::RobotBasePtr robot, StateValidityCheckerPtr validity_checker,
@@ -78,7 +85,7 @@ void Roadmap::densify(unsigned int batch_size)
     _densification_gen += 1;
 }
 
-Roadmap::NodePtr Roadmap::addGoalNode(const MultiGraspMP::Goal& goal)
+Roadmap::NodeWeakPtr Roadmap::addGoalNode(const MultiGraspMP::Goal& goal)
 {
     NodePtr new_node = addNode(goal.config);
     new_node->is_goal = true;
@@ -86,15 +93,18 @@ Roadmap::NodePtr Roadmap::addGoalNode(const MultiGraspMP::Goal& goal)
     return new_node;
 }
 
-Roadmap::NodePtr Roadmap::addNode(const Config& config)
+Roadmap::NodeWeakPtr Roadmap::addNode(const Config& config)
 {
     NodePtr new_node = std::shared_ptr<Node>(new Node(_node_id_counter++, config));
     _nn.add(new_node);
     return new_node;
 }
 
-bool Roadmap::checkNode(NodePtr node)
+bool Roadmap::checkNode(NodeWeakPtr inode)
 {
+    if (inode.expired())
+        return false;
+    auto node = inode.lock();
     if (!node->initialized) {
         // check validity
         if (not _validity_checker->isValid(node->config)) {
@@ -128,8 +138,12 @@ bool Roadmap::checkNode(NodePtr node)
     return true;
 }
 
-bool Roadmap::checkEdge(EdgePtr edge)
+bool Roadmap::checkEdge(EdgeWeakPtr iedge)
 {
+    if (iedge.expired()) {
+        return false;
+    }
+    auto edge = iedge.lock();
     if (edge->base_evaluated) {
         return true;
     }
@@ -147,7 +161,7 @@ bool Roadmap::checkEdge(EdgePtr edge)
     return true;
 }
 
-bool Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id)
+std::pair<bool, double> Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id)
 {
     auto iter = edge->conditional_costs.find(grasp_id);
     double cost;
@@ -159,7 +173,7 @@ bool Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id)
     } else {
         cost = iter->second;
     }
-    return not std::isinf(cost);
+    return { not std::isinf(cost), cost };
 }
 
 void Roadmap::scaleToLimits(Config& config) const
