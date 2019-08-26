@@ -27,9 +27,11 @@ namespace mp {
         mgsearch::MGGoalDistancePtr _goal_distance;
         mgsearch::RoadmapPtr _roadmap;
         std::set<unsigned int> _grasp_ids;
+        // goal id -> goal
         std::unordered_map<unsigned int, Goal> _goals;
-        mgsearch::Roadmap::NodePtr _start_node;
-        std::unordered_map<unsigned int, mgsearch::Roadmap::NodePtr> _goal_nodes;
+        mgsearch::Roadmap::NodeWeakPtr _start_node;
+        // goal id -> goal node
+        std::unordered_map<unsigned int, mgsearch::Roadmap::NodeWeakPtr> _goal_nodes;
     };
     typedef std::shared_ptr<Astar> AstarPtr;
     typedef std::shared_ptr<const Astar> AstarConstPtr;

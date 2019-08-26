@@ -6,6 +6,13 @@
 
 using namespace placement::mp::mgsearch;
 
+double cSpaceDistance(const Config& a, const Config& b)
+{
+    const Eigen::Map<const Eigen::VectorXd> avec(a.data(), a.size());
+    const Eigen::Map<const Eigen::VectorXd> bvec(b.data(), b.size());
+    return (avec - bvec).norm();
+}
+
 ORSceneInterface::ORSceneInterface(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id)
     : _penv(penv)
 {

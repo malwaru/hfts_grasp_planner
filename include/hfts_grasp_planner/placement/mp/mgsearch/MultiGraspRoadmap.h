@@ -1,5 +1,5 @@
 #pragma once
-#include <hfts_grasp_planner/placement/mp/mgsearch/Interfaces.h>
+#include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
 #include <memory>
 #include <ompl/datastructures/NearestNeighborsGNAT.h>
 #include <unordered_map>
@@ -7,6 +7,42 @@
 namespace placement {
 namespace mp {
     namespace mgsearch {
+        // Interfaces used by Roadmap
+        // TODO make these to template arguments? Will we ever exchange these during runtime?
+        class StateValidityChecker {
+        public:
+            virtual ~StateValidityChecker() = 0;
+            virtual bool isValid(const Config& c) const = 0;
+            virtual bool isValid(const Config& c, unsigned int grasp_id) const = 0;
+        };
+        typedef std::shared_ptr<StateValidityChecker> StateValidityCheckerPtr;
+
+        class EdgeCostComputer {
+        public:
+            virtual ~EdgeCostComputer() = 0;
+            /**
+             * Cheap to compute lower bound of the cost to transition from config a to config b.
+             */
+            virtual double lowerBound(const Config& a, const Config& b) const = 0;
+            /**
+             * True cost to transition from config a to config b without any grasped object.
+             */
+            virtual double cost(const Config& a, const Config& b) const = 0;
+            /**
+             * True cost to transition from config a to config b when grasping an object with grasp grasp_id.
+             */
+            virtual double cost(const Config& a, const Config& b, unsigned int grasp_id) const = 0;
+        };
+        typedef std::shared_ptr<EdgeCostComputer> EdgeCostComputerPtr;
+
+        class CostToGoHeuristic {
+            // TODO do we need this to be a class? Does it have an internal state?
+        public:
+            virtual ~CostToGoHeuristic() = 0;
+            virtual double costToGo(const Config& a) const = 0;
+            virtual double costToGo(const Config& a, unsigned int grasp_id) const = 0;
+        };
+        typedef std::shared_ptr<CostToGoHeuristic> CostToGoHeuristicPtr;
 
         /**
          * This class encapsulates a conditional roadmap for a robot manipulator transporting 
@@ -30,6 +66,17 @@ namespace mp {
                 // goal annotation
                 bool is_goal;
                 unsigned int goal_id;
+                /**
+                 * Return the edge that leads to the node with target_id.  
+                 * If the specified node is not adjacent, nullptr is returned.
+                 */
+                EdgePtr getEdge(unsigned int target_id)
+                {
+                    auto iter = edges.find(target_id);
+                    if (iter == edges.end())
+                        return nullptr;
+                    return iter->second;
+                }
 
             protected:
                 friend class Roadmap;
@@ -57,17 +104,30 @@ namespace mp {
                 std::unordered_map<unsigned int, double> conditional_costs;
                 NodeWeakPtr node_a;
                 NodeWeakPtr node_b;
-                Edge(NodePtr a, NodePtr b);
+                Edge(NodePtr a, NodePtr b, double bc);
                 // Convenience function returning the node that isn't n
                 NodePtr getNeighbor(NodePtr n) const;
             };
 
-            Roadmap(OpenRAVE::RobotBasePtr robot, StateValidityCheckerPtr validity_checker,
+            struct SpaceInformation {
+                unsigned int dimension;
+                std::vector<double> lower;
+                std::vector<double> upper;
+                std::function<double(const Config&, const Config&)> distance_fn;
+            };
+
+            Roadmap(const SpaceInformation& si, StateValidityCheckerPtr validity_checker,
                 EdgeCostComputerPtr edge_cost_computer, unsigned int batch_size = 10000);
             virtual ~Roadmap();
             // Tell the roadmap to densify
             void densify();
             void densify(unsigned int batch_size);
+            /**
+             * Retrieve a node.
+             * Returns nullptr if node with given id doesn't exist.
+             */
+            NodePtr getNode(unsigned int node_id) const;
+
             /**
              * Add a new goal node.
              * @param goal - goal information
@@ -108,10 +168,11 @@ namespace mp {
             std::pair<bool, double> computeCost(EdgePtr edge, unsigned int grasp_id);
 
         private:
-            OpenRAVE::RobotBasePtr _robot;
+            SpaceInformation _si;
             StateValidityCheckerPtr _validity_checker;
             EdgeCostComputerPtr _cost_computer;
-            ::ompl::NearestNeighborsGNAT<NodePtr> _nn;
+            ::ompl::NearestNeighborsGNAT<NodePtr> _nn; // owner of nodes
+            std::unordered_map<unsigned int, NodeWeakPtr> _nodes; // node id to pointer
             unsigned int _batch_size;
             unsigned int _node_id_counter;
             unsigned int _halton_seq_id;

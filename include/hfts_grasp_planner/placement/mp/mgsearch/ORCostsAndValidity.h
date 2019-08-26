@@ -5,6 +5,8 @@
 namespace placement {
 namespace mp {
     namespace mgsearch {
+        double cSpaceDistance(const Config& a, const Config& b);
+
         class ORSceneInterface : public StateValidityChecker, public EdgeCostComputer {
         public:
             ORSceneInterface(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
