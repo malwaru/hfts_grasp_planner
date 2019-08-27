@@ -38,6 +38,11 @@ namespace mp {
                 }
             };
 
+            /**
+             * A* search algorithm.
+             * The template parameter G needs to be of a type implementing the GraspAgnosticGraph interface specified in Graphs.h.
+             * The template parameter PQ needs to be a boost::heap
+             */
             template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost::heap::compare<PQElementCompare>>>
             void aStarSearch(const G& graph, SearchResult& result)
             {
@@ -65,7 +70,7 @@ namespace mp {
                 unsigned int v_start = graph.getStartNode();
                 if (graph.checkValidity(v_start)) {
                     vertex_data.emplace(std::make_pair(v_start, VertexData(v_start, 0.0, v_start)));
-                    vertex_data[v_start].pq_handle = pq.push(PQElement(v_start, 0.0 + graph.heuristic(v_start), 0.0));
+                    vertex_data[v_start].pq_handle = pq.push(PQElement(v_start, 0.0, graph.heuristic(v_start)));
                 }
                 // main iteration - is skipped if start vertex is invalid
                 while (not pq.empty() and not result.solved) {

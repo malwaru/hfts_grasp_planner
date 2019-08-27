@@ -1,5 +1,5 @@
 #pragma once
-#include <hfts_grasp_planner/placement/mp/mgsearch/Interfaces.h>
+#include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
 #include <unordered_map>
 
 namespace placement {
@@ -35,23 +35,6 @@ namespace mp {
         };
 
         typedef std::shared_ptr<ORSceneInterface> ORSceneInterfacePtr;
-
-        class MGGoalDistance : public CostToGoHeuristic {
-        public:
-            MGGoalDistance();
-            ~MGGoalDistance();
-            void addGoal(const MultiGraspMP::Goal& goal);
-            void removeGoal(const MultiGraspMP::Goal& goal);
-            // interface functions
-            double costToGo(const Config& a) const override;
-            double costToGo(const Config& a, unsigned int grasp_id) const override;
-
-        private:
-            // grasp id -> gnat per grasp
-            std::unordered_map<unsigned int, std::shared_ptr<::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal>>> _goals;
-            ::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal> _all_goals;
-        };
-        typedef std::shared_ptr<MGGoalDistance> MGGoalDistancePtr;
     }
 }
 }

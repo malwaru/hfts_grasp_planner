@@ -1,8 +1,12 @@
 #pragma once
-#include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
+// stl
+#include <functional>
 #include <memory>
-#include <ompl/datastructures/NearestNeighborsGNAT.h>
 #include <unordered_map>
+// own
+#include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
+// ompl
+#include <ompl/datastructures/NearestNeighborsGNAT.h>
 
 namespace placement {
 namespace mp {
@@ -13,7 +17,7 @@ namespace mp {
         public:
             virtual ~StateValidityChecker() = 0;
             virtual bool isValid(const Config& c) const = 0;
-            virtual bool isValid(const Config& c, unsigned int grasp_id) const = 0;
+            virtual bool isValid(const Config& c, unsigned int grasp_id, bool only_obj = false) const = 0;
         };
         typedef std::shared_ptr<StateValidityChecker> StateValidityCheckerPtr;
 
@@ -59,6 +63,7 @@ namespace mp {
             typedef std::weak_ptr<Edge> EdgeWeakPtr;
 
             struct Node {
+                typedef std::unordered_map<unsigned int, EdgePtr> EdgeMap;
                 // unique node id
                 const unsigned int uid;
                 // Configuration represented by this node
@@ -78,13 +83,18 @@ namespace mp {
                     return iter->second;
                 }
 
+                std::pair<EdgeMap::const_local_iterator, EdgeMap::const_local_iterator> getEdgesIterators() const
+                {
+                    return std::make_pair(edges.cbegin(), edges.cend());
+                }
+
             protected:
                 friend class Roadmap;
                 // 0 = edges not initialized, >= 1 - last densification generation edges have been updated
                 unsigned int densification_gen;
                 bool initialized; // initialized = collision-free
                 // map node id to edge
-                std::unordered_map<unsigned int, EdgePtr> edges;
+                EdgeMap edges;
                 // Constructor
                 Node(unsigned int tuid, const Config& tconfig)
                     : uid(tuid)
@@ -93,7 +103,6 @@ namespace mp {
                     , densification_gen(0)
                 {
                 }
-                // TODO public means to iterate over neighbors
             };
 
             struct Edge {
@@ -107,6 +116,8 @@ namespace mp {
                 Edge(NodePtr a, NodePtr b, double bc);
                 // Convenience function returning the node that isn't n
                 NodePtr getNeighbor(NodePtr n) const;
+                // convenience function to return the best known approximate this edge's cost for the given grasp
+                double getBestKnownCost(unsigned int gid) const;
             };
 
             struct SpaceInformation {
@@ -151,14 +162,20 @@ namespace mp {
              */
             bool checkNode(NodeWeakPtr node);
             /**
-             * Check the given edge for validity, and update roadmap if necessary.
-             * This means the base cost of the edge is computed.
-             * @param edge - the edge to check
-             * @return true, if the edge is valid (base), else false. In case of false, the edge is removed
-             *  from the roadmap and edge is set to nullptr.
-             *  If this function returned true, you can safely acquire a lock on edge, else edge is no longer valid.
+             * Just like checkNode, but the return value indicates whether the node is valid for the given grasp.
+             * The node is of course only removed if the base is invalid, not if the collision is induced by the grasp.
+             * @return true, if the node is valid and not in collision for the given grasp, else false.
              */
-            bool checkEdge(EdgeWeakPtr edge);
+            bool checkNode(NodeWeakPtr node, unsigned int grasp_id);
+            /**
+             * Compute the base cost of the given edge (for no grasp).
+             * If the edge is found to be invalid, the edge is removed from the roadmap.
+             * In this case, if you called computeCost(EdgeWeakPtr edge), edge will be expired after the function returns.
+             * If you called computeCost(EdgePtr edge)
+             * 
+             */
+            std::pair<bool, double> computeCost(EdgePtr edge);
+            std::pair<bool, double> computeCost(EdgeWeakPtr edge);
             /**
              * Compute the edge cost for the given edge given the grasp.
              * @param edge - the edge to compute cost for
@@ -184,6 +201,47 @@ namespace mp {
             void deleteEdge(EdgePtr edge);
         };
         typedef std::shared_ptr<Roadmap> RoadmapPtr;
+
+        class MGGoalDistance : public CostToGoHeuristic {
+        public:
+            /**
+             * Construct a new multi-grasp cost-to-go function.
+             * The cost-to-go function expresses the term 
+             * h(q) = min_{g in G} (d(q, g) + lambda * cost(g)), where g in G are the goals, d(q_1, q_2) a lower bound on path cost.
+             * The cost of a goal cost(g) is computed as cost(g) = (o_max - o_g) / (o_max - o_min) where o_g denotes
+             * the goal's quality and o_max = max_{g in G} o_g, o_min = min_{g in G} o_g (larger qualities are better).
+             * The parameter lambda scales between the grasp cost, which is in range [0, 1], and the path cost d(q1, q2).
+             * Note:
+             *   For new goals, you need to construct a new instance, due to the fact that goal quality values are 
+             *   normalized w.r.t min and max quality.
+             * 
+             * @param goals - list of goals 
+             * @param path_cost - lower bound on path cost to move from one configuration to another
+             * @param lambda - parameter to scale between path cost and grasp cost
+             */
+            MGGoalDistance(const std::vector<const MultiGraspMP::Goal> goals,
+                std::function<double(const Config&, const Config&)> path_cost, double lambda);
+            ~MGGoalDistance();
+            // interface functions
+            double costToGo(const Config& a) const override;
+            double costToGo(const Config& a, unsigned int grasp_id) const override;
+
+        private:
+            struct GoalDistanceFn {
+                double scaled_lambda;
+                std::function<double(const Config&, const Config&)> path_cost;
+                double distance(const MultiGraspMP::Goal& ga, const MultiGraspMP::Goal& gb)
+                {
+                    return path_cost(ga.config, gb.config) + scaled_lambda * abs(ga.quality - gb.quality);
+                }
+            };
+            // grasp id -> gnat per grasp
+            std::unordered_map<unsigned int, std::shared_ptr<::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal>>> _goals;
+            ::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal> _all_goals;
+            GoalDistanceFn _goal_distance;
+            double _max_quality;
+        };
+        typedef std::shared_ptr<MGGoalDistance> MGGoalDistancePtr;
     }
 }
 }

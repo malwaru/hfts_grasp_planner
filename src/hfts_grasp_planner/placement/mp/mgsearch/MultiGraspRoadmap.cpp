@@ -34,6 +34,15 @@ Roadmap::NodePtr Roadmap::Edge::getNeighbor(NodePtr n) const
     return b;
 }
 
+double Roadmap::Edge::getBestKnownCost(unsigned int gid) const
+{
+    auto iter = conditional_costs.find(gid);
+    if (iter != conditional_costs.end()) {
+        return iter->second;
+    }
+    return base_cost;
+}
+
 Roadmap::Roadmap(const Roadmap::SpaceInformation& si, StateValidityCheckerPtr validity_checker,
     EdgeCostComputerPtr cost_computer, unsigned int batch_size)
     : _si(si)
@@ -151,15 +160,21 @@ bool Roadmap::checkNode(NodeWeakPtr inode)
     return true;
 }
 
-bool Roadmap::checkEdge(EdgeWeakPtr iedge)
+bool Roadmap::checkNode(NodeWeakPtr node, unsigned int grasp_id)
 {
-    if (iedge.expired()) {
-        return false;
+    bool base_valid = checkNode(node);
+    if (base_valid) {
+        return _validity_checker->isValid(node.lock()->config, grasp_id, true);
     }
-    auto edge = iedge.lock();
+    return false;
+}
+
+std::pair<bool, double> Roadmap::computeCost(EdgePtr edge)
+{
     if (edge->base_evaluated) {
-        return true;
+        return { true, edge->base_cost };
     }
+    // we have to compute base cost
     NodePtr node_a = edge->node_a.lock();
     NodePtr node_b = edge->node_b.lock();
     assert(node_a);
@@ -169,9 +184,17 @@ bool Roadmap::checkEdge(EdgeWeakPtr iedge)
     if (std::isinf(edge->base_cost)) {
         // edge is invalid, so let's remove it
         deleteEdge(edge);
-        return false;
+        return { false, edge->base_cost };
     }
-    return true;
+    return { true, edge->base_cost };
+}
+
+std::pair<bool, double> Roadmap::computeCost(EdgeWeakPtr weak_edge)
+{
+    if (weak_edge.expired())
+        return { false, INFINITY };
+    auto edge = weak_edge.lock();
+    return computeCost(edge);
 }
 
 std::pair<bool, double> Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id)
@@ -208,17 +231,6 @@ void Roadmap::deleteNode(NodePtr node)
         // unsigned int edge_target_id = out_info.first;
         EdgePtr edge = out_info.second;
         deleteEdge(edge);
-        // NodePtr adjacent_node = edge->node_a.lock();
-        // if (adjacent_node->uid != edge_target_id) {
-        //     assert(adjacent_node == node);
-        //     adjacent_node = edge->node_b.lock();
-        // }
-        // // check whether the adjacent node has an edge pointing to this node
-        // auto edge_iter = adjacent_node->edges.find(node->uid);
-        // if (edge_iter != adjacent_node->edges.end()) {
-        //     // if yes, remove the edge
-        //     adjacent_node->edges.erase(edge_iter);
-        // }
     }
     assert(node->edges.empty());
     node.reset();
@@ -241,4 +253,65 @@ void Roadmap::deleteEdge(EdgePtr edge)
         node_b->edges.erase(edge_iter);
     }
     edge.reset();
+}
+
+/************************************** MGGoalDistance **************************************/
+
+MGGoalDistance::MGGoalDistance(const std::vector<const MultiGraspMP::Goal>& goals, double lambda)
+{
+    double max_q, min_q = -INFINITY, INFINITY;
+    // first compute min and max quality
+    for (auto& goal : goals) {
+        // add goal to all goals
+        max_q = max(max_q, goal.quality);
+        min_q = min(min_q, goal.quality);
+    }
+    _goal_distance.scaled_lambda = lambda / (max_q - min_q);
+    _max_quality = max_q;
+    // now add the goals to nearest neighbor data structures
+    _all_goals.setDistanceFunction(std::bind(&MGGoalDistance::GoalDistanceFn::distance, std::ref(_goal_distance)));
+    for (auto& goal : goals) {
+        _all_goals.add(goal);
+        // add it to goals with the same grasp
+        auto iter = _goals.find(goal.grasp_id);
+        if (iter == _goals.end()) {
+            // add new gnat for this grasp
+            auto new_gnat = std::make_shared<::ompl::NearestNeighborsGNAT>();
+            new_gnat->setDistanceFunction(std::bind(&MGGoalDistance::GoalDistanceFn::distance, std::ref(_goal_distance)));
+            new_gnat->add(goal);
+            _goals.insert(std::make_pair(goal.grasp_id, new_gnat));
+        } else {
+            iter->second->add(goal);
+        }
+    }
+}
+
+MGGoalDistance::~MGGoalDistance() = default;
+
+double MGGoalDistance::costToGo(const Config& a) const
+{
+    if (_all_goals.size() == 0) {
+        throw std::logic_error("[MGGoalDistance::costToGo] No goals known. Can not compute cost to go.");
+    }
+    MultiGraspMP::Goal dummy_goal;
+    dummy_goal.config = a;
+    dummy_goal.quality = _max_quality;
+    const auto& nn = _all_goals->nearest(dummy_goal);
+    return goalDistanceFn(nn, dummy_goal);
+}
+
+double MGGoalDistance::costToGo(const Config& a, unsigned int grasp_id) const
+{
+    auto iter = _goals.find(grasp_id);
+    if (iter == _goals.end()) {
+        throw std::logic_error("[MGGoalDistance::costToGo] Could not find GNAT for the given grasp " + std::to_string(grasp_id));
+    }
+    if (iter->second->size() == 0) {
+        trhow std::logic_error("[MGGoalDistance::costToGo] No goal known for the given grasp " + std::to_string(grasp_id));
+    }
+    MultiGraspMP::Goal dummy_goal;
+    dummy_goal.config = a;
+    dummy_goal.quality = _max_quality;
+    const auto& nn = iter->second->nearest(dummy_goal);
+    return goalDistanceFn(nn, dummy_goal);
 }

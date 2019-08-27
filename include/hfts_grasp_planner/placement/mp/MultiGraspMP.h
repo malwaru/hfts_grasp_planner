@@ -34,6 +34,7 @@ namespace mp {
         struct Goal {
             unsigned int id;
             unsigned int grasp_id;
+            double quality;
             Config config;
             std::string print() const
             {

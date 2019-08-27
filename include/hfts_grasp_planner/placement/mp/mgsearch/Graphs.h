@@ -16,10 +16,12 @@ namespace mp {
             bool checkValidity(unsigned int v) const;
             void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
             void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
-            double heuristic(unsigned int v) const;
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
             unsigned int getStartNode() const;
             bool isGoal(unsigned int v) const;
+            // Technically not a function of the graph, but the graph might have its own encoding of vertices, so the
+            // heuristic needs to be connected to the graph anyways.
+            double heuristic(unsigned int v) const;
         };
 
         class GraspAwareGraph {
@@ -31,21 +33,22 @@ namespace mp {
          */
         class SingleGraspRoadmapGraph {
         public:
-            SingleGraspRoadmapGraph(RoadmapPtr roadmap, unsigned int grasp_id);
+            SingleGraspRoadmapGraph(RoadmapPtr roadmap, CostToGoHeuristicPtr cost_to_go, unsigned int grasp_id);
             ~SingleGraspRoadmapGraph();
             // needs to be set before planning!
             void setStartId(unsigned int start_id);
             // GraspAgnostic graph interface
             bool checkValidity(unsigned int v) const;
-            void getSuccessors(unsigned int v, std::vector<unsigned int>& successors) const;
-            void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors) const;
-            double heuristic(unsigned int v) const;
+            void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
+            void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
             unsigned int getStartNode() const;
             bool isGoal(unsigned int v) const;
+            double heuristic(unsigned int v) const;
 
         private:
             RoadmapPtr _roadmap;
+            CostToGoHeuristicPtr _cost_to_go;
             const unsigned int _grasp_id;
             unsigned int _start_id;
             bool _has_goal;
