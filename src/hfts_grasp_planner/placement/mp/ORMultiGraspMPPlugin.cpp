@@ -1,4 +1,4 @@
-#include <hfts_grasp_planner/placement/mp/Astar.h>
+#include <hfts_grasp_planner/placement/mp/GraphSearch.h>
 #include <hfts_grasp_planner/placement/mp/MultiGraspBiRRT.h>
 #include <hfts_grasp_planner/placement/mp/ORMultiGraspMPPlugin.h>
 #include <iostream>
@@ -111,7 +111,11 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
     } else if (_algorithm_name == SEQUENTIAL_BIRRT) {
         _planner = std::make_shared<SequentialMGBiRRT>(query_env, robot_id, obj_id);
     } else if (_algorithm_name == ASTAR) {
-        _planner = std::make_shared<Astar>(query_env, robot_id, obj_id);
+        // TODO make parameters settable
+        Astar::Parameters params;
+        params.graph_type = Astar::SingleGraspGraph;
+        params.lambda = 1.0;
+        _planner = std::make_shared<Astar>(query_env, robot_id, obj_id, params);
     } else {
         RAVELOG_ERROR("Unknown algorithm " + _algorithm_name + ". Can not plan.");
         throw std::logic_error("Unknown planning algorithm name " + _algorithm_name);
@@ -131,13 +135,13 @@ bool ORMultiGraspMPPlugin::plan(std::ostream& sout, std::istream& sinput)
 {
     double timeout;
     sinput >> timeout;
-    std::vector<std::pair<unsigned int, MultiGraspMP::WaypointPathPtr>> new_paths;
+    std::vector<MultiGraspMP::Solution> new_paths;
     _planner->plan(new_paths, timeout);
     if (!new_paths.empty()) {
         for (unsigned int i = 0; i < new_paths.size(); ++i) {
             auto new_sol = new_paths.at(i);
-            sout << new_sol.first;
-            _solutions[new_sol.first] = new_sol.second;
+            sout << new_sol.goal_id;
+            _solutions[new_sol.goal_id] = new_sol;
             if (i + 1 < new_paths.size())
                 sout << " ";
         }
@@ -159,7 +163,7 @@ bool ORMultiGraspMPPlugin::getPath(std::ostream& sout, std::istream& sinput)
     sinput >> id;
     auto iter = _solutions.find(id);
     if (iter != _solutions.end()) {
-        MultiGraspMP::WaypointPathPtr path = iter->second;
+        MultiGraspMP::WaypointPathPtr path = iter->second.path;
         for (unsigned int wi = 0; wi < path->size(); ++wi) {
             auto& wp = path->at(wi);
             for (unsigned int i = 0; i < wp.size(); ++i) {

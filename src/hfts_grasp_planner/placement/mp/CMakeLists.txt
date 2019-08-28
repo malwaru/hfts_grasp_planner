@@ -2,7 +2,7 @@ find_package(OpenRAVE REQUIRED)
 find_package(Eigen REQUIRED)
 find_package(Boost REQUIRED COMPONENTS thread)
 find_package(OMPL)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_COMPILER clang++)
 
 if (NOT ${OMPL_FOUND})
@@ -28,7 +28,9 @@ openrave_plugin(ormultigraspmp
   MultiGraspMP.cpp
   MultiGraspBiRRT.cpp
   mgsearch/MultiGraspRoadmap.cpp
-  Astar.cpp
+  mgsearch/Graphs.cpp
+  mgsearch/ORCostsAndValidity.cpp
+  GraphSearch.cpp
   ompl/ORRedirectableBiRRT.cpp
   ../../external/ompl/geometric/RedirectableRRTConnect.cpp
   ../../external/halton/halton.cpp
@@ -36,3 +38,9 @@ openrave_plugin(ormultigraspmp
 
 set_target_properties(ormultigraspmp PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS}" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")
 target_link_libraries(ormultigraspmp ${OpenRAVE_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES})
+
+add_executable(test_graph_search_algorithm
+  test/test_mplanner.cpp
+)
+
+target_link_libraries(test_graph_search_algorithm)

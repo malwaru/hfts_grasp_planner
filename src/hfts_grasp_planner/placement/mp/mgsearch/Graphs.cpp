@@ -1,3 +1,4 @@
+#include <cmath>
 #include <hfts_grasp_planner/placement/mp/mgsearch/Graphs.h>
 
 using namespace placement::mp::mgsearch;
@@ -95,5 +96,5 @@ double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
     auto node = _roadmap->getNode(v);
     if (!node)
         return INFINITY;
-    _cost_to_go->costToGo(node->config, _grasp_id);
+    return _cost_to_go->costToGo(node->config, _grasp_id);
 }

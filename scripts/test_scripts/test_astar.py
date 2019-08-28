@@ -89,7 +89,7 @@ if __name__ == "__main__":
         robot.SetDOFValues(config, manip.GetArmIndices())
         time.sleep(0.1)
     robot.SetDOFValues(start_config)
-    for i in range(20):
+    for i in range(1):
         print "Creating planner"
         # planner = MGMotionPlanner("SequentialMGBiRRT", manip)
         planner = MGMotionPlanner("Astar", manip)

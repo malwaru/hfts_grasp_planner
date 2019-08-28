@@ -16,7 +16,7 @@ namespace mp {
             void removeGrasp(unsigned int gid);
             // State validity
             bool isValid(const Config& c) const override;
-            bool isValid(const Config& c, unsigned int grasp_id) const override;
+            bool isValid(const Config& c, unsigned int grasp_id, bool only_obj = false) const override;
             // edge cost
             double lowerBound(const Config& a, const Config& b) const override;
             double cost(const Config& a, const Config& b) const override;

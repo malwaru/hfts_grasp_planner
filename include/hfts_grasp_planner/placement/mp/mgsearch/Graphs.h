@@ -24,16 +24,18 @@ namespace mp {
             double heuristic(unsigned int v) const;
         };
 
-        class GraspAwareGraph {
-            // TODO
-        };
+        // class GraspAwareGraph {
+        //     // TODO
+        // };
 
         /**
          * A class implementing the GraspAgnostic graph interface for a single grasp.
          */
         class SingleGraspRoadmapGraph {
         public:
-            SingleGraspRoadmapGraph(RoadmapPtr roadmap, CostToGoHeuristicPtr cost_to_go, unsigned int grasp_id);
+            SingleGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
+                ::placement::mp::mgsearch::CostToGoHeuristicPtr cost_to_go,
+                unsigned int grasp_id);
             ~SingleGraspRoadmapGraph();
             // needs to be set before planning!
             void setStartId(unsigned int start_id);
@@ -47,16 +49,15 @@ namespace mp {
             double heuristic(unsigned int v) const;
 
         private:
-            RoadmapPtr _roadmap;
-            CostToGoHeuristicPtr _cost_to_go;
+            ::placement::mp::mgsearch::RoadmapPtr _roadmap;
+            ::placement::mp::mgsearch::CostToGoHeuristicPtr _cost_to_go;
             const unsigned int _grasp_id;
             unsigned int _start_id;
             bool _has_goal;
         };
 
-        class MultiGraspRoadmapGraph {
-        };
+        // class MultiGraspRoadmapGraph {
+        // };
     }
-}
 }
 }

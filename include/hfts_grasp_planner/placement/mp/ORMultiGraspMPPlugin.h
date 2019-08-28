@@ -97,7 +97,7 @@ namespace mp {
     private:
         std::string _algorithm_name;
         MultiGraspMPPtr _planner;
-        std::unordered_map<unsigned int, MultiGraspMP::WaypointPathPtr> _solutions;
+        std::unordered_map<unsigned int, MultiGraspMP::Solution> _solutions;
         OpenRAVE::EnvironmentBasePtr _original_env;
     };
     OpenRAVE::InterfaceBasePtr CreateInterfaceValidated(OpenRAVE::InterfaceType type, const std::string& interfacename, std::istream& sinput, OpenRAVE::EnvironmentBasePtr penv);

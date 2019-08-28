@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 // own
 #include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
 // ompl
@@ -83,7 +84,7 @@ namespace mp {
                     return iter->second;
                 }
 
-                std::pair<EdgeMap::const_local_iterator, EdgeMap::const_local_iterator> getEdgesIterators() const
+                std::pair<EdgeMap::const_iterator, EdgeMap::const_iterator> getEdgesIterators() const
                 {
                     return std::make_pair(edges.cbegin(), edges.cend());
                 }
@@ -219,18 +220,24 @@ namespace mp {
              * @param path_cost - lower bound on path cost to move from one configuration to another
              * @param lambda - parameter to scale between path cost and grasp cost
              */
-            MGGoalDistance(const std::vector<const MultiGraspMP::Goal> goals,
-                std::function<double(const Config&, const Config&)> path_cost, double lambda);
+            MGGoalDistance(const std::vector<MultiGraspMP::Goal>& goals,
+                const std::function<double(const Config&, const Config&)>& path_cost, double lambda);
             ~MGGoalDistance();
             // interface functions
             double costToGo(const Config& a) const override;
             double costToGo(const Config& a, unsigned int grasp_id) const override;
+            // return the goal cost of a goal with the given quality
+            double goalCost(double quality) const;
 
         private:
             struct GoalDistanceFn {
                 double scaled_lambda;
                 std::function<double(const Config&, const Config&)> path_cost;
                 double distance(const MultiGraspMP::Goal& ga, const MultiGraspMP::Goal& gb)
+                {
+                    return distance_const(ga, gb);
+                }
+                double distance_const(const MultiGraspMP::Goal& ga, const MultiGraspMP::Goal& gb) const
                 {
                     return path_cost(ga.config, gb.config) + scaled_lambda * abs(ga.quality - gb.quality);
                 }
@@ -240,6 +247,7 @@ namespace mp {
             ::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal> _all_goals;
             GoalDistanceFn _goal_distance;
             double _max_quality;
+            double _quality_normalizer;
         };
         typedef std::shared_ptr<MGGoalDistance> MGGoalDistancePtr;
     }

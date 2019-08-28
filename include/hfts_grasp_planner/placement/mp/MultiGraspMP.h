@@ -32,7 +32,7 @@ namespace mp {
             }
         };
         struct Goal {
-            unsigned int id;
+            unsigned int id; // should be unique. Note operator== and operator!=
             unsigned int grasp_id;
             double quality;
             Config config;
@@ -48,16 +48,46 @@ namespace mp {
                 ss << "]";
                 return ss.str();
             }
+
+            bool operator==(const Goal& other) const
+            {
+                return other.id == id;
+            }
+
+            bool operator!=(const Goal& other) const
+            {
+                return !(*this == other);
+            }
         };
+
         typedef std::vector<Config> WaypointPath;
         typedef std::shared_ptr<WaypointPath> WaypointPathPtr;
+
+        struct Solution {
+            unsigned int goal_id;
+            WaypointPathPtr path;
+            double cost;
+            Solution()
+                : goal_id(0)
+                , path(nullptr)
+                , cost(INFINITY)
+            {
+            }
+
+            Solution(unsigned int goal, WaypointPathPtr ipath, double icost)
+                : goal_id(goal)
+                , path(ipath)
+                , cost(icost)
+            {
+            }
+        };
         virtual ~MultiGraspMP() = 0;
         /**
          * Plan (start or continue) until either a timeout is reached or some new solutions were found.
          * @param new_paths - new solutions are stored in this vector
          * @param time_limit - maximal planning duration, if supported
          */
-        virtual void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit = 0.0f) = 0;
+        virtual void plan(std::vector<Solution>& new_paths, double time_limit = 0.0f) = 0;
         /**
          * In case the underlying planner is run asynchronously, this function notifies the planner
          * to pause planning until either plan is called again, or the planner is desctructed.

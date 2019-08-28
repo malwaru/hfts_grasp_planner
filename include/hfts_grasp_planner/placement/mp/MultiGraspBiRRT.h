@@ -30,7 +30,7 @@ namespace mp {
         SequentialMGBiRRT(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
         ~SequentialMGBiRRT();
 
-        void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit) override;
+        void plan(std::vector<Solution>& new_paths, double time_limit) override;
         void pausePlanning() override;
         void addGrasp(const Grasp& grasp) override;
         void addGoal(const Goal& goal) override;
@@ -78,7 +78,7 @@ namespace mp {
              * Return all new paths that have been found since this function has been called
              * last time. This may include paths to goals that have been removed.
              */
-            void getNewPaths(std::vector<std::pair<unsigned int, WaypointPathPtr>>& paths);
+            void getNewPaths(std::vector<Solution>& paths);
 
             /**
              * Pause or unpause the thread.
@@ -96,7 +96,7 @@ namespace mp {
             std::condition_variable _goal_modification_cv;
             // data structures to store paths
             std::mutex _path_list_mutex;
-            std::vector<std::pair<unsigned int, WaypointPathPtr>> _new_paths;
+            std::vector<Solution> _new_paths;
             // thread and thread termination
             std::atomic<bool> _terminate;
             std::atomic<bool> _paused;
@@ -108,7 +108,7 @@ namespace mp {
         ParallelMGBiRRT(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
         ~ParallelMGBiRRT();
 
-        void plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit) override;
+        void plan(std::vector<Solution>& new_paths, double time_limit) override;
         void pausePlanning() override;
         void addGrasp(const Grasp& grasp) override;
         // TODO it would be better to add goals as a batch

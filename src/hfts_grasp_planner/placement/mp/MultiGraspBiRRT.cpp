@@ -21,7 +21,7 @@ SequentialMGBiRRT::~SequentialMGBiRRT()
     _base_env->Destroy();
 }
 
-void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit)
+void SequentialMGBiRRT::plan(std::vector<Solution>& new_paths, double time_limit)
 {
     new_paths.clear();
     unsigned int num_active_planners = 0;
@@ -45,7 +45,7 @@ void SequentialMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr
             WaypointPathPtr path_ptr = std::make_shared<WaypointPath>();
             WaypointPath& path = *path_ptr;
             key_planner.second->getPath(gid, path);
-            new_paths.emplace_back(std::make_pair(gid, path_ptr));
+            new_paths.emplace_back(Solution(gid, path_ptr, 0.0)); // TODO could store path length as cost here
             _goals.erase(gid);
         }
     }
@@ -204,7 +204,7 @@ void ParallelMGBiRRT::AsynchPlanner::removeGoals(const std::vector<unsigned int>
     _goals_to_remove.insert(_goals_to_remove.end(), goals.begin(), goals.end());
 }
 
-void ParallelMGBiRRT::AsynchPlanner::getNewPaths(std::vector<std::pair<unsigned int, WaypointPathPtr>>& paths)
+void ParallelMGBiRRT::AsynchPlanner::getNewPaths(std::vector<Solution>& paths)
 {
     std::lock_guard<std::mutex> lock(_path_list_mutex);
     paths.insert(paths.end(), _new_paths.begin(), _new_paths.end());
@@ -248,7 +248,7 @@ void ParallelMGBiRRT::AsynchPlanner::run()
                 WaypointPath& tpath = *new_path;
                 _planner->getPath(gid, tpath);
                 std::lock_guard<std::mutex> lock(_path_list_mutex);
-                _new_paths.push_back(std::make_pair(gid, new_path));
+                _new_paths.push_back(Solution(gid, new_path, 0.0)); // TODO could provide true path cost
             }
         } else {
             // sleep until further notice
@@ -284,7 +284,7 @@ ParallelMGBiRRT::~ParallelMGBiRRT()
     _base_env->Destroy();
 }
 
-void ParallelMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>& new_paths, double time_limit)
+void ParallelMGBiRRT::plan(std::vector<Solution>& new_paths, double time_limit)
 {
     new_paths.clear();
     if (not _goals.empty()) {
@@ -296,13 +296,13 @@ void ParallelMGBiRRT::plan(std::vector<std::pair<unsigned int, WaypointPathPtr>>
         std::this_thread::sleep_for(std::chrono::duration<double>(time_limit));
         // collect paths
         for (auto& key_planner : _planners) {
-            std::vector<std::pair<unsigned int, WaypointPathPtr>> paths_for_grasp;
+            std::vector<Solution> paths_for_grasp;
             key_planner.second->getNewPaths(paths_for_grasp);
             // filter goals that we are not longer interested in
-            for (auto& id_path_pair : paths_for_grasp) {
-                if (_goals.find(id_path_pair.first) != _goals.end()) {
-                    new_paths.push_back(id_path_pair);
-                    _goals.erase(id_path_pair.first);
+            for (auto& sol : paths_for_grasp) {
+                if (_goals.find(sol.goal_id) != _goals.end()) {
+                    new_paths.push_back(sol);
+                    _goals.erase(sol.goal_id);
                 } // else ignore
             }
         }

@@ -257,27 +257,31 @@ void Roadmap::deleteEdge(EdgePtr edge)
 
 /************************************** MGGoalDistance **************************************/
 
-MGGoalDistance::MGGoalDistance(const std::vector<const MultiGraspMP::Goal>& goals, double lambda)
+MGGoalDistance::MGGoalDistance(const std::vector<MultiGraspMP::Goal>& goals,
+    const std::function<double(const Config&, const Config&)>& path_cost, double lambda)
 {
     double max_q, min_q = -INFINITY, INFINITY;
     // first compute min and max quality
-    for (auto& goal : goals) {
+    for (const MultiGraspMP::Goal& goal : goals) {
         // add goal to all goals
-        max_q = max(max_q, goal.quality);
-        min_q = min(min_q, goal.quality);
+        max_q = std::max(max_q, goal.quality);
+        min_q = std::min(min_q, goal.quality);
     }
-    _goal_distance.scaled_lambda = lambda / (max_q - min_q);
+    _quality_normalizer = (max_q - min_q);
+    _goal_distance.scaled_lambda = lambda / _quality_normalizer;
+    _goal_distance.path_cost = path_cost;
     _max_quality = max_q;
     // now add the goals to nearest neighbor data structures
-    _all_goals.setDistanceFunction(std::bind(&MGGoalDistance::GoalDistanceFn::distance, std::ref(_goal_distance)));
+    auto dist_fun = std::bind(&MGGoalDistance::GoalDistanceFn::distance, &_goal_distance, std::placeholders::_1, std::placeholders::_2);
+    _all_goals.setDistanceFunction(dist_fun);
     for (auto& goal : goals) {
         _all_goals.add(goal);
         // add it to goals with the same grasp
         auto iter = _goals.find(goal.grasp_id);
         if (iter == _goals.end()) {
             // add new gnat for this grasp
-            auto new_gnat = std::make_shared<::ompl::NearestNeighborsGNAT>();
-            new_gnat->setDistanceFunction(std::bind(&MGGoalDistance::GoalDistanceFn::distance, std::ref(_goal_distance)));
+            auto new_gnat = std::make_shared<::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal>>();
+            new_gnat->setDistanceFunction(dist_fun);
             new_gnat->add(goal);
             _goals.insert(std::make_pair(goal.grasp_id, new_gnat));
         } else {
@@ -296,8 +300,8 @@ double MGGoalDistance::costToGo(const Config& a) const
     MultiGraspMP::Goal dummy_goal;
     dummy_goal.config = a;
     dummy_goal.quality = _max_quality;
-    const auto& nn = _all_goals->nearest(dummy_goal);
-    return goalDistanceFn(nn, dummy_goal);
+    const auto& nn = _all_goals.nearest(dummy_goal);
+    return _goal_distance.distance_const(nn, dummy_goal);
 }
 
 double MGGoalDistance::costToGo(const Config& a, unsigned int grasp_id) const
@@ -307,11 +311,16 @@ double MGGoalDistance::costToGo(const Config& a, unsigned int grasp_id) const
         throw std::logic_error("[MGGoalDistance::costToGo] Could not find GNAT for the given grasp " + std::to_string(grasp_id));
     }
     if (iter->second->size() == 0) {
-        trhow std::logic_error("[MGGoalDistance::costToGo] No goal known for the given grasp " + std::to_string(grasp_id));
+        throw std::logic_error("[MGGoalDistance::costToGo] No goal known for the given grasp " + std::to_string(grasp_id));
     }
     MultiGraspMP::Goal dummy_goal;
     dummy_goal.config = a;
     dummy_goal.quality = _max_quality;
     const auto& nn = iter->second->nearest(dummy_goal);
-    return goalDistanceFn(nn, dummy_goal);
+    return _goal_distance.distance_const(nn, dummy_goal);
+}
+
+double MGGoalDistance::goalCost(double quality) const
+{
+    return _quality_normalizer * (_max_quality - quality);
 }

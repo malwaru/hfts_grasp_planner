@@ -1,12 +1,14 @@
 #include <Eigen/Core>
+#include <algorithm>
 #include <boost/shared_ptr.hpp>
 #include <hfts_grasp_planner/placement/mp/mgsearch/ORCostsAndValidity.h>
 
 #define STEP_SIZE 0.001
 
+namespace pmp = ::placement::mp;
 using namespace placement::mp::mgsearch;
 
-double cSpaceDistance(const Config& a, const Config& b)
+double ::placement::mp::mgsearch::cSpaceDistance(const pmp::Config& a, const pmp::Config& b)
 {
     const Eigen::Map<const Eigen::VectorXd> avec(a.data(), a.size());
     const Eigen::Map<const Eigen::VectorXd> bvec(b.data(), b.size());
@@ -55,7 +57,7 @@ void ORSceneInterface::removeGrasp(unsigned int gid)
     }
 }
 
-bool ORSceneInterface::isValid(const Config& c) const
+bool ORSceneInterface::isValid(const pmp::Config& c) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
@@ -67,7 +69,7 @@ bool ORSceneInterface::isValid(const Config& c) const
     return !_penv->CheckCollision(_robot);
 }
 
-bool ORSceneInterface::isValid(const Config& c, unsigned int grasp_id) const
+bool ORSceneInterface::isValid(const pmp::Config& c, unsigned int grasp_id, bool only_obj) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
@@ -75,17 +77,22 @@ bool ORSceneInterface::isValid(const Config& c, unsigned int grasp_id) const
     setGrasp(grasp_id);
     _robot->SetActiveDOFValues(c);
     // kinbody should be part of the robot now
-    bool bvalid = !_robot->CheckSelfCollision() and !_penv->CheckCollision(_robot);
+    bool bvalid = false;
+    if (not only_obj) {
+        bvalid = !_penv->CheckCollision(_object);
+    } else {
+        bvalid = !_robot->CheckSelfCollision() and !_penv->CheckCollision(_robot);
+    }
     _robot->ReleaseAllGrabbed();
     return bvalid;
 }
 
-double ORSceneInterface::lowerBound(const Config& a, const Config& b) const
+double ORSceneInterface::lowerBound(const pmp::Config& a, const pmp::Config& b) const
 {
     return cSpaceDistance(a, b);
 }
 
-double ORSceneInterface::cost(const Config& a, const Config& b) const
+double ORSceneInterface::cost(const pmp::Config& a, const pmp::Config& b) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver rob_state_saver(_robot);
@@ -93,12 +100,12 @@ double ORSceneInterface::cost(const Config& a, const Config& b) const
     return integrateCosts(a, b);
 }
 
-double ORSceneInterface::cost(const Config& a, const Config& b, unsigned int grasp_id) const
+double ORSceneInterface::cost(const pmp::Config& a, const pmp::Config& b, unsigned int grasp_id) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver rob_state_saver(_robot);
     OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
-    setGrasp(gid);
+    setGrasp(grasp_id);
     double val = integrateCosts(a, b);
     _robot->ReleaseAllGrabbed();
     return val;
@@ -125,7 +132,7 @@ void ORSceneInterface::setGrasp(unsigned int gid) const
     _robot->Grab(_object);
 }
 
-double ORSceneInterface::costPerConfig(const Config& c) const
+double ORSceneInterface::costPerConfig(const pmp::Config& c) const
 {
     OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
     _robot->SetActiveDOFValues(c);
@@ -137,23 +144,24 @@ double ORSceneInterface::costPerConfig(const Config& c) const
     return 1.0 / clearance;
 }
 
-double ORSceneInterface::integrateCosts(const Config& a, const Config& b) const
+double ORSceneInterface::integrateCosts(const pmp::Config& a, const pmp::Config& b) const
 {
     assert(a.size() == b.size());
-    Eigen::Map<Eigen::VectorXd> avec(a.data(), a.size());
-    Eigen::Map<Eigen::VectorXd> bvec(b.data(), b.size());
-    Eigen::VectorXd delta = b - a;
-    Eigen::VectorXd q(delta.size());
+    Eigen::Map<const Eigen::VectorXd> avec(a.data(), a.size());
+    Eigen::Map<const Eigen::VectorXd> bvec(b.data(), b.size());
+    Eigen::VectorXd delta = bvec - avec;
+    pmp::Config q(delta.size());
+    Eigen::Map<Eigen::VectorXd> qvec(q.data(), q.size());
     double norm = delta.norm();
     if (norm == 0.0) {
         return 0.0;
     }
     // iterate over path
     double integral_cost = 0.0;
-    unsigned int num_steps = ceil(norm / STEP_SIZE);
+    unsigned int num_steps = std::ceil(norm / STEP_SIZE);
     for (size_t t = 0; t < num_steps; ++t) {
-        q = min(t * STEP_SIZE / norm, 1.0) * delta + avec;
-        double dc = costPerConfig(q);
+        qvec = std::min(t * STEP_SIZE / norm, 1.0) * delta + avec;
+        double dc = costPerConfig(q); // qvec is a view on q's data
         if (std::isinf(dc))
             return INFINITY;
         integral_cost += dc * STEP_SIZE;
