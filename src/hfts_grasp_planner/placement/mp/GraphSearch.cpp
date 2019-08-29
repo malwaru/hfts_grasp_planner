@@ -48,6 +48,8 @@ void Astar::plan(std::vector<Solution>& new_paths, double time_limit)
         for (auto grasp_id : _grasp_ids) {
             RAVELOG_DEBUG("Planning with A* on single grasp graph for grasp " + std::to_string(grasp_id));
             mg::SingleGraspRoadmapGraph graph(_roadmap, goal_distance_fn, grasp_id);
+            assert(not _start_node.expired());
+            graph.setStartId(_start_node.lock()->uid);
             mg::SearchResult sr;
             mg::astar::aStarSearch<mg::SingleGraspRoadmapGraph>(graph, sr);
             if (sr.solved) {
@@ -82,6 +84,7 @@ void Astar::pausePlanning()
 
 void Astar::addGrasp(const Grasp& grasp)
 {
+    _grasp_ids.insert(grasp.id);
     _scene_interface->addGrasp(grasp);
 }
 

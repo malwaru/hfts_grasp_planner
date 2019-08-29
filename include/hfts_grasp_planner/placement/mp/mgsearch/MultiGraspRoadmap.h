@@ -17,7 +17,16 @@ namespace mp {
         class StateValidityChecker {
         public:
             virtual ~StateValidityChecker() = 0;
+            /**
+             * Check whether the robot can attain configuration c without considering a grasped object.
+             */
             virtual bool isValid(const Config& c) const = 0;
+            /**
+             * Check whether the robot can attain configuration c when grasping the object with the given grasp.
+             * @param c - robot configuration
+             * @param grasp_id - grasp identifier
+             * @param only_obj - if true, only check the object for validity, not the robot itself
+             */
             virtual bool isValid(const Config& c, unsigned int grasp_id, bool only_obj = false) const = 0;
         };
         typedef std::shared_ptr<StateValidityChecker> StateValidityCheckerPtr;
@@ -96,9 +105,13 @@ namespace mp {
                 bool initialized; // initialized = collision-free
                 // map node id to edge
                 EdgeMap edges;
+                // stores validity in dependence on grasp id
+                std::unordered_map<unsigned int, bool> conditional_validity;
                 // Constructor
                 Node(unsigned int tuid, const Config& tconfig)
                     : uid(tuid)
+                    , is_goal(false)
+                    , goal_id(0)
                     , initialized(false)
                     , config(tconfig)
                     , densification_gen(0)
@@ -153,21 +166,31 @@ namespace mp {
              * Use this function to add the start node.
              */
             NodeWeakPtr addNode(const Config& config);
+
+            /**
+             * Update the nodes adjacency list if needed. The adjacency list needs to be updated,
+             * if this function has a) never been called before on node, or b) densify(..) has been called
+             * after the last time this function was called for node.
+             * To be safe, you should call this function everytime before accessing a node's neighbors.
+             */
+            void updateAdjacency(NodePtr node);
+
             /**
              * Check the given node for validity, and update roadmap if necessary.
-             * In addition, update the node's adjacency list.
              * @param node - the node to check
              * @return true, if the node is valid (base), else false. In case of false, the node is removed
              *  from the roadmap and node is set to nullptr.
              *  If this function returned true, you can safely acquire a lock on node, else node is no longer valid.
              */
-            bool checkNode(NodeWeakPtr node);
+            bool isValid(NodeWeakPtr node);
+
             /**
              * Just like checkNode, but the return value indicates whether the node is valid for the given grasp.
              * The node is of course only removed if the base is invalid, not if the collision is induced by the grasp.
              * @return true, if the node is valid and not in collision for the given grasp, else false.
              */
-            bool checkNode(NodeWeakPtr node, unsigned int grasp_id);
+            bool isValid(NodeWeakPtr node, unsigned int grasp_id);
+
             /**
              * Compute the base cost of the given edge (for no grasp).
              * If the edge is found to be invalid, the edge is removed from the roadmap.

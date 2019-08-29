@@ -25,7 +25,7 @@ bool SingleGraspRoadmapGraph::checkValidity(unsigned int v) const
     if (!node)
         return false;
     // TODO check whether the node is valid for the set grasp
-    return _roadmap->checkNode(node, _grasp_id);
+    return _roadmap->isValid(node, _grasp_id);
 }
 
 void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy) const
@@ -34,9 +34,8 @@ void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned
     auto node = _roadmap->getNode(v);
     if (!node)
         return;
-    // we need to check the node also when we are lazy because it computes the node's adjacency
-    if (!_roadmap->checkNode(node, _grasp_id))
-        return;
+    // ensure the adjacency is up-to-date
+    _roadmap->updateAdjacency(node);
     // get edges
     auto [iter, end] = node->getEdgesIterators();
     while (iter != end) {
@@ -69,6 +68,8 @@ double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bo
     if (!checkValidity(v2))
         return INFINITY;
     auto node_v1 = _roadmap->getNode(v1);
+    // ensure v1's edges are up-to-date
+    _roadmap->updateAdjacency(node_v1);
     auto edge = node_v1->getEdge(v2);
     if (!edge)
         return INFINITY;

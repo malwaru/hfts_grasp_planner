@@ -99,7 +99,7 @@ namespace mp {
                         for (unsigned int& s : successors) {
                             // check vertex and edge validity
                             double wvs = graph.getEdgeCost(current_el.v, s);
-                            if (not graph.checkValidity(s) or std::isinf(wvs)) {
+                            if (std::isinf(wvs)) {
                                 continue;
                             }
                             // s is reachable from v. compute the g value it can reach.

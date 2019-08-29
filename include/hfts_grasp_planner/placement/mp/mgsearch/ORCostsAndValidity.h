@@ -27,7 +27,10 @@ namespace mp {
             OpenRAVE::RobotBasePtr _robot;
             OpenRAVE::KinBodyPtr _object;
             OpenRAVE::CollisionReportPtr _report;
+            OpenRAVE::CollisionCheckerBasePtr _col_checker;
+            mutable bool _distance_check_enabled;
 
+            void enableDistanceCheck(bool enable) const;
             std::unordered_map<unsigned int, MultiGraspMP::Grasp> _grasps;
             void setGrasp(unsigned int gid) const;
             inline double costPerConfig(const Config& c) const;

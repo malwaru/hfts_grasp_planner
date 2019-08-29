@@ -26,11 +26,11 @@ Roadmap::NodePtr Roadmap::Edge::getNeighbor(NodePtr n) const
 {
     auto a = node_a.lock();
     assert(a);
-    if (a->uid == n->uid)
+    if (a->uid != n->uid)
         return a;
     auto b = node_b.lock();
     assert(b);
-    assert(b->uid == n->uid);
+    assert(b->uid != n->uid);
     return b;
 }
 
@@ -123,7 +123,31 @@ Roadmap::NodeWeakPtr Roadmap::addNode(const Config& config)
     return new_node;
 }
 
-bool Roadmap::checkNode(NodeWeakPtr inode)
+void Roadmap::updateAdjacency(NodePtr node)
+{
+    // update the node's adjacency
+    if (node->densification_gen != _densification_gen) {
+        // radius computed according to RRT*/PRM* paper
+        double r = _gamma_prm * pow(log(_nn.size()) / _nn.size(), 1.0 / _si.dimension);
+        std::vector<NodePtr> neighbors;
+        _nn.nearestR(node, r, neighbors);
+        // add new edges, keep old ones
+        for (auto& neigh : neighbors) {
+            // check whether we already have this edge
+            auto edge_iter = node->edges.find(neigh->uid);
+            if (edge_iter == node->edges.end() and neigh != node) {
+                // if not, create a new edge
+                double bc = _cost_computer->lowerBound(node->config, neigh->config);
+                auto new_edge = std::make_shared<Edge>(node, neigh, bc);
+                node->edges.insert(std::make_pair(neigh->uid, new_edge));
+                neigh->edges.insert(std::make_pair(node->uid, new_edge));
+            }
+        }
+        node->densification_gen = _densification_gen;
+    }
+}
+
+bool Roadmap::isValid(NodeWeakPtr inode)
 {
     if (inode.expired())
         return false;
@@ -136,35 +160,24 @@ bool Roadmap::checkNode(NodeWeakPtr inode)
             return false;
         }
     }
-    // update the node's adjacency
-    if (node->densification_gen != _densification_gen) {
-        // radius computed according to RRT*/PRM* paper
-        double r = _gamma_prm * pow(log(_nn.size()) / _nn.size(), 1.0 / _si.dimension);
-        std::vector<NodePtr> neighbors;
-        _nn.nearestR(node, r, neighbors);
-        // add new edges, keep old ones
-        for (auto& neigh : neighbors) {
-            // check whether we already have this edge
-            auto edge_iter = node->edges.find(node->uid);
-            if (edge_iter != node->edges.end() and neigh != node) {
-                // if not, create a new edge
-                auto new_edge = std::make_shared<Edge>(node, neigh, _si.distance_fn(node->config, neigh->config));
-                node->edges.insert(std::make_pair(neigh->uid, new_edge));
-                neigh->edges.insert(std::make_pair(node->uid, new_edge));
-                new_edge->base_cost = _cost_computer->lowerBound(node->config, neigh->config);
-            }
-        }
-        node->densification_gen = _densification_gen;
-    }
     node->initialized = true;
     return true;
 }
 
-bool Roadmap::checkNode(NodeWeakPtr node, unsigned int grasp_id)
+bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
 {
-    bool base_valid = checkNode(node);
+    bool base_valid = isValid(wnode);
     if (base_valid) {
-        return _validity_checker->isValid(node.lock()->config, grasp_id, true);
+        // check validity for the given grasp
+        NodePtr node = wnode.lock();
+        auto iter = node->conditional_validity.find(grasp_id);
+        if (iter == node->conditional_validity.end()) {
+            bool valid = _validity_checker->isValid(node->config, grasp_id, true);
+            node->conditional_validity[grasp_id] = valid;
+            return valid;
+        } else {
+            return iter->second;
+        }
     }
     return false;
 }
@@ -227,10 +240,18 @@ void Roadmap::deleteNode(NodePtr node)
     assert(iter != _nodes.end());
     _nodes.erase(iter);
     // remove all edges pointing to it
-    for (auto out_info : node->edges) {
+    for (auto iter = node->edges.begin(); iter != node->edges.end();) {
         // unsigned int edge_target_id = out_info.first;
-        EdgePtr edge = out_info.second;
-        deleteEdge(edge);
+        EdgePtr edge = iter->second;
+        // delete edge in other node
+        {
+            NodePtr other_node = edge->getNeighbor(node);
+            auto oiter = other_node->edges.find(node->uid);
+            assert(oiter != other_node->edges.end());
+            other_node->edges.erase(oiter);
+        }
+        // delete edge in this node
+        iter = node->edges.erase(iter);
     }
     assert(node->edges.empty());
     node.reset();
