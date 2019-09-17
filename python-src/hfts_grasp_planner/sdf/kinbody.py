@@ -225,7 +225,7 @@ class OccupancyOctree(object):
             ---------
             Arguments
             ---------
-            filename, string - filename 
+            filename, string - filename
             link, OpenRAVE link - link this OccupancyOctree is supposed to represent
             -------
             Returns
@@ -246,7 +246,7 @@ class OccupancyOctree(object):
             ---------
             Arguments
             ---------
-            filename, string - filename 
+            filename, string - filename
         """
         with open(filename, 'w') as pickle_file:
             cPickle.dump(self, pickle_file)
@@ -413,7 +413,7 @@ class OccupancyOctree(object):
             v_to_border, numpy array of shape (3,) - translation vector to move the cell with maximum penetration
                 out of collision (None if b_compute_dir is False)
             pos, numpy array of shape (3,) - position of the cell with maximum penetration (in world frame)
-            DISABLED: dist_to_surface, float - if b_compute_dir is True, the distance from the point of maximum 
+            DISABLED: dist_to_surface, float - if b_compute_dir is True, the distance from the point of maximum
                         penetration towards the body's surface along -v_to_border
         """
         max_penetration = 0.0
@@ -541,6 +541,68 @@ class RigidBodyOccupancyGrid(object):
             values_to_sum = field.get_cell_values(indices)
             return np.sum(values_to_sum) + (query_pos.shape[0] - indices.shape[0]) * default_value
         return query_pos.shape[0] * default_value
+
+    def min(self, field, tf=None, cuda_id=None):
+        """
+            Return the minimal cell value occupied by this object.
+            ---------
+            Arguments
+            ---------
+            field, VoxelGrid - a voxel grid filled with values to get min from
+            tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
+                is expecting. If None, link.GetTransform is used.
+            cuda_id, int - if provided, ignore the value given for field and instead utilize the cuda interpolator
+                with the given id.
+            -------
+            Returns
+            -------
+            result, float - minimal cell value, None if all positions are out of bounds
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        if cuda_id is not None:
+            # TODO what about out of bounds values?
+            return self._cuda_interpolators[cuda_id].min(tf)
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        _, indices, _ = field.map_to_grid_batch(query_pos, index_type=np.float_)
+        if indices is not None:
+            values = field.get_cell_values(indices)
+            return np.min(values)
+        return None
+
+    def min_grad(self, field, tf=None, cuda_id=None):
+        """
+            Return the gradient at the cell with minimal value.
+            ---------
+            Arguments
+            ---------
+            field, VoxelGrid - a voxel grid filled with values to get min from
+            tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
+                is expecting. If None, link.GetTransform is used.
+            cuda_id, int - if provided, ignore the value given for field and instead utilize the cuda interpolator
+                with the given id.
+            -------
+            Returns
+            -------
+            min_val, float - minimal cell value, None if out of bounds
+            pos, np.array of shape (3, 3) - local position of the minimizing cell, None if out of bounds
+            grad, np.array of shape (3, 3) - gradient at the minimizing cell, None if out of bounds
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        if cuda_id is not None:
+            # TODO what about out of bounds values?
+            vals, grads = self._cuda_interpolators[cuda_id].gradient(tf)
+            min_index = np.argmin(vals)
+            return vals[min_index], self._locc_positions[min_index], grads[min_index]
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        _, indices, _ = field.map_to_grid_batch(query_pos, index_type=np.float_)
+        if indices is not None:
+            mask, vals, grads = field.get_cell_gradients_pos(query_pos, b_return_values=True)
+            min_index = np.argmin(vals)
+            pos = self._locc_positions[mask]
+            return vals[min_index], pos[min_index], grads[min_index]
+        return None, None, None
 
     def compute_gradients(self, field, tf=None, cuda_id=None):
         """

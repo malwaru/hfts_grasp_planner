@@ -406,11 +406,10 @@ if __name__ == "__main__":
         now = time.time()
         if 'objective_fn' in problem_desc:
             if problem_desc['objective_fn'] == 'minimize_clearance':
-                obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
+                obj_fn = clearance_mod.AverageClearanceObjective(occ_target_volume, obj_occgrid,
                                                           b_max=False)
             elif problem_desc['objective_fn'] == 'maximize_clearance':
-                obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
-                                                          b_max=True)
+                obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid)
             elif problem_desc['objective_fn'] == 'deep_shelf':
                 obj_fn = objectives_mod.DeepShelfObjective(target_object, occ_target_volume, obj_occgrid, b_max=True)
         else:
