@@ -28,7 +28,7 @@ plcmnt_volume: [-0.4, 0.45, 0.25, 0.53, 1.0, 0.54]
 #plcmnt_volume: [-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]
 sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
 time_limit: 20.0
-objective_fn: maximize_clearance  # maximize_clearance, minimize_clearance, deep_shelf
+objective_fn: minimize_clearance  # maximize_clearance, minimize_clearance, deep_shelf
 goal_stats_file: '/tmp/test_goal_stats'
 plan_stats_file: '/tmp/test_plan_stats'
 # initial_obj_pose: [-0.65, 0.01, 0.63, 1.0, 0.0, 0.0, 0.0]

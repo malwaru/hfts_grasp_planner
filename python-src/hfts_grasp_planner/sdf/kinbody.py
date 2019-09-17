@@ -632,7 +632,7 @@ class RigidBodyOccupancyGrid(object):
             return np.max(values)
         return None
 
-    def max(self, field, tf=None, cuda_id=None):
+    def max_grad(self, field, tf=None, cuda_id=None):
         """
             Return the gradient at the cell with maximal value.
             ---------
