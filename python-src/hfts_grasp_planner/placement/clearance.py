@@ -190,7 +190,7 @@ class ClearanceObjective(PlacementObjective):
         """
         _, pos, grad = self._body_grid.min_grad(None, obj_tf, cuda_id=self._cuda_id)
         # translate local positions into positions relative to reference pose
-        rpos = np.dot(to_ref_pose[:3, :3]), pos) + to_ref_pose[:3, 3]
+        rpos = np.dot(to_ref_pose[:3, :3], pos) + to_ref_pose[:3, 3]
         # get object state
         _, _, theta = state
         # compute gradient w.r.t to state
