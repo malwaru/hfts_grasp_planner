@@ -604,6 +604,68 @@ class RigidBodyOccupancyGrid(object):
             return vals[min_index], pos[min_index], grads[min_index]
         return None, None, None
 
+    def max(self, field, tf=None, cuda_id=None):
+        """
+            Return the maximal cell value occupied by this object.
+            ---------
+            Arguments
+            ---------
+            field, VoxelGrid - a voxel grid filled with values to get min from
+            tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
+                is expecting. If None, link.GetTransform is used.
+            cuda_id, int - if provided, ignore the value given for field and instead utilize the cuda interpolator
+                with the given id.
+            -------
+            Returns
+            -------
+            result, float - minimal cell value, None if all positions are out of bounds
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        if cuda_id is not None:
+            # TODO what about out of bounds values?
+            return self._cuda_interpolators[cuda_id].max(tf)
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        _, indices, _ = field.map_to_grid_batch(query_pos, index_type=np.float_)
+        if indices is not None:
+            values = field.get_cell_values(indices)
+            return np.max(values)
+        return None
+
+    def max(self, field, tf=None, cuda_id=None):
+        """
+            Return the gradient at the cell with maximal value.
+            ---------
+            Arguments
+            ---------
+            field, VoxelGrid - a voxel grid filled with values to get min from
+            tf, numpy array of shape 4x4 - transformation matrix from this link's frame to the global frame that field
+                is expecting. If None, link.GetTransform is used.
+            cuda_id, int - if provided, ignore the value given for field and instead utilize the cuda interpolator
+                with the given id.
+            -------
+            Returns
+            -------
+            max_val, float - minimal cell value, None if out of bounds
+            pos, np.array of shape (3, 3) - local position of the minimizing cell, None if out of bounds
+            grad, np.array of shape (3, 3) - gradient at the minimizing cell, None if out of bounds
+        """
+        if tf is None:
+            tf = self._link.GetTransform()
+        if cuda_id is not None:
+            # TODO what about out of bounds values?
+            vals, grads = self._cuda_interpolators[cuda_id].gradient(tf)
+            max_index = np.argmax(vals)
+            return vals[max_index], self._locc_positions[max_index], grads[max_index]
+        query_pos = np.dot(self._locc_positions, tf[:3, :3].transpose()) + tf[:3, 3]
+        _, indices, _ = field.map_to_grid_batch(query_pos, index_type=np.float_)
+        if indices is not None:
+            mask, vals, grads = field.get_cell_gradients_pos(query_pos, b_return_values=True)
+            max_index = np.argmax(vals)
+            pos = self._locc_positions[mask]
+            return vals[max_index], pos[max_index], grads[max_index]
+        return None, None, None
+
     def compute_gradients(self, field, tf=None, cuda_id=None):
         """
             Compute the gradients at the positions of this grid's cells.
