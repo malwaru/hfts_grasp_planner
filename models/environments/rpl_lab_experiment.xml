@@ -20,7 +20,7 @@
     </KinBody>
 
     <KinBody name="cabinet">
-        <Translation>0.0682 0.7704911828041077 -0.587</Translation>
+        <Translation>0.0682 0.7704911828041077 -0.58</Translation>
         <RotationAxis>0 0 1 0</RotationAxis>
         <Body type="static">
             <Geom type="trimesh">
@@ -30,4 +30,55 @@
             </Geom>
         </Body>
     </KinBody>
+    
+    <KinBody name="cracker_box">
+        <Translation>0.19316698 0.80129266 0.14102311</Translation>
+        <quat>-0.15458089 -0.00501718 0.0104134 0.98791251</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../objects/cracker_box/cheezit.stl</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="mustard_bottle">
+        <Translation>0.0021947 0.65921818 0.24234652</Translation>
+        <quat>0.67278228 -0.68149636 -0.19949673 0.20767229</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../objects/mustard/mustard.stl</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="elmers_glue">
+        <!-- <Translation>-0.31813857 0.67549455 0.15108353</Translation>
+        <quat>0.3180211 0.63695468 -0.23647528 0.66123427</quat> -->
+        <Translation>-0.312677 0.65040168 0.19497709</Translation>
+        <quat>0.64990857 0.62399844 0.30045449 0.31300462</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../objects/elmers_glue/glue.stl 0.001</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
+    <KinBody name="sugar_box">
+        <Translation>-0.18642208 0.7764712 0.35850906</Translation>
+        <quat>0.52168555 0.48229877 -0.49067009 0.5044551</quat>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../objects/sugar_box/sugar.stl</Data>
+                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
+                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
+            </Geom>
+        </Body>
+    </KinBody>
+
 </Environment> 

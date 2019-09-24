@@ -9,6 +9,12 @@ import numpy as np
 import yaml
 import IPython
 
+# LEFT_ARM_INHAND_CONFIG = np.array([-0.91377819, -1.48872864,  1.92046666,  0.62049645,  0.38236198,
+#         0.81718266,  2.63366151])
+LEFT_ARM_INHAND_CONFIG = np.array([-1.36583662, -1.48842084,  1.73510325,  0.47979113,  0.29852417,
+        0.63616234,  2.48654008])
+RIGHT_ARM_HOME_CONFIG = np.array([ 0.3597441 , -2.12499809, -1.69211626,  0.3060284 ,  0.38631114,
+    0.6000796 , -1.48077667])
 
 def load_finger_tf(filename):
     with open(filename, 'r') as info_file:
@@ -35,16 +41,33 @@ def playback_inhand_traj(grasping_manip, obj, push_traj):
             robot.WaitForController(0)
         obj.SetTransform(np.dot(eeftf, followup_grasp.eTo))
 
+def save_push_trajs(push_traj, filename, dof_indices):
+    data = []
+    for push in push_traj:
+        paths = []
+        for traj in push[0]:
+            configs = []
+            specs = traj.GetConfigurationSpecification()
+            for i in range(traj.GetNumWaypoints()):
+                wp = traj.GetWaypoint(i)
+                positions = specs.ExtractJointValues(wp, robot, dof_indices)
+                configs.append(positions)
+            paths.append(configs)
+        data.append(paths)
+    with open(filename, 'w') as the_file:
+        yaml.dump(data, the_file)
 
 if __name__ == "__main__":
     env = orpy.Environment()
     urdf_file = 'models/robots/yumi/yumi.urdf'
-    env.Load('models/environments/table_low_clutter.xml')
+    env.Load('models/environments/rpl_lab_experiment.xml')
     env.Load('models/objects/expo/expo.kinbody.xml')
     robot = env.GetRobots()[0]
     manips = robot.GetManipulators()
-    grasping_manip = manips[0]
-    pushing_manip = manips[1]
+    # grasping_manip = manips[0]
+    # pushing_manip = manips[1]
+    grasping_manip = robot.GetManipulator('left_arm_with_gripper')
+    pushing_manip = robot.GetManipulator('right_arm_with_gripper')
     # load pushing tf
     with open('models/robots/yumi/gripper_information.yaml', 'r') as info_file:
         gripper_info = yaml.load(info_file)
@@ -59,7 +82,7 @@ if __name__ == "__main__":
         eTp = np.dot(inverse_transform(wTe), wTp)
     target_obj = env.GetKinBody('expo')
     with open('yamls/placement_problems/grasps/new/expo.yaml', 'r') as grasp_file:
-        grasp_info = yaml.load(grasp_file)[0]
+        grasp_info = yaml.load(grasp_file)[1]
         config = grasp_info['grasp_config']
         grasp_pose = grasp_info['grasp_pose']
         pos = grasp_pose[:3]
@@ -88,8 +111,10 @@ if __name__ == "__main__":
                                    'models/robots/yumi/gripper_information.yaml',
                                    'models/objects/expo/dmg_info.yaml')
     pushing_computer = dmg_pushing_module.DualArmPushingComputer(robot, grasping_manip, pushing_manip, urdf_file, eTp)
-    grasp_path, push_path = grasp_set.return_pusher_path(10)
+    grasp_path, push_path = grasp_set.return_pusher_path(60)
     inhand_config = np.array([1.21007779e+00, -1.57321833e+00, -1.30163680e+00,  9.27653204e-01,
                               -1.00904288e+00,  7.37689903e-01,  2.51809821e-09])
-    robot.SetDOFValues(inhand_config, grasping_manip.GetArmIndices())
+    robot.SetDOFValues(LEFT_ARM_INHAND_CONFIG, grasping_manip.GetArmIndices())
+    robot.SetDOFValues(RIGHT_ARM_HOME_CONFIG, pushing_manip.GetArmIndices())
+    # robot.SetDOFValues([0.0], pushing_manip.GetGripperIndices())
     IPython.embed()

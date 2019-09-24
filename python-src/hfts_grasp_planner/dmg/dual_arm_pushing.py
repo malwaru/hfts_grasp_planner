@@ -97,7 +97,7 @@ class DualArmPushingComputer(object):
             self.robot.SetActiveDOFValues(config)
         return config_path
 
-    def _compute_translational_push(self, start_pose, end_pose, obj_body, offset=0.015, err_tol=1e-3):
+    def _compute_translational_push(self, start_pose, end_pose, obj_body, offset=0.01, err_tol=1e-3):
         """
             Compute a pushing path in joint space for a translational push from start_pose to end_pose.
         """
@@ -130,6 +130,7 @@ class DualArmPushingComputer(object):
             retreat_traj = path_to_trajectory(self.robot, retreat_path, vel_factor=self.vel_factor)
             # move to a retreat pose
             self.robot.SetActiveDOFValues(start_config)
+            obj_body.Enable(True)
             return [approach_traj, push_traj, retreat_traj]
 
     def _make_grasp_frame(self, start_pose, end_pose, rot_center):
@@ -239,9 +240,13 @@ class DualArmPushingComputer(object):
             wTp = self.pushing_manip.GetEndEffectorTransform()
             retreat_pose = np.array(wTp)
             retreat_dir = retreat_pose[:3, 3] - wTg[:3, 3]
+            hack_retreat = world_start_pose[:3, 3] - wTg[:3, 3]
+            retreat_dir += hack_retreat
+            retreat_dir /= 2.0
             retreat_pose[:3, 3] += offset * retreat_dir / np.linalg.norm(retreat_dir)
             config_path = self._move_straight(retreat_pose, err_tol)
             retreat_traj = path_to_trajectory(self.robot, config_path, vel_factor=self.vel_factor)
+            obj_body.Enable(True)
             return [approach_traj, approach2_traj, rotate_traj, retreat_traj]
 
     def compute_pushing_trajectory(self, grasp_path, pusher_path, obj_body):

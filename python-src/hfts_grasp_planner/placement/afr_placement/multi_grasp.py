@@ -354,7 +354,7 @@ class DMGGraspSet(object):
             rotations, list of floats (radians) describing rotational pushes (length n)
         """
         if gid == 0 or gid == 1 or gid > len(self._grasps):
-            return [], []
+            return [], [], []
         translations = []
         rotations = []
         current_grasp = self._grasps[gid]
@@ -400,10 +400,14 @@ class DMGGraspSet(object):
         # get initial grasp on dmg first
         start_grasp = self._grasps[1]
         grasp_path, translations, rotations = self.return_inhand_path(gid)
-        finger_positions = np.empty((2, 3))
-        finger_positions[0] = self.dmg.get_position(start_grasp.dmg_info[0])
-        finger_positions[1] = self.dmg.get_position(start_grasp.dmg_info[2])
-        return grasp_path, self.dmg.convert_path((translations, rotations), np.array(start_grasp.oTe), finger_positions)
+        pushes = []
+        for i in range(len(translations)):
+            base_grasp = grasp_path[i]
+            finger_positions = np.empty((2, 3))
+            finger_positions[0] = self.dmg.get_position(base_grasp.dmg_info[0])
+            finger_positions[1] = self.dmg.get_position(base_grasp.dmg_info[2])
+            pushes.extend(self.dmg.convert_path(([translations[i]], [rotations[i]]), np.array(base_grasp.oTe), finger_positions))
+        return grasp_path, pushes
 
 
 class HierarchicalGraspCache(object):

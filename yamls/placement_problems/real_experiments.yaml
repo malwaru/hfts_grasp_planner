@@ -1,0 +1,42 @@
+or_env: ../../models/environments/rpl_lab_experiment.xml
+urdf_file: ../../models/robots/yumi/yumi.urdf
+sdf_file: ../../data/generated/sdfs/rpl_lab_experiment
+occ_file: ../../data/generated/occupancy_grids/rpl_lab_experiment
+robot_occtree: ../../data/generated/robot_occtrees/Yumi
+robot_occgrid: ../../data/generated/robot_occgrids/Yumi
+reachability_path: ../../data/generated/gnat_reachability/
+robot_ball_desc: ../../models/robots/yumi/ball_description.yaml
+robot_name: Yumi
+manipulator: left_arm_with_gripper
+gripper_information: ../../models/robots/yumi/gripper_information.yaml
+dmg_file: ../../models/objects/expo/dmg_info.yaml
+target_obj_file: ../../models/objects/expo/expo.kinbody.xml
+grasp_file: grasps/new/expo.yaml
+grasp_id: 1
+plcmnt_volume: [-0.37, 0.58, 0.13, 0.50, 0.9, 0.44]
+# plcmnt_volume: [-0.37, 0.58, 0.13, -0.10, 0.9, 0.44]
+sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
+time_limit: 40
+objective_fn: maximize_clearance
+goal_stats_file: '/tmp/test_goal_stats'
+plan_stats_file: '/tmp_test_plan_stats'
+parameters:
+  occ_tree_cell_size: 0.005
+  relaxation_type: sub-binary
+  weight_arm_col: 0.1
+  weight_obj_col: 0.15
+  weight_contact: 0.15
+  weight_objective: 0.25
+  weight_reachable: 0.2
+  eps_xi: 1.0
+  joint_limit_margin: 0.0001
+  c: 0.8
+  objective_impr_f: 0.1
+  num_goal_samples: 1
+  num_goal_iterations: 25
+  mp_timeout: 0.0
+  sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random, mcts_sampler
+  motion_planner: real
+  proj_type: None  # None, jac, ik
+  grasp_selector_type: cache_hierarchy  # naive,  cache_global, cache_hierarchy, bandit, dummy
+
