@@ -104,10 +104,203 @@ def compute_clearance_map(occ_grid, buse_cuda=True):
     #     clearance_map.set_raw_data(clrm_data)
     #     return clearance_map
 
-
 class ClearanceObjective(PlacementObjective):
     """
-        An objective function to maximize clearance to obstacles on horizontal surfaces.
+        An objective function to maximize clearance from obstacles on horizontal surfaces.
+    """
+
+    def __init__(self, occ_grid, body_grid):
+        """
+            Create a new ClearanceObjective.
+            ---------
+            Arguments
+            ---------
+            occ_grid, OccupancyGrid of target volume
+            body_grid, RigidBodyOccupancyGrid - rigid body occupancy grid as volumetric model of the
+                target object
+        """
+        self._clearance_map = compute_clearance_map(occ_grid)
+        self._body_grid = body_grid
+        self._cuda_id = self._body_grid.setup_cuda_grid_access(self._clearance_map)
+        self._call_count = 0
+
+    def __call__(self, obj_tf):
+        """
+            Return the objective value for the given solution.
+            ---------
+            Arguments
+            ---------
+            obj_tf, np array of shape (4, 4) - object pose to evaluate
+            --------
+            Returns
+            --------
+            val, float - objective value (the larger the better)
+        """
+        if obj_tf is None:
+            return float('-inf')
+        self._call_count += 1
+        return self._body_grid.min(None, obj_tf, cuda_id=self._cuda_id)
+
+    def evaluate(self, obj_tf):
+        """
+            Return the objective value for the given solution.
+            ---------
+            Arguments
+            ---------
+            obj_tf, np array of shape (4, 4) - object pose to evaluate
+            --------
+            Returns
+            --------
+            val, float - objective value (the larger the better)
+        """
+        return self(obj_tf)
+
+    def get_num_evaluate_calls(self, b_reset=True):
+        """
+            Return statistics on how many times evaluate has been called.
+            ---------
+            Arguments
+            ---------
+            b_reset, bool - if True, reset counter
+            -------
+            Returns
+            -------
+            num_calls, int - number of times the evaluate function has been called
+        """
+        num_calls = self._call_count
+        if b_reset:
+            self._call_count = 0
+        return num_calls
+
+    def get_gradient(self, obj_tf, state, to_ref_pose):
+        """
+            Return the gradient of the objective value w.r.t x, y, theta.
+            given that some reference point on the object is currently in the given state (x, y, theta).
+            ---------
+            Arguments
+            ---------
+            obj_tf, np array of shape (4, 4) - pose of the object
+            state, tuple (x, y, theta) - current state of the reference point
+            to_ref_pose, np array of shape (4, 4) - transformation matrix mapping from object frame to reference frame
+                for which the state is defined
+            -------
+            Returns
+            -------
+            np array of shape (3,) - gradient w.r.t x, y, theta
+        """
+        _, pos, grad = self._body_grid.min_grad(None, obj_tf, cuda_id=self._cuda_id)
+        # translate local positions into positions relative to reference pose
+        rpos = np.dot(to_ref_pose[:3, :3], pos) + to_ref_pose[:3, 3]
+        # get object state
+        _, _, theta = state
+        # compute gradient w.r.t to state
+        r = np.array([[-np.sin(theta), np.cos(theta)], [-np.cos(theta), -np.sin(theta)]])
+        dxi_dtheta = np.matmul(rpos[:2], r)
+        rgrad = np.array(grad)
+        rgrad[2] = np.dot(rgrad[:2], dxi_dtheta)
+        return rgrad
+
+
+class PackingObjective(PlacementObjective):
+    """
+        An objective function to place objects as close to obstacles as possible  (on horizontal surfaces).
+    """
+
+    def __init__(self, occ_grid, body_grid):
+        """
+            Create a new PackingObjective.
+            ---------
+            Arguments
+            ---------
+            occ_grid, OccupancyGrid of target volume
+            body_grid, RigidBodyOccupancyGrid - rigid body occupancy grid as volumetric model of the
+                target object
+        """
+        self._clearance_map = compute_clearance_map(occ_grid)
+        self._body_grid = body_grid
+        self._cuda_id = self._body_grid.setup_cuda_grid_access(self._clearance_map)
+        self._call_count = 0
+
+    def __call__(self, obj_tf):
+        """
+            Return the objective value for the given solution.
+            ---------
+            Arguments
+            ---------
+            obj_tf, np array of shape (4, 4) - object pose to evaluate
+            --------
+            Returns
+            --------
+            val, float - objective value (the larger the better)
+        """
+        if obj_tf is None:
+            return float('-inf')
+        self._call_count += 1
+        return -self._body_grid.max(None, obj_tf, cuda_id=self._cuda_id)
+
+    def evaluate(self, obj_tf):
+        """
+            Return the objective value for the given solution.
+            ---------
+            Arguments
+            ---------
+            obj_tf, np array of shape (4, 4) - object pose to evaluate
+            --------
+            Returns
+            --------
+            val, float - objective value (the larger the better)
+        """
+        return self(obj_tf)
+
+    def get_num_evaluate_calls(self, b_reset=True):
+        """
+            Return statistics on how many times evaluate has been called.
+            ---------
+            Arguments
+            ---------
+            b_reset, bool - if True, reset counter
+            -------
+            Returns
+            -------
+            num_calls, int - number of times the evaluate function has been called
+        """
+        num_calls = self._call_count
+        if b_reset:
+            self._call_count = 0
+        return num_calls
+
+    def get_gradient(self, obj_tf, state, to_ref_pose):
+        """
+            Return the gradient of the objective value w.r.t x, y, theta.
+            given that some reference point on the object is currently in the given state (x, y, theta).
+            ---------
+            Arguments
+            ---------
+            obj_tf, np array of shape (4, 4) - pose of the object
+            state, tuple (x, y, theta) - current state of the reference point
+            to_ref_pose, np array of shape (4, 4) - transformation matrix mapping from object frame to reference frame
+                for which the state is defined
+            -------
+            Returns
+            -------
+            np array of shape (3,) - gradient w.r.t x, y, theta
+        """
+        _, pos, grad = self._body_grid.max_grad(None, obj_tf, cuda_id=self._cuda_id)
+        # translate local positions into positions relative to reference pose
+        rpos = np.dot(to_ref_pose[:3, :3], pos) + to_ref_pose[:3, 3]
+        # get object state
+        _, _, theta = state
+        # compute gradient w.r.t to state
+        r = np.array([[-np.sin(theta), np.cos(theta)], [-np.cos(theta), -np.sin(theta)]])
+        dxi_dtheta = np.matmul(rpos[:2], r)
+        rgrad = np.array(grad)
+        rgrad[2] = np.dot(rgrad[:2], dxi_dtheta)
+        return -rgrad
+
+
+class AverageClearanceObjective(PlacementObjective):
+    """
+        An objective function to minimize or maximize the average clearance to obstacles on horizontal surfaces.
     """
 
     def __init__(self, occ_grid, body_grid, b_max=False):
