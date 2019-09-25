@@ -160,7 +160,7 @@ def humanoids_baselines(yaml_template):
     # relax_types = ['sub-binary']
     bodies = ['elmers_glue', 'expo']
     envs = ['table_high_clutter', 'cabinet_high_clutter']
-    selector_types = ['naive', 'cache_global', 'cache_hierarchy', 'dummy']
+    selector_types = ['naive', 'cache_hierarchy', 'dummy']
     grasp_ids = {'elmers_glue': [0, 1], 'expo': [0]}
 
     def yaml_gen():

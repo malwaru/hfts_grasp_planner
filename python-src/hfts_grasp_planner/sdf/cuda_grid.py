@@ -416,6 +416,62 @@ class CudaStaticPositionsInterpolator(object):
         sum_val.get(cpu_val)
         return cpu_val[0]
 
+    def min(self, tf_matrix):
+        """
+            Return the minimal value given the transformation matrix.
+            ---------
+            Arguments
+            ---------
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            -------
+            Returns
+            -------
+            min, float - minimal value
+        """
+        tf_matrix = np.dot(self._base_tf, tf_matrix)
+        if tf_matrix.dtype != np.float32:
+            tf_matrix = tf_matrix.astype(np.float32)
+        # copy matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
+        # get values
+        self._get_val_fn.prepared_call(self._grid, self._block, self._gpu_positions,
+                                       self._gpu_values.gpudata, self._gpu_tf_matrix, self._scale,
+                                       self._num_pos)
+        # get min values
+        min_val = gpuarray.min(self._gpu_values)
+        # extract single value
+        cpu_val = np.zeros(1, dtype=np.float32)
+        min_val.get(cpu_val)
+        return cpu_val[0]
+
+    def max(self, tf_matrix):
+        """
+            Return the maximal value given the transformation matrix.
+            ---------
+            Arguments
+            ---------
+            tf_matrix, np array of shape (4, 4) - transformation matrix from position frame to grid frame
+            -------
+            Returns
+            -------
+            max, float - minimal value
+        """
+        tf_matrix = np.dot(self._base_tf, tf_matrix)
+        if tf_matrix.dtype != np.float32:
+            tf_matrix = tf_matrix.astype(np.float32)
+        # copy matrix to gpu
+        cuda.memcpy_htod(self._gpu_tf_matrix, tf_matrix.flatten()[:12])
+        # get values
+        self._get_val_fn.prepared_call(self._grid, self._block, self._gpu_positions,
+                                       self._gpu_values.gpudata, self._gpu_tf_matrix, self._scale,
+                                       self._num_pos)
+        # get min values
+        max_val = gpuarray.max(self._gpu_values)
+        # extract single value
+        cpu_val = np.zeros(1, dtype=np.float32)
+        max_val.get(cpu_val)
+        return cpu_val[0]
+
     def chomps_smooth_distance(self, tf_matrix, eps):
         """
             Assuming the underlying data structure stores distances, return Chomp's smooth distance
