@@ -199,27 +199,27 @@ class DMGGraspSet(object):
         node, angle, onode, oangle = dmg_info
         node_pos = self.dmg.get_position(node)
         ocomp = self.dmg.get_component(onode)
-        neighbor_nodes = self.dmg.get_neighbors(node)
-        for neigh in neighbor_nodes:
-            # Two grasps are translational adjacent, if
-            #  1. nodes are adjacent (iteration over neighbors solves this)
-            #  2. angle is also valid in neighboring node
-            #  3. opposite nodes are adjacent
-            #  4. opposite angle is valid in opposite node neighbor
-            # 2
-            if not self.dmg.is_valid_angle(neigh, angle):
-                continue
-            # 3
-            oneigh = self.dmg.get_opposite_node(neigh, angle, comp=ocomp)
-            if oneigh is None:
-                continue
-            if oneigh not in self.dmg.get_neighbors(onode):
-                continue
-            # 4
-            if not self.dmg.is_valid_angle(oneigh, oangle):
-                continue
-            neighbor_grasps.append((neigh, angle, oneigh, oangle))
-            edge_costs.append(np.linalg.norm(self.dmg.get_position(neigh) - node_pos))
+        # neighbor_nodes = self.dmg.get_neighbors(node)
+        # for neigh in neighbor_nodes:
+        #     # Two grasps are translational adjacent, if
+        #     #  1. nodes are adjacent (iteration over neighbors solves this)
+        #     #  2. angle is also valid in neighboring node
+        #     #  3. opposite nodes are adjacent
+        #     #  4. opposite angle is valid in opposite node neighbor
+        #     # 2
+        #     if not self.dmg.is_valid_angle(neigh, angle):
+        #         continue
+        #     # 3
+        #     oneigh = self.dmg.get_opposite_node(neigh, angle, comp=ocomp)
+        #     if oneigh is None:
+        #         continue
+        #     if oneigh not in self.dmg.get_neighbors(onode):
+        #         continue
+        #     # 4
+        #     if not self.dmg.is_valid_angle(oneigh, oangle):
+        #         continue
+        #     neighbor_grasps.append((neigh, angle, oneigh, oangle))
+        #     edge_costs.append(np.linalg.norm(self.dmg.get_position(neigh) - node_pos))
         # Two grasps are rotationally adjacent, if
         #  1. angles are adjacent on grid
         #  2. opposite angle is within valid range of opposite node

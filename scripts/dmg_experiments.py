@@ -448,9 +448,9 @@ if __name__ == "__main__":
 
         pplanner = PlacementPlanner(problem_desc)
         push_computer = DualArmPushingComputer(motion_planner._robot_clone, grasping_manip, pushing_manip, ROBOT_URDF, eTp)
-        traj, gid = load_solution('/home/joshua/snd_unknown_solution_2_pushes.yaml', motion_planner._robot_clone)
-        push_trajs = load_inhand_pushes('/home/joshua/second_pushes.yaml', pushing_manip)[:1]
-        grasp_path, push_path = pplanner.grasp_set.return_pusher_path(gid)
+        # traj, gid = load_solution('/home/joshua/snd_unknown_solution_2_pushes.yaml', motion_planner._robot_clone)
+        # push_trajs = load_inhand_pushes('/home/joshua/second_pushes.yaml', pushing_manip)[:1]
+        # grasp_path, push_path = pplanner.grasp_set.return_pusher_path(gid)
         # pushing_trajs = push_computer.compute_pushing_trajectory(grasp_path, push_path, target_obj)
         env.SetViewer('qtcoin')
         IPython.embed()
