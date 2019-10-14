@@ -4,6 +4,8 @@
         <adjacent>yumi_link_5_l yumi_link_7_l</adjacent>
         <adjacent>yumi_link_5_r gripper_r_base</adjacent>
         <adjacent>yumi_link_5_r yumi_link_7_r</adjacent>
+        <adjacent>gripper_r_finger_r gripper_r_finger_l</adjacent>
+        <adjacent>gripper_l_finger_r gripper_l_finger_l</adjacent>
         <Body name="yumi_body" type="dynamic">
             <!-- <offsetfrom>robotiq_socket</offsetfrom> -->
             <Translation> 0 0 0</Translation>

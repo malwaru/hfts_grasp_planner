@@ -199,7 +199,7 @@ class DMGGraspSet(object):
         node, angle, onode, oangle = dmg_info
         node_pos = self.dmg.get_position(node)
         ocomp = self.dmg.get_component(onode)
-        # neighbor_nodes = self.dmg.get_neighbors(node)
+        neighbor_nodes = self.dmg.get_neighbors(node)
         # for neigh in neighbor_nodes:
         #     # Two grasps are translational adjacent, if
         #     #  1. nodes are adjacent (iteration over neighbors solves this)
@@ -339,6 +339,48 @@ class DMGGraspSet(object):
         assert(running_idx not in blacklist)
         return self._grasps[running_idx]
 
+    def simplify_inhand_path(self, inhand_path):
+        """
+            Simplify an inhand path by merging subsequent equal translations and rotations.
+
+            Arguments
+            ---------
+            inhand_path, tuple of lists (grasps, translations, rotations)
+
+            Returns
+            -------
+            inhand_path, tuple of lists (grasps, translations, rotations)
+        """
+        grasps, translations, rotations = inhand_path
+        out_grasps = [grasps[0]]
+        out_translations = []
+        out_rotations = []
+        prev_translation = translations[0]
+        prev_translation_dir = translations[0] / np.linalg.norm(translations[0]) if np.linalg.norm(translations[0]) > 0.0 else np.zeros(3)
+        prev_rotation = rotations[0]
+        prev_rotation_dir = np.sign(rotations[0])
+        for idx in xrange(1, len(translations)):
+            current_translation_dir = translations[idx] / np.linalg.norm(translations[idx]) if np.linalg.norm(translations[idx]) > 0.0 else np.zeros(3)
+            current_rotation_dir = np.sign(rotations[idx])
+            if np.isclose(np.linalg.norm(prev_translation_dir), 0.0) and not np.isclose(np.linalg.norm(current_translation_dir), 0.0)\
+                 or np.isclose(np.dot(current_translation_dir, prev_translation_dir), 1.0)\
+                 or prev_rotation_dir != current_rotation_dir:
+                out_translations.append(prev_translation)
+                out_rotations.append(prev_rotation)
+                out_grasps.append(grasps[idx])
+                prev_rotation = rotations[idx]
+                prev_translation = translations[idx]
+                prev_rotation_dir = np.sign(prev_rotation)
+                prev_translation_dir = prev_translation / np.linalg.norm(prev_translation) if np.linalg.norm(prev_translation) > 0.0 else np.zeros(3)
+            else:
+                prev_translation += translations[idx]
+                prev_rotation += rotations[idx]
+        out_grasps.append(grasps[-1])
+        out_translations.append(prev_translation)
+        out_rotations.append(prev_rotation)
+        return out_grasps, out_translations, out_rotations
+
+            
     def return_inhand_path(self, gid):
         """
             Return the in-hand path from the grasp with given id to the initial DMG grasp (id=1).
@@ -399,7 +441,7 @@ class DMGGraspSet(object):
             return None
         # get initial grasp on dmg first
         start_grasp = self._grasps[1]
-        grasp_path, translations, rotations = self.return_inhand_path(gid)
+        grasp_path, translations, rotations = self.simplify_inhand_path(self.return_inhand_path(gid))
         pushes = []
         for i in range(len(translations)):
             base_grasp = grasp_path[i]

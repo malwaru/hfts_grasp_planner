@@ -21,7 +21,7 @@ class DualArmPushingComputer(object):
             ---------
             pushing_tooltip, np array of shape (4, 4)
         """
-        self.vel_factor = 0.05
+        self.vel_factor = 1.0
         self.robot = robot
         self.grasping_manip = grasping_manip
         self.pushing_manip = pushing_manip
@@ -151,7 +151,7 @@ class DualArmPushingComputer(object):
         frame[:3, 3] = rot_center
         return frame
 
-    def _compute_rotational_push(self, start_pose, end_pose, rot_center, obj_body, err_tol=1e-3, angular_err_tol=1e-2, offset=0.015):
+    def _compute_rotational_push(self, start_pose, end_pose, rot_center, obj_body, err_tol=1e-3, angular_err_tol=1e-2, offset=0.02):
         """
             Compute a pushing path in joint space for a rotational psuh from start_pose to end_pose.
             The rotational push is centered at rot_center.
@@ -162,7 +162,7 @@ class DualArmPushingComputer(object):
         sTa[0, 3] = offset
         approach_pose = np.dot(fixed_gripper_frame, np.dot(start_pose, sTa))
         # handle = orpy.misc.DrawAxes(self.robot.GetEnv(), approach_pose)
-        start_config, bfree = self._ik_solver.compute_collision_free_ik(approach_pose)
+        start_config, bfree = self._ik_solver.compute_collision_free_ik(approach_pose, seed=self.robot.GetActiveDOFValues())
         if start_config is None or not bfree:
             raise PlanningException("Could not compute collision-free ik solution for approach pose of rotational push")
         # move to start configuration using motion planner to avoid colliding with the object
@@ -173,9 +173,9 @@ class DualArmPushingComputer(object):
         self.robot.SetActiveDOFValues(start_config)
         # now move to pushing point in a straight line
         world_start_pose = np.dot(fixed_gripper_frame, start_pose)
-        start_pose_handle = orpy.misc.DrawAxes(self.robot.GetEnv(), world_start_pose)
+        # start_pose_handle = orpy.misc.DrawAxes(self.robot.GetEnv(), world_start_pose)
         world_end_pose = np.dot(fixed_gripper_frame, end_pose)
-        end_pose_handle = orpy.misc.DrawAxes(self.robot.GetEnv(), world_end_pose)
+        # end_pose_handle = orpy.misc.DrawAxes(self.robot.GetEnv(), world_end_pose)
         with obj_body:
             obj_body.Enable(False)
             config_path = self._move_straight(world_start_pose, err_tol)
@@ -186,7 +186,7 @@ class DualArmPushingComputer(object):
             gTe = inverse_transform(eTg)
             wTg = np.dot(fixed_gripper_frame, eTg)
             gTw = inverse_transform(wTg)
-            grasp_frame_handle = orpy.misc.DrawAxes(self.robot.GetEnv(), wTg)
+            # grasp_frame_handle = orpy.misc.DrawAxes(self.robot.GetEnv(), wTg)
             # get current pusher pose in world framce
             wTp = self.pushing_manip.GetEndEffectorTransform()
             # translate to grasp frame
@@ -202,10 +202,12 @@ class DualArmPushingComputer(object):
             config = self.robot.GetActiveDOFValues()
             config_path = [np.array(config)]
             step_size = 0.01
+            # self.handles = [orpy.misc.DrawCircle(self.robot.GetEnv(), wTg[:3, 3], wTg[:3, 2], np.linalg.norm(r1))]
             while angular_error > angular_err_tol:
                 # get current pusher pose in world framce
                 wTp = self.pushing_manip.GetEndEffectorTransform()
-                handle_2 = orpy.misc.DrawAxes(self.robot.GetEnv(), wTp)
+                # handle_2 = orpy.misc.DrawAxes(self.robot.GetEnv(), wTp)
+                # self.handles.append(handle_2)
                 # translate to grasp frame
                 gTp = np.dot(gTw, wTp)
                 # angular error
@@ -216,7 +218,7 @@ class DualArmPushingComputer(object):
                 v = np.cross(omega, r1)
                 cart_vel[:3] = np.dot(wTg[:3, :3], v)
                 cart_vel[3:] = np.dot(wTg[:3, :3], omega)
-                handle_v = self.robot.GetEnv().drawarrow(wTp[:3, 3], wTp[:3, 3] + cart_vel[:3], 0.001)
+                # handle_v = self.robot.GetEnv().drawarrow(wTp[:3, 3], wTp[:3, 3] + cart_vel[:3], 0.001)
                 # compute Jacobian
                 jacobian = np.empty((6, self.pushing_manip.GetArmDOF()))
                 jacobian[:3] = self.pushing_manip.CalculateJacobian()
@@ -229,8 +231,9 @@ class DualArmPushingComputer(object):
                 delta_q_norm = np.linalg.norm(dq)
                 if delta_q_norm <= 1e-4:
                     break
-                dq /= delta_q_norm
-                config += min(step_size, delta_q_norm) * dq
+                # dq /= delta_q_norm
+                # config += min(step_size, delta_q_norm) * dq
+                config += step_size * dq
                 if not self._check_validity(config):
                     raise PlanningException("Failed to rotate. Ran into joint limit or collision")
                 config_path.append(np.array(config))

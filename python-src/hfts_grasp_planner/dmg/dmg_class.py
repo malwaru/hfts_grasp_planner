@@ -732,7 +732,7 @@ class DexterousManipulationGraph():
             An inhand path is a sequence of translations and rotations. A translation is a directional
             vector in the original object frame. A rotation is an angle in radians around the normal
             at the fingertip contact.
-            ---------
+
             Arguments
             ---------
             inhand_path, tuple (translations, rotations), 
@@ -740,7 +740,7 @@ class DexterousManipulationGraph():
                 rotations is a list of floats  - Both lists are assumed to have the same length
             initial_grasp_pose, np.array of shape (4, 4) - the pose of the grasping gipper in the original object frame oTe 
             fingertip_contacts, np.array of shape (2, 3) - the initial positions of the figertips in the original object frame
-            -------
+
             Returns
             -------
             pushes, a list of tuples (start, end, rot_center), 

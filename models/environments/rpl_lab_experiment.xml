@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Environment>
-    <Robot file="../robots/yumi/yumi_render.xml">
+    <Robot file="../robots/yumi/yumi.xml">
         <RotationAxis>0 0 1 90</RotationAxis>
         -1 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
-        <jointvalues>0.69 -1.95 0 0 0 0 0 0.02 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
+        <jointvalues>0.69 -1.95 0 0 0 0 0 0.0 -0.93 -1.55 0 0 0 0 0 0.02</jointvalues>
         <Translation>0 0.12 0.1</Translation>
     </Robot>
 
@@ -20,65 +20,57 @@
     </KinBody>
 
     <KinBody name="cabinet">
-        <Translation>0.0087 0.87249118 -0.568</Translation>
+        <Translation>0.0087 0.87249118 -0.56100002</Translation>
         <RotationAxis>0 0 1 0</RotationAxis>
         <Body type="static">
             <Geom type="trimesh">
-                <Data>../objects/cabinet/cabinet.obj</Data>
+                <render>../objects/cabinet/cabinet.obj</render>
+                <collision>../objects/cabinet/cabinet_padded.obj</collision>
+                
                 <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
                 <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
             </Geom>
         </Body>
     </KinBody>
     
-    <KinBody name="cracker_box">
+    <!-- <KinBody name="cracker_box">
         <Translation>0.19316698 0.80129266 0.14102311</Translation>
         <quat>-0.15458089 -0.00501718 0.0104134 0.98791251</quat>
         <Body type="static">
             <Geom type="trimesh">
                 <Data>../objects/cracker_box/cheezit.stl</Data>
-                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
-                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
             </Geom>
         </Body>
-    </KinBody>
+    </KinBody> -->
 
-    <KinBody name="mustard_bottle">
+    <!-- <KinBody name="mustard_bottle">
         <Translation>0.0021947 0.65921818 0.24234652</Translation>
         <quat>0.67278228 -0.68149636 -0.19949673 0.20767229</quat>
         <Body type="static">
             <Geom type="trimesh">
                 <Data>../objects/mustard/mustard.stl</Data>
-                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
-                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
             </Geom>
         </Body>
-    </KinBody>
+    </KinBody> -->
 
-    <KinBody name="elmers_glue">
-        <!-- <Translation>-0.31813857 0.67549455 0.15108353</Translation>
-        <quat>0.3180211 0.63695468 -0.23647528 0.66123427</quat> -->
+    <!-- <KinBody name="elmers_glue">
         <Translation>-0.312677 0.65040168 0.19497709</Translation>
         <quat>0.64990857 0.62399844 0.30045449 0.31300462</quat>
         <Body type="static">
             <Geom type="trimesh">
                 <Data>../objects/elmers_glue/glue.stl 0.001</Data>
-                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
-                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
             </Geom>
         </Body>
-    </KinBody>
+    </KinBody> -->
 
-    <KinBody name="sugar_box">
+    <!-- <KinBody name="sugar_box">
         <Translation>-0.18642208 0.7764712 0.35850906</Translation>
         <quat>0.52168555 0.48229877 -0.49067009 0.5044551</quat>
         <Body type="static">
             <Geom type="trimesh">
                 <Data>../objects/sugar_box/sugar.stl</Data>
-                <!-- <diffuseColor>.6 .6 .6</diffuseColor> -->
-                <!-- <ambientColor>0.6 0.6 0.6</ambientColor> -->
             </Geom>
         </Body>
-    </KinBody>
+    </KinBody> -->
 
 </Environment> 

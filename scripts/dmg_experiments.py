@@ -19,7 +19,7 @@ import numpy as np
 # Constants
 MAX_TRAJ_GOAL_ERROR = 0.02
 SQUEEZE_EFFORT = 20.0
-INHAND_GRASP_EFFORT = 6.5
+INHAND_GRASP_EFFORT = 18
 FLOPPY_GRASP_EFFORT = 0.0
 RELEASE_EFFORT = -5.0
 
@@ -28,14 +28,14 @@ LEFT_ARM_DETECT_GRASP_CONFIG = np.array([-1.16256309, -1.48865187,  1.54684734, 
         0.95125932,  0.74813634])
 # LEFT_ARM_INHAND_CONFIG = np.array([-0.91377819, -1.48872864,  1.92046666,  0.62049645,  0.38236198,
 #         0.81718266,  2.63366151])
-LEFT_ARM_INHAND_CONFIG = np.array([-1.36583662, -1.48842084,  1.73510325,  0.47979113,  0.29852417,
-        0.63616234,  2.48654008])
+LEFT_ARM_INHAND_CONFIG = np.array([-2.16613626, -1.38783205,  1.82019532,  0.13395827,  0.24875386,
+        0.17284934,  2.28724265])
 LEFT_ARM_HOME_CONFIG = np.array([-0.65002179, -2.46599984,  0.98793864,  0.39266104,  0.12282396,
         0.87903565,  0.78381282])
 RIGHT_ARM_HOME_CONFIG = np.array([ 0.3597441 , -2.12499809, -1.69211626,  0.3060284 ,  0.38631114,
         0.6000796 , -1.48077667])
-RIGHT_ARM_INHAND_START_CONFIG = np.array([[-1.5239929 , -0.86381763,  1.51539719,  0.76713341,  2.8649776 ,
-       -0.24115354, -0.44164947]])
+RIGHT_ARM_INHAND_START_CONFIG = np.array([ 0.49494246, -0.5161255 , -0.99374181,  0.24465095,  1.95007515,
+       -0.68814886,  0.77206391])
 DETECT_GRASP_CONFIGS = {
     'left_arm_with_gripper': LEFT_ARM_DETECT_GRASP_CONFIG,
 }
@@ -50,8 +50,9 @@ YAML_FOLDER = os.path.dirname(os.path.abspath(__file__)) + '/../yamls/'
 
 # Target objects information
 TARGET_OBJ_NAME = 'expo'
-TARGET_OBJ_FILE = MODEL_FOLDER + '/objects/' + TARGET_OBJ_NAME + '/expo.kinbody.xml'
+TARGET_OBJ_FILE = MODEL_FOLDER + '/objects/' + TARGET_OBJ_NAME + '/' + TARGET_OBJ_NAME + '.kinbody.xml'
 DMG_INFO_FILE = MODEL_FOLDER + '/objects/' + TARGET_OBJ_NAME + '/dmg_info.yaml'
+DISABLED_BODIES = ['cracker_box', 'mustard_bottle', 'elmers_glue', 'sugar_box']
 
 # Perception information
 # PERCEIVED_OBJ_NAMES = ['expo', 'cracker_box', 'mustard', 'elmers_glue', 'sugar_box']
@@ -169,12 +170,6 @@ class MotionPlannerWrapper(object):
         self._robot_clone.SetActiveDOFs(manip_dofs)
         self._robot_clone.SetActiveManipulator(manip_name)
         start_config = self._real_robot.GetDOFValues(manip_dofs)
-        with self._real_robot, self._robot_clone:
-            self._real_robot.Enable(True)
-            self._robot_clone.Enable(False)
-            if self._env.CheckCollision(self._real_robot) or self._real_robot.CheckSelfCollision():
-                rospy.logerr("Can not plan anywhere. Start configuration in collision")
-                return None
         if target_config is None:
             if target_pose is None:
                 target_config = self._robot_clone.GetActiveDOFValues()
@@ -184,6 +179,17 @@ class MotionPlannerWrapper(object):
                     rospy.logerr("Could not compute a collision-free ik solution for manip %s" % manip_name)
                     return
         self._robot_clone.SetActiveDOFValues(start_config)
+        if self._env.CheckCollision(self._robot_clone) or self._robot_clone.CheckSelfCollision():
+            rospy.logerr("Cannot plan anywhere. Start configuration in collision")
+            col_checker = self._env.GetCollisionChecker()
+            col_checker.SetCollisionOptions(orpy.CollisionOptions.Contacts)
+            report = orpy.CollisionReport()
+            if self._env.CheckCollision(self._robot_clone, report):
+                rospy.logerr("Collisions between " + str(report.plink1) + ' and ' + str(report.plink2))
+            if self._robot_clone.CheckSelfCollision(report):
+                rospy.logerr("Collisions between " + str(report.plink1) + ' and ' + str(report.plink2))
+            col_checker.SetCollisionOptions(orpy.CollisionOptions())
+            return None
         traj = self._planners[manip_name].MoveActiveJoints(target_config, execute=False, outputtraj=True,
                                               outputtrajobj=True)
         return traj
@@ -252,6 +258,8 @@ class MotionPlannerWrapper(object):
         return my_traj
 
     def _convert_trajectory(self, traj, manip_name):
+            if traj.GetEnv() != self._env:
+                traj = self._transfer_trajectory(traj)
             # The configuration specification allows us to interpret the trajectory data
             specs = traj.GetConfigurationSpecification()
             ros_trajectory = JointTrajectory()
@@ -375,7 +383,7 @@ def search_good_solution(pplanner, start_config, trials):
     all_solutions.sort(key=lambda x: x[0])
     return all_solutions
 
-def run_it(mplanner, push_trajs, traj, pushing_manip, grasping_manip, target_obj):
+def run_it(mplanner, push_trajs, traj, pushing_manip, grasping_manip, target_obj, post_manip_grasp):
     move_to_start(mplanner)
     # open gripper
     mplanner.set_gripper_effort(grasping_manip.GetName(), RELEASE_EFFORT)
@@ -385,7 +393,7 @@ def run_it(mplanner, push_trajs, traj, pushing_manip, grasping_manip, target_obj
     # grasp
     mplanner.set_gripper_effort(grasping_manip.GetName(), SQUEEZE_EFFORT)
     # open pusher fingers
-    mplanner.set_gripper_effort(pushing_manip.GetName(), RELEASE_EFFORT)
+    # mplanner.set_gripper_effort(pushing_manip.GetName(), RELEASE_EFFORT)
     # decrease effort on grasp
     mplanner.set_gripper_effort(grasping_manip.GetName(), INHAND_GRASP_EFFORT)
     for push_traj in push_trajs:
@@ -394,11 +402,10 @@ def run_it(mplanner, push_trajs, traj, pushing_manip, grasping_manip, target_obj
             raw_input()
             mplanner.execute_traj(ptraj, pushing_manip.GetName(), bblock=True)
     # move right gripper home
-    target_obj.Enable(False)
+    target_obj.Enable(True)
+    set_grasp(grasping_manip, target_obj, post_manip_grasp.eTo, post_manip_grasp.config)
     rtraj = motion_planner.plan(pushing_manip.GetName(), target_config=RIGHT_ARM_HOME_CONFIG)
-    if not motion_planner.execute_traj(traj, pushing_manip.GetName(), bblock=True):
-        rospy.logerr("Could not move right arm to start config")
-        return
+    motion_planner.execute_traj(rtraj, pushing_manip.GetName(), bblock=True)
     mplanner.set_gripper_effort(grasping_manip.GetName(), SQUEEZE_EFFORT)
     rospy.loginfo("confirm for next motion")
     raw_input()
@@ -408,15 +415,67 @@ def run_it(mplanner, push_trajs, traj, pushing_manip, grasping_manip, target_obj
     mplanner.set_gripper_effort(grasping_manip.GetName(), RELEASE_EFFORT)
     mplanner._robot_clone.ReleaseAllGrabbed()
 
+def simulate_it(robot, mplanner, push_trajs, place_traj, pushing_manip, grasping_manip, target_obj, start_grasp, post_manip_grasp):
+    # move left arm
+    robot.SetDOFValues(mplanner._robot_clone.GetDOFValues())
+    traj = mplanner.plan('left_arm_with_gripper', target_config=LEFT_ARM_INHAND_CONFIG)
+    if not traj:
+        rospy.logerr("Could not move left arm to start config.")
+        return
+    mplanner.show_traj(traj)
+    robot.SetDOFValues(mplanner._robot_clone.GetDOFValues())
+    # # move right arm
+    # traj = mplanner.plan('right_arm_with_gripper', target_config=RIGHT_ARM_HOME_CONFIG)
+    # if not traj:
+    #     rospy.logerr("Could not move right arm to start config.")
+    #     return
+    # mplanner.show_traj(traj)
+    # robot.SetDOFValues(mplanner._robot_clone.GetDOFValues())
+    # grasp
+    set_grasp(grasping_manip, target_obj, start_grasp.eTo, start_grasp.config)
+    for push_traj in push_trajs:
+        # approach push
+        mplanner.show_traj(push_traj[0])
+        rospy.sleep(0.3)
+        mplanner.show_traj(push_traj[1])
+        rospy.sleep(0.3)
+        grasping_manip.GetRobot().ReleaseAllGrabbed()
+        # set virtual grasp with pusher
+        push_eTo = np.dot(inverse_transform(pushing_manip.GetEndEffectorTransform()), target_obj.GetTransform())
+        set_grasp(pushing_manip, target_obj, push_eTo, pushing_manip.GetGripperDOFValues())
+        # push
+        mplanner.show_traj(push_traj[2])
+        rospy.sleep(0.3)
+        grasping_manip.GetRobot().ReleaseAllGrabbed()
+        # retreat
+        mplanner.show_traj(push_traj[3])
+    # move right gripper home
+    target_obj.Enable(True)
+    grasp_eTo = np.dot(inverse_transform(grasping_manip.GetEndEffectorTransform()), target_obj.GetTransform())
+    set_grasp(grasping_manip, target_obj, grasp_eTo, grasping_manip.GetGripperDOFValues())
+    robot.SetDOFValues(mplanner._robot_clone.GetDOFValues())
+    rtraj = mplanner.plan(pushing_manip.GetName(), target_config=RIGHT_ARM_HOME_CONFIG)
+    mplanner.show_traj(rtraj)
+    mplanner.show_traj(place_traj)
+    mplanner._robot_clone.ReleaseAllGrabbed()
+
 if __name__ == "__main__":
     try:
         rospy.init_node("TestROSOrBridge")
         env = orpy.Environment()
         env.Load(ENV_FILE)
         env.Load(TARGET_OBJ_FILE)
+        # disable bodies
+        for bname in DISABLED_BODIES:
+            body = env.GetKinBody(bname)
+            if not body:
+                print "Could not find body ", bname
+            else:
+                body.Enable(False)
+                body.SetVisible(False)
         robot = env.GetRobots()[0]
         state_synch = ros_bridge.RobotStateSynchronizer(robot, '/joint_states')
-        state_synch.set_active(True)
+        state_synch.set_active(False)
         motion_planner = MotionPlannerWrapper(robot, ROBOT_URDF, TRAJ_ACTION_NAMES)
         target_obj = env.GetKinBody(TARGET_OBJ_NAME)
         # target_obj.SetTransform(pplanner.target_object.GetTransform())
@@ -437,7 +496,7 @@ if __name__ == "__main__":
         with open(GRIPPER_INFO_FILE, 'r') as info_file:
             gripper_info = yaml.load(info_file)
             pushing_tf_dict = gripper_info[pushing_manip.GetName()]['pushing_tf']
-            wTr = robot.GetLink(pushing_tf_dict['reference_link']).GetTransform()
+            wTr = motion_planner._robot_clone.GetLink(pushing_tf_dict['reference_link']).GetTransform()
             pose = np.empty(7)
             pose[:4] = pushing_tf_dict['rotation']
             pose[4:] = pushing_tf_dict['translation']
@@ -453,6 +512,20 @@ if __name__ == "__main__":
         # grasp_path, push_path = pplanner.grasp_set.return_pusher_path(gid)
         # pushing_trajs = push_computer.compute_pushing_trajectory(grasp_path, push_path, target_obj)
         env.SetViewer('qtcoin')
+
+        # video stuff
+        # place_traj, gid = load_solution('/home/joshua/good', motion_planner._robot_clone)
+        # grasp_path, push_path = pplanner.grasp_set.return_pusher_path(gid)
+        # motion_planner._robot_clone.SetDOFValues(LEFT_ARM_INHAND_CONFIG, grasping_manip.GetArmIndices())
+        # motion_planner._robot_clone.SetDOFValues(RIGHT_ARM_HOME_CONFIG, pushing_manip.GetArmIndices())
+        # push_sol = push_computer.compute_pushing_trajectory(grasp_path, push_path, target_obj)
+        # push_trajs = [push_sol[0][0]]
+        # robot.SetVisible(False)
+        # start_grasp = pplanner.grasp_set.get_grasp(1)
+        # set_grasp(grasping_manip, target_obj, start_grasp.eTo, start_grasp.config)
+        # simulate_it(robot, motion_planner, push_trajs, place_traj, pushing_manip, grasping_manip,
+        #             target_obj, start_grasp, pplanner.grasp_set.get_grasp(gid))
+
         IPython.embed()
     except Exception as e:
         rospy.logerr(str(e))

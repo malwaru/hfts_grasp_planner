@@ -119,16 +119,13 @@ class PlacementPlanner(object):
         now = time.time()
         if 'objective_fn' in problem_desc:
             if problem_desc['objective_fn'] == 'minimize_clearance':
-                self.obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
-                                                          b_max=False)
+                self.obj_fn = clearance_mod.PackingObjective(occ_target_volume, obj_occgrid)
             elif problem_desc['objective_fn'] == 'maximize_clearance':
-                self.obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
-                                                          b_max=True)
+                self.obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid)
             elif problem_desc['objective_fn'] == 'deep_shelf':
-                self.obj_fn = objectives_mod.DeepShelfObjective(self.target_object, occ_target_volume, obj_occgrid, b_max=True)
+                self.obj_fn = objectives_mod.DeepShelfObjective(self.target_object, occ_target_volume, obj_occgrid)
         else:
-            self.obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid,
-                                                      b_max=False)
+            self.obj_fn = clearance_mod.ClearanceObjective(occ_target_volume, obj_occgrid)
         rospy.logdebug("Creation of objective function took %fs" % (time.time() - now))
         self.parameters = problem_desc["parameters"]
         # create afr hierarchy
