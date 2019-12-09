@@ -10,11 +10,11 @@ class DeepShelfObjective(PlacementObjective):
         in addition to clearance objective.
     """
 
-    def __init__(self, object_body, occ_grid, body_grid):
+    def __init__(self, object_body, clearance_obj):
         """
             Create a new DeepShelfObjective.
         """
-        self._clearance_objective = ClearanceObjective(occ_grid, body_grid)
+        self._clearance_objective = clearance_obj
         with object_body:
             object_body.SetTransform(np.eye(4))
             aabb = object_body.ComputeAABB()
