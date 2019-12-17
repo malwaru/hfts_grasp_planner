@@ -14,9 +14,14 @@ namespace mp {
     namespace mgsearch {
         // Interfaces used by Roadmap
         // TODO make these to template arguments? Will we ever exchange these during runtime?
-        class StateValidityChecker {
+        class StateSpace {
         public:
-            virtual ~StateValidityChecker() = 0;
+            struct SpaceInformation {
+                Config lower;
+                Config upper;
+                unsigned int dimension;
+            };
+            virtual ~StateSpace() = 0;
             /**
              * Check whether the robot can attain configuration c without considering a grasped object.
              */
@@ -28,8 +33,34 @@ namespace mp {
              * @param only_obj - if true, only check the object for validity, not the robot itself
              */
             virtual bool isValid(const Config& c, unsigned int grasp_id, bool only_obj = false) const = 0;
+
+            /**
+             * Return the cost of being in configuration c.
+             * This cost may simply be 0 (c is valid) or infinity (c is invalid), if there is no underlying state cost.
+             * If there is an underlying state cost, the returned value may be any value r in [0, infinity]
+             */
+            virtual double cost(const Config& c) const = 0;
+            virtual double conditional_cost(const Config& c, unsigned int grasp_id) const = 0;
+
+            /**
+             * Return the distance between the two given configurations.
+             */
+            virtual double distance(const Config& a, const Config& b) const = 0;
+
+            /**
+             * Return the dimension of the state space.
+             */
+            virtual unsigned int getDimension() const = 0;
+            virtual void getBounds(Config& lower, Config& upper) const = 0;
+            SpaceInformation getSpaceInformation() const
+            {
+                SpaceInformation si;
+                getBounds(si.lower, si.upper);
+                si.dimension = getDimension();
+                return si;
+            }
         };
-        typedef std::shared_ptr<StateValidityChecker> StateValidityCheckerPtr;
+        typedef std::shared_ptr<StateSpace> StateSpacePtr;
 
         class EdgeCostComputer {
         public:
@@ -48,6 +79,24 @@ namespace mp {
             virtual double cost(const Config& a, const Config& b, unsigned int grasp_id) const = 0;
         };
         typedef std::shared_ptr<EdgeCostComputer> EdgeCostComputerPtr;
+
+        /**
+         * An edge cost computer that computes the cost between two configurations (a, b) by integrating
+         * the state cost along a straight line path.
+         */
+        class IntegralEdgeCostComputer : public EdgeCostComputer {
+        public:
+            IntegralEdgeCostComputer(StateSpacePtr ss, double integral_step_size = 0.1);
+            ~IntegralEdgeCostComputer();
+            double lowerBound(const Config& a, const Config& b) const override;
+            double cost(const Config& a, const Config& b) const override;
+            double cost(const Config& a, const Config& b, unsigned int grasp_id) const override;
+
+        private:
+            const StateSpacePtr _state_space;
+            const double _step_size;
+            double integrateCosts(const Config& a, const Config& b, const std::function<double(const Config&)>& cost_fn) const;
+        };
 
         class CostToGoHeuristic {
             // TODO do we need this to be a class? Does it have an internal state?
@@ -134,15 +183,7 @@ namespace mp {
                 double getBestKnownCost(unsigned int gid) const;
             };
 
-            struct SpaceInformation {
-                unsigned int dimension;
-                std::vector<double> lower;
-                std::vector<double> upper;
-                std::function<double(const Config&, const Config&)> distance_fn;
-            };
-
-            Roadmap(const SpaceInformation& si, StateValidityCheckerPtr validity_checker,
-                EdgeCostComputerPtr edge_cost_computer, unsigned int batch_size = 10000);
+            Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr edge_cost_computer, unsigned int batch_size = 10000);
             virtual ~Roadmap();
             // Tell the roadmap to densify
             void densify();
@@ -209,8 +250,8 @@ namespace mp {
             std::pair<bool, double> computeCost(EdgePtr edge, unsigned int grasp_id);
 
         private:
-            SpaceInformation _si;
-            StateValidityCheckerPtr _validity_checker;
+            const StateSpacePtr _state_space;
+            const StateSpace::SpaceInformation _si;
             EdgeCostComputerPtr _cost_computer;
             ::ompl::NearestNeighborsGNAT<NodePtr> _nn; // owner of nodes
             std::unordered_map<unsigned int, NodeWeakPtr> _nodes; // node id to pointer

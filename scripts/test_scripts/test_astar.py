@@ -42,6 +42,12 @@ def show_goals(goals, manip, target_object):
         time.sleep(1.3)
 
 
+def show_traj(robot, traj):
+    # execute tra
+    robot.GetController().SetPath(traj)
+    robot.WaitForController(0)
+
+
 if __name__ == "__main__":
     base_path = os.path.dirname(__file__)
     env_file = os.path.normpath(base_path + '/../../models/environments/placement_exp_0.xml')

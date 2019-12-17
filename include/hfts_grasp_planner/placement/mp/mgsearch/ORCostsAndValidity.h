@@ -7,7 +7,7 @@ namespace mp {
     namespace mgsearch {
         double cSpaceDistance(const Config& a, const Config& b);
 
-        class ORSceneInterface : public StateValidityChecker, public EdgeCostComputer {
+        class ORSceneInterface : public StateSpace {
         public:
             ORSceneInterface(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
             ~ORSceneInterface();
@@ -17,10 +17,14 @@ namespace mp {
             // State validity
             bool isValid(const Config& c) const override;
             bool isValid(const Config& c, unsigned int grasp_id, bool only_obj = false) const override;
-            // edge cost
-            double lowerBound(const Config& a, const Config& b) const override;
-            double cost(const Config& a, const Config& b) const override;
-            double cost(const Config& a, const Config& b, unsigned int grasp_id) const override;
+            // state cost
+            double cost(const Config& a) const override;
+            double conditional_cost(const Config& a, unsigned int grasp_id) const override;
+            // distance
+            double distance(const Config& a, const Config& b) const override;
+            // space information
+            unsigned int getDimension() const override;
+            void getBounds(Config& lower, Config& upper) const override;
 
         private:
             OpenRAVE::EnvironmentBasePtr _penv;

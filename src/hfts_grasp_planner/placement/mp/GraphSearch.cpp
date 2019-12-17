@@ -15,11 +15,8 @@ Astar::Astar(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned 
     _scene_interface = std::make_shared<mg::ORSceneInterface>(penv, robot_id, obj_id);
     _robot = penv->GetRobot(penv->GetBodyFromEnvironmentId(robot_id)->GetName());
     // create roadmap
-    mg::Roadmap::SpaceInformation si;
-    si.dimension = _robot->GetActiveDOF();
-    _robot->GetActiveDOFLimits(si.lower, si.upper);
-    si.distance_fn = mg::cSpaceDistance;
-    _roadmap = std::make_shared<mg::Roadmap>(si, _scene_interface, _scene_interface);
+    auto edge_computer = std::make_shared<mg::IntegralEdgeCostComputer>(_scene_interface);
+    _roadmap = std::make_shared<mg::Roadmap>(_scene_interface, edge_computer);
     // add start node
     Config start_config;
     _robot->GetActiveDOFValues(start_config);

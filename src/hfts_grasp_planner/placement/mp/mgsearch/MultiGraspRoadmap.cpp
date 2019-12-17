@@ -1,11 +1,63 @@
+#include <Eigen/Core>
 #include <hfts_grasp_planner/external/halton/halton.hpp>
 #include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
 
 using namespace placement::mp::mgsearch;
 
-StateValidityChecker::~StateValidityChecker() = default;
+StateSpace::~StateSpace() = default;
 
 EdgeCostComputer::~EdgeCostComputer() = default;
+
+IntegralEdgeCostComputer::IntegralEdgeCostComputer(StateSpacePtr state_space, double step_size)
+    : _state_space(state_space)
+    , _step_size(step_size)
+{
+}
+
+IntegralEdgeCostComputer::~IntegralEdgeCostComputer() = default;
+
+double IntegralEdgeCostComputer::integrateCosts(const Config& a, const Config& b,
+    const std::function<double(const Config&)>& cost_fn) const
+{
+    assert(a.size() == b.size());
+    Eigen::Map<const Eigen::VectorXd> avec(a.data(), a.size());
+    Eigen::Map<const Eigen::VectorXd> bvec(b.data(), b.size());
+    Eigen::VectorXd delta = bvec - avec;
+    Config q(delta.size());
+    Eigen::Map<Eigen::VectorXd> qvec(q.data(), q.size());
+    double norm = delta.norm();
+    if (norm == 0.0) {
+        return 0.0;
+    }
+    // iterate over path
+    double integral_cost = 0.0;
+    unsigned int num_steps = std::ceil(norm / _step_size);
+    for (size_t t = 0; t < num_steps; ++t) {
+        qvec = std::min(t * _step_size / norm, 1.0) * delta + avec;
+        double dc = cost_fn(q); // qvec is a view on q's data
+        if (std::isinf(dc))
+            return INFINITY;
+        integral_cost += dc * _step_size;
+    }
+    return integral_cost;
+}
+
+double IntegralEdgeCostComputer::lowerBound(const Config& a, const Config& b) const
+{
+    return _state_space->distance(a, b);
+}
+
+double IntegralEdgeCostComputer::cost(const Config& a, const Config& b) const
+{
+    auto fn = std::bind(&StateSpace::cost, _state_space, std::placeholders::_1);
+    return integrateCosts(a, b, fn);
+}
+
+double IntegralEdgeCostComputer::cost(const Config& a, const Config& b, unsigned int grasp_id) const
+{
+    auto fn = std::bind(&StateSpace::conditional_cost, _state_space, std::placeholders::_1, grasp_id);
+    return integrateCosts(a, b, fn);
+}
 
 CostToGoHeuristic::~CostToGoHeuristic() = default;
 
@@ -43,10 +95,9 @@ double Roadmap::Edge::getBestKnownCost(unsigned int gid) const
     return base_cost;
 }
 
-Roadmap::Roadmap(const Roadmap::SpaceInformation& si, StateValidityCheckerPtr validity_checker,
-    EdgeCostComputerPtr cost_computer, unsigned int batch_size)
-    : _si(si)
-    , _validity_checker(validity_checker)
+Roadmap::Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr cost_computer, unsigned int batch_size)
+    : _state_space(state_space)
+    , _si(state_space->getSpaceInformation())
     , _cost_computer(cost_computer)
     , _batch_size(batch_size)
     , _node_id_counter(0)
@@ -55,7 +106,7 @@ Roadmap::Roadmap(const Roadmap::SpaceInformation& si, StateValidityCheckerPtr va
 {
     assert(_si.lower.size() == _si.upper.size() and _si.lower.size() == _si.dimension);
     // _nn.setDistanceFunction(distanceFn);
-    _nn.setDistanceFunction([this](const Roadmap::NodePtr& a, const Roadmap::NodePtr& b) { return _si.distance_fn(a->config, b->config); });
+    _nn.setDistanceFunction([this](const Roadmap::NodePtr& a, const Roadmap::NodePtr& b) { return _state_space->distance(a->config, b->config); });
     // compute gamma_prm - a constant used to compute the radius for adjacency
     // we need the measure of X_free for this, we approximate it by the measure of X
     double mu = 1.0;
@@ -154,7 +205,7 @@ bool Roadmap::isValid(NodeWeakPtr inode)
     auto node = inode.lock();
     if (!node->initialized) {
         // check validity
-        if (not _validity_checker->isValid(node->config)) {
+        if (not _state_space->isValid(node->config)) {
             // in case of the node being invalid, remove it
             deleteNode(node);
             return false;
@@ -172,7 +223,7 @@ bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
         NodePtr node = wnode.lock();
         auto iter = node->conditional_validity.find(grasp_id);
         if (iter == node->conditional_validity.end()) {
-            bool valid = _validity_checker->isValid(node->config, grasp_id, true);
+            bool valid = _state_space->isValid(node->config, grasp_id, true);
             node->conditional_validity[grasp_id] = valid;
             return valid;
         } else {

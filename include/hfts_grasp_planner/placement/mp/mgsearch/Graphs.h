@@ -8,7 +8,7 @@ namespace mp {
     namespace mgsearch {
         /**
          * Type interface for grasp agnostic graphs. Instead of inheriting from this class,
-         * simply implement the same interface. All graph search algorithms that use a grasp agnostic graph,
+         * simply implement the same interface. All graph search algorithms that use a grasp agnostic graph
          * use this interface.
          */
         class GraspAgnosticGraph {
