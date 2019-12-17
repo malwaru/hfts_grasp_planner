@@ -162,12 +162,18 @@ def humanoids_baselines(yaml_template):
     envs = ['table_high_clutter', 'cabinet_high_clutter']
     selector_types = ['naive', 'cache_hierarchy', 'dummy']
     grasp_ids = {'elmers_glue': [0, 1], 'expo': [0]}
+    cases_to_skip = [('table_high_clutter', 'elmers_glue', 'naive', 0),
+                     ('table_high_clutter', 'elmers_glue', 'dummy', 1),
+                     ('cabinet_high_clutter', 'elmers_glue', 'dummy', 1)]
 
     def yaml_gen():
         for env in envs:
             for body in bodies:
                 for seltype in selector_types:
                     for gid in grasp_ids[body]:
+                        if (env, body, seltype, gid) in cases_to_skip:
+                            print "Skipping :", env, body, seltype, gid
+                            continue
                         yaml_instance = yaml_template.replace('<ENV_NAME>', env)
                         yaml_instance = yaml_instance.replace('<OBJECTIVE_FN>', "maximize_clearance")
                         yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
@@ -184,6 +190,74 @@ def humanoids_baselines(yaml_template):
         for seltype in selector_types:
             yaml_instance = yaml_template.replace('<ENV_NAME>', 'cabinet_high_clutter')
             yaml_instance = yaml_instance.replace('<OBJECTIVE_FN>', "deep_shelf")
+            yaml_instance = yaml_instance.replace('<BODY_NAME>', 'expo')
+            yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', '[-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]')
+            yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', 'simple_mcts_sampler')
+            yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
+            yaml_instance = yaml_instance.replace('<RELAX_TYPE>', 'sub-binary')
+            yaml_instance = yaml_instance.replace('<GRASP_ID>', '0')
+            yaml_instance = yaml_instance.replace('<TIME_LIMIT>', '180.0')
+            yaml_instance = yaml_instance.replace('<C>', '0.5')
+            exp_id = 'mg_mcts' + '_' + seltype
+            yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+            yield yaml_instance
+
+    num_batches = sum([len(envs) * len(selector_types) * len(grasps) for grasps in grasp_ids.values()]) \
+        + len(selector_types)
+    return yaml_gen(), num_batches
+
+# def humanoids_addon(yaml_template):
+#     bodies = ['expo']
+#     envs = ['cabinet_high_clutter']
+#     selector_types = ['naive', 'cache_hierarchy', 'dummy']
+#     grasp_ids = {'expo': [0]}
+#
+#     def yaml_gen():
+#         for env in envs:
+#             for body in bodies:
+#                 for seltype in selector_types:
+#                     for gid in grasp_ids[body]:
+#                         yaml_instance = yaml_template.replace('<ENV_NAME>', env)
+#                         yaml_instance = yaml_instance.replace('<OBJECTIVE_FN>', "maximize_clearance")
+#                         yaml_instance = yaml_instance.replace('<BODY_NAME>', body)
+#                         yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', PLCMNT_VOLUMES[env])
+#                         yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', 'simple_mcts_sampler')
+#                         yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
+#                         yaml_instance = yaml_instance.replace('<RELAX_TYPE>', 'sub-binary')
+#                         yaml_instance = yaml_instance.replace('<GRASP_ID>', str(gid))
+#                         yaml_instance = yaml_instance.replace('<TIME_LIMIT>', '60.0')
+#                         yaml_instance = yaml_instance.replace('<C>', '0.5')
+#                         exp_id = 'mg_mcts' + '_' + seltype
+#                         yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+#                         yield yaml_instance
+#         for seltype in selector_types:
+#             yaml_instance = yaml_template.replace('<ENV_NAME>', 'cabinet_high_clutter')
+#             yaml_instance = yaml_instance.replace('<OBJECTIVE_FN>', "deep_shelf")
+#             yaml_instance = yaml_instance.replace('<BODY_NAME>', 'expo')
+#             yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', '[-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]')
+#             yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', 'simple_mcts_sampler')
+#             yaml_instance = yaml_instance.replace('<SELECTOR_TYPE>', seltype)
+#             yaml_instance = yaml_instance.replace('<RELAX_TYPE>', 'sub-binary')
+#             yaml_instance = yaml_instance.replace('<GRASP_ID>', '0')
+#             yaml_instance = yaml_instance.replace('<TIME_LIMIT>', '180.0')
+#             yaml_instance = yaml_instance.replace('<C>', '0.5')
+#             exp_id = 'mg_mcts' + '_' + seltype
+#             yaml_instance = yaml_instance.replace('<EXP_ID>', exp_id)
+#             yield yaml_instance
+#
+#     num_batches = sum([len(envs) * len(selector_types) * len(grasps) for grasps in grasp_ids.values()]) \
+#         + len(selector_types)
+#     return yaml_gen(), num_batches
+def humanoids_addon(yaml_template):
+    bodies = ['expo']
+    envs = ['cabinet_high_clutter']
+    selector_types = ['naive', 'cache_hierarchy', 'dummy']
+    grasp_ids = {'expo': [0]}
+
+    def yaml_gen():
+        for seltype in selector_types:
+            yaml_instance = yaml_template.replace('<ENV_NAME>', 'cabinet_high_clutter')
+            yaml_instance = yaml_instance.replace('<OBJECTIVE_FN>', "deep_shelf_min")
             yaml_instance = yaml_instance.replace('<BODY_NAME>', 'expo')
             yaml_instance = yaml_instance.replace('<PLCMNT_VOL>', '[-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]')
             yaml_instance = yaml_instance.replace('<SAMPLER_TYPE>', 'simple_mcts_sampler')
@@ -256,7 +330,8 @@ if __name__ == "__main__":
     # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
     # yaml_gen, num_batches = iros_mcts_simple(yaml_template)
     # yaml_gen, num_batches = iros_even_simpler_mcts(yaml_template)
-    yaml_gen, num_batches = humanoids_baselines(yaml_template)
+    # yaml_gen, num_batches = humanoids_baselines(yaml_template)
+    yaml_gen, num_batches = humanoids_addon(yaml_template)
     for batch_id in xrange(num_batches):
         try:
             yaml_instance = yaml_gen.next()

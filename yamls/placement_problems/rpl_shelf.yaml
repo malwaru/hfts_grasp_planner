@@ -14,21 +14,21 @@ gripper_information: ../../models/robots/yumi/gripper_information.yaml
 # grasp_file: grasps/new/scaled_table.yaml
 # target_obj_file: ../pencil_basket/pencil_basket.kinbody.xml
 # grasp_file: grasps/new/pencil_basket.yaml
-# target_obj_file: ../elmers_glue/elmers_glue.kinbody.xml
+# target_obj_file: ../../models/objects/elmers_glue/elmers_glue.kinbody.xml
 # grasp_file: grasps/new/elmers_glue.yaml
-# target_obj_file: ../crayola/crayola.kinbody.xml
-# grasp_file: grasps/new/crayola.yaml
-dmg_file: ../../models/objects/expo/dmg_info.yaml
-target_obj_file: ../../models/objects/expo/expo.kinbody.xml
-grasp_file: grasps/new/expo.yaml
+target_obj_file: ../../models/objects/crayola/crayola.kinbody.xml
+grasp_file: grasps/new/crayola.yaml
+dmg_file: ../../models/objects/crayola_24/dmg_info.yaml
+# target_obj_file: ../../models/objects/expo/expo.kinbody.xml
+# grasp_file: grasps/new/expo.yaml
 # target_obj_file: ../../models/objects/wine_glass/wine_glass.kinbody.xml
 # grasp_file: grasps/new/wine_glass.yaml
 grasp_id: 0
 plcmnt_volume: [-0.4, 0.45, 0.25, 0.53, 1.0, 0.54]
-#plcmnt_volume: [-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]
+# plcmnt_volume: [-0.4, 0.45, 0.25, -0.14, 1.0, 0.54]
 sdf_volume: [-0.8, -1.0, -0.4, 1.3, 1.0, 1.4]  # relative to robot
 time_limit: 20.0
-objective_fn: minimize_clearance  # maximize_clearance, minimize_clearance, deep_shelf
+objective_fn: deep_shelf_min  # maximize_clearance, minimize_clearance, deep_shelf, deep_shel_min
 goal_stats_file: '/tmp/test_goal_stats'
 plan_stats_file: '/tmp/test_plan_stats'
 # initial_obj_pose: [-0.65, 0.01, 0.63, 1.0, 0.0, 0.0, 0.0]
