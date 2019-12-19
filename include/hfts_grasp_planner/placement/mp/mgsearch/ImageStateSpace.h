@@ -26,7 +26,7 @@ namespace mp {
 
         protected:
             struct Image {
-                std::vector<float> data;
+                std::vector<double> data;
                 unsigned int width;
                 unsigned int height;
                 Image()
@@ -34,7 +34,7 @@ namespace mp {
                     , height(0)
                 {
                 }
-                Image(unsigned int w, unsigned int h, const std::vector<float>& d)
+                Image(unsigned int w, unsigned int h, const std::vector<double>& d)
                     : width(w)
                     , height(h)
                     , data(d)
@@ -42,24 +42,24 @@ namespace mp {
                 }
                 ~Image() = default;
 
-                float& operator()(unsigned int i, unsigned int j)
+                double& operator()(unsigned int i, unsigned int j)
                 {
                     return data.at(i + j * width);
                 }
 
-                const float& operator()(unsigned int i, unsigned int j) const
+                const double& operator()(unsigned int i, unsigned int j) const
                 {
                     return data.at(i + j * width);
                 }
 
-                float& at(unsigned int i, unsigned int j)
+                double& at(unsigned int i, unsigned int j)
                 {
                     assert(not data.empty());
                     assert(i < width && j < height);
                     return operator()(i, j);
                 }
 
-                const float& at(unsigned int i, unsigned int j) const
+                const double& at(unsigned int i, unsigned int j) const
                 {
                     assert(not data.empty());
                     assert(i < width && j < height);

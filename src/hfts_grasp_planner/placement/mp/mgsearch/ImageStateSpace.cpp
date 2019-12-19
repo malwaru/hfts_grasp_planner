@@ -9,6 +9,8 @@ ImageStateSpace::ImageStateSpace(const std::experimental::filesystem::path& root
     init(root_path);
 }
 
+ImageStateSpace::~ImageStateSpace() = default;
+
 void ImageStateSpace::init(const std::experimental::filesystem::path& root_path)
 {
     std::map<unsigned int, ImagePtr> unsorted_images;
@@ -21,20 +23,31 @@ void ImageStateSpace::init(const std::experimental::filesystem::path& root_path)
             if (child_path.extension() == std::experimental::filesystem::path(".npy")) {
                 // extract grasp id from file name
                 auto stem = child_path.stem().string();
-                unsigned int grasp_id = std::stoul(stem);
-                // check whether we already have an image for this
-                if (unsorted_images.find(grasp_id) != unsorted_images.end()) {
-                    std::cerr << "Grasp id " << grasp_id << " found multiple times" << std::endl;
+                try {
+                    unsigned int grasp_id = 0;
+                    try {
+                        grasp_id = std::stoul(stem);
+                    } catch (const std::invalid_argument& e) {
+                        throw std::runtime_error("Invalid filename - must be the grasp id.");
+                    }
+                    // check whether we already have an image for this
+                    if (unsorted_images.find(grasp_id) != unsorted_images.end()) {
+                        throw std::runtime_error("Grasp id " + std::to_string(grasp_id) + " found multiple times");
+                    }
+                    // load this array
+                    cnpy::NpyArray npyarray = cnpy::npy_load(child_path.string());
+                    if (npyarray.shape.size() != 2) {
+                        throw std::runtime_error("Numpy array of invalid shape: " + std::to_string(npyarray.shape.size()));
+                    } else if (npyarray.fortran_order) {
+                        throw std::runtime_error("Numpy array must be cstyle");
+                    } else if (npyarray.word_size != sizeof(double)) {
+                        throw std::runtime_error("Numpy array has invalid word size. Must be " + std::to_string(sizeof(double)));
+                    }
+                    unsorted_images[grasp_id] = std::make_shared<Image>(npyarray.shape[1], npyarray.shape[0], npyarray.as_vec<double>());
+                } catch (const std::runtime_error& e) {
+                    std::cerr << "\033[1;31m[Error] Could not load " << child_path << ": " << e.what() << "\033[0m" << std::endl;
                     continue;
                 }
-                // load this array
-                cnpy::NpyArray npyarray = cnpy::npy_load(child_path.string());
-                if (npyarray.shape.size() != 2) {
-                    std::cerr << child_path << ": Numpy array of invalid shape " << npyarray.shape.size() << std::endl;
-                    continue;
-                }
-                // std::vector<float> image_data(npyarray.as_vec<float>());
-                unsorted_images[grasp_id] = std::make_shared<Image>(npyarray.shape[1], npyarray.shape[0], npyarray.as_vec<float>());
             }
         }
     }
@@ -44,8 +57,6 @@ void ImageStateSpace::init(const std::experimental::filesystem::path& root_path)
         _images.at(elem.first) = elem.second;
     }
 }
-
-ImageStateSpace::~ImageStateSpace() = default;
 
 unsigned int ImageStateSpace::getNumGrasps() const
 {
@@ -79,7 +90,7 @@ double ImageStateSpace::conditional_cost(const Config& a, unsigned int grasp_id)
     assert(a.size() == 2);
     unsigned int i = (unsigned int)std::round(a[0]);
     unsigned int j = (unsigned int)std::round(a[1]);
-    float val = _images.at(grasp_id)->at(i, j);
+    double val = _images.at(grasp_id)->at(i, j);
     if (val <= 0.0) {
         return std::numeric_limits<float>::infinity();
     }
