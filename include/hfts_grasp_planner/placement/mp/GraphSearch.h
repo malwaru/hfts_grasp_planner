@@ -1,7 +1,7 @@
 #pragma once
 #include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
-#include <hfts_grasp_planner/placement/mp/mgsearch/ORCostsAndValidity.h>
+#include <hfts_grasp_planner/placement/mp/mgsearch/ORStateSpace.h>
 #include <set>
 
 namespace placement {
@@ -41,7 +41,7 @@ namespace mp {
         OpenRAVE::RobotBasePtr _robot;
         unsigned int _robot_id;
         unsigned int _obj_id;
-        mgsearch::ORSceneInterfacePtr _scene_interface;
+        mgsearch::ORStateSpacePtr _scene_interface;
         mgsearch::RoadmapPtr _roadmap;
         std::set<unsigned int> _grasp_ids;
         // goal id -> goal

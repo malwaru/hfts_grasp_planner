@@ -12,7 +12,7 @@ Astar::Astar(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned 
     , params(iparams)
 {
     RAVELOG_DEBUG("Astar constructor!");
-    _scene_interface = std::make_shared<mg::ORSceneInterface>(penv, robot_id, obj_id);
+    _scene_interface = std::make_shared<mg::ORStateSpace>(penv, robot_id, obj_id);
     _robot = penv->GetRobot(penv->GetBodyFromEnvironmentId(robot_id)->GetName());
     // create roadmap
     auto edge_computer = std::make_shared<mg::IntegralEdgeCostComputer>(_scene_interface);

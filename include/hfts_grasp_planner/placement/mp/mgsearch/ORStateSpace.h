@@ -7,10 +7,10 @@ namespace mp {
     namespace mgsearch {
         double cSpaceDistance(const Config& a, const Config& b);
 
-        class ORSceneInterface : public StateSpace {
+        class ORStateSpace : public StateSpace {
         public:
-            ORSceneInterface(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
-            ~ORSceneInterface();
+            ORStateSpace(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id);
+            ~ORStateSpace();
             // Grasp management
             void addGrasp(const MultiGraspMP::Grasp& g);
             void removeGrasp(unsigned int gid);
@@ -37,11 +37,9 @@ namespace mp {
             void enableDistanceCheck(bool enable) const;
             std::unordered_map<unsigned int, MultiGraspMP::Grasp> _grasps;
             void setGrasp(unsigned int gid) const;
-            inline double costPerConfig(const Config& c) const;
-            double integrateCosts(const Config& a, const Config& b) const;
         };
 
-        typedef std::shared_ptr<ORSceneInterface> ORSceneInterfacePtr;
+        typedef std::shared_ptr<ORStateSpace> ORStateSpacePtr;
     }
 }
 }

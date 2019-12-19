@@ -29,7 +29,8 @@ openrave_plugin(ormultigraspmp
   MultiGraspBiRRT.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
-  mgsearch/ORCostsAndValidity.cpp
+  mgsearch/ORStateSpace.cpp
+  mgsearch/ImageStateSpace.cpp
   GraphSearch.cpp
   ompl/ORRedirectableBiRRT.cpp
   ../../external/ompl/geometric/RedirectableRRTConnect.cpp

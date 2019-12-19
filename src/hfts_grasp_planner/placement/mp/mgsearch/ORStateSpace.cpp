@@ -1,11 +1,8 @@
 #include <Eigen/Core>
 #include <algorithm>
 #include <boost/shared_ptr.hpp>
-#include <hfts_grasp_planner/placement/mp/mgsearch/ORCostsAndValidity.h>
+#include <hfts_grasp_planner/placement/mp/mgsearch/ORStateSpace.h>
 
-// TODO this is probably too large for practical uses, but it's too slow with pqp otherwise
-// TODO make both parameters settable from outside!?
-#define STEP_SIZE 0.1
 #define SAFE_DISTANCE 0.05
 
 namespace pmp = ::placement::mp;
@@ -18,7 +15,7 @@ double ::placement::mp::mgsearch::cSpaceDistance(const pmp::Config& a, const pmp
     return (avec - bvec).norm();
 }
 
-ORSceneInterface::ORSceneInterface(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id)
+ORStateSpace::ORStateSpace(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id)
     : _penv(penv)
     , _distance_check_enabled(false)
 {
@@ -38,9 +35,9 @@ ORSceneInterface::ORSceneInterface(OpenRAVE::EnvironmentBasePtr penv, unsigned i
     _report = boost::shared_ptr<OpenRAVE::CollisionReport>(new OpenRAVE::CollisionReport());
 }
 
-ORSceneInterface::~ORSceneInterface() = default;
+ORStateSpace::~ORStateSpace() = default;
 
-void ORSceneInterface::addGrasp(const MultiGraspMP::Grasp& g)
+void ORStateSpace::addGrasp(const MultiGraspMP::Grasp& g)
 {
     auto iter = _grasps.find(g.id);
     if (iter != _grasps.end()) {
@@ -50,7 +47,7 @@ void ORSceneInterface::addGrasp(const MultiGraspMP::Grasp& g)
     _grasps.insert(std::make_pair(g.id, g));
 }
 
-void ORSceneInterface::removeGrasp(unsigned int gid)
+void ORStateSpace::removeGrasp(unsigned int gid)
 {
     auto iter = _grasps.find(gid);
     if (iter != _grasps.end()) {
@@ -60,7 +57,7 @@ void ORSceneInterface::removeGrasp(unsigned int gid)
     }
 }
 
-bool ORSceneInterface::isValid(const pmp::Config& c) const
+bool ORStateSpace::isValid(const pmp::Config& c) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
@@ -75,7 +72,7 @@ bool ORSceneInterface::isValid(const pmp::Config& c) const
     return !_penv->CheckCollision(_robot);
 }
 
-bool ORSceneInterface::isValid(const pmp::Config& c, unsigned int grasp_id, bool only_obj) const
+bool ORStateSpace::isValid(const pmp::Config& c, unsigned int grasp_id, bool only_obj) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
@@ -94,7 +91,7 @@ bool ORSceneInterface::isValid(const pmp::Config& c, unsigned int grasp_id, bool
     return bvalid;
 }
 
-void ORSceneInterface::setGrasp(unsigned int gid) const
+void ORStateSpace::setGrasp(unsigned int gid) const
 {
     auto iter = _grasps.find(gid);
     if (iter == _grasps.end()) {
@@ -115,7 +112,7 @@ void ORSceneInterface::setGrasp(unsigned int gid) const
     _robot->Grab(_object);
 }
 
-double ORSceneInterface::cost(const pmp::Config& c) const
+double ORStateSpace::cost(const pmp::Config& c) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver rob_state_saver(_robot);
@@ -132,7 +129,7 @@ double ORSceneInterface::cost(const pmp::Config& c) const
     // return SAFE_DISTANCE / std::min(clearance, SAFE_DISTANCE);
 }
 
-double ORSceneInterface::conditional_cost(const pmp::Config& c, unsigned int grasp_id) const
+double ORStateSpace::conditional_cost(const pmp::Config& c, unsigned int grasp_id) const
 {
     boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
     OpenRAVE::RobotBase::RobotStateSaver rob_state_saver(_robot);
@@ -143,22 +140,22 @@ double ORSceneInterface::conditional_cost(const pmp::Config& c, unsigned int gra
     return val;
 }
 
-unsigned int ORSceneInterface::getDimension() const
+unsigned int ORStateSpace::getDimension() const
 {
     return _robot->GetActiveDOF();
 }
 
-void ORSceneInterface::getBounds(Config& lower, Config& upper) const
+void ORStateSpace::getBounds(Config& lower, Config& upper) const
 {
     _robot->GetActiveDOFLimits(lower, upper);
 }
 
-double ORSceneInterface::distance(const Config& a, const Config& b) const
+double ORStateSpace::distance(const Config& a, const Config& b) const
 {
     return cSpaceDistance(a, b);
 }
 
-void ORSceneInterface::enableDistanceCheck(bool enable) const
+void ORStateSpace::enableDistanceCheck(bool enable) const
 {
     if (enable and not _distance_check_enabled) {
         _col_checker->SetCollisionOptions(OpenRAVE::CollisionOptions::CO_Distance | OpenRAVE::CollisionOptions::CO_ActiveDOFs);
