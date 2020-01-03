@@ -44,9 +44,9 @@ void Astar::plan(std::vector<Solution>& new_paths, double time_limit)
         // solve the problem for each grasp separately
         for (auto grasp_id : _grasp_ids) {
             RAVELOG_DEBUG("Planning with A* on single grasp graph for grasp " + std::to_string(grasp_id));
-            mg::SingleGraspRoadmapGraph graph(_roadmap, goal_distance_fn, grasp_id);
             assert(not _start_node.expired());
-            graph.setStartId(_start_node.lock()->uid);
+            unsigned int start_id = _start_node.lock()->uid;
+            mg::SingleGraspRoadmapGraph graph(_roadmap, goal_distance_fn, grasp_id, start_id);
             mg::SearchResult sr;
             mg::astar::aStarSearch<mg::SingleGraspRoadmapGraph>(graph, sr);
             if (sr.solved) {

@@ -52,6 +52,7 @@ namespace mp {
              */
             virtual unsigned int getDimension() const = 0;
             virtual void getBounds(Config& lower, Config& upper) const = 0;
+            // TODO range of valid grasp ids?
             SpaceInformation getSpaceInformation() const
             {
                 SpaceInformation si;
