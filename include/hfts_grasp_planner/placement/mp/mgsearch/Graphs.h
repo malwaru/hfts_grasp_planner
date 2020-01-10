@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/functional/hash.hpp>
 #include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
 #include <vector>
 
@@ -37,11 +38,13 @@ namespace mp {
             /**
              * Create a new roadmap graph defined by the given roadmap for the given grasp.
              * @param roadmap - roadmap to use
+             * @param goal_set - goal set
              * @param cost_to_go - cost-to-go-heuristic
              * @param grasp_id - the id of the grasp
              * @param start_id - the id of the roadmap node that defines the start node
              */
             SingleGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
+                ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set,
                 ::placement::mp::mgsearch::CostToGoHeuristicPtr cost_to_go,
                 unsigned int grasp_id,
                 unsigned int start_id);
@@ -57,6 +60,7 @@ namespace mp {
 
         private:
             ::placement::mp::mgsearch::RoadmapPtr _roadmap;
+            ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
             ::placement::mp::mgsearch::CostToGoHeuristicPtr _cost_to_go;
             const unsigned int _grasp_id;
             const unsigned int _start_id;
@@ -77,8 +81,9 @@ namespace mp {
              * @param start_id - the id of the roadmap node that defines the start node
              */
             MultiGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
+                ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set,
                 ::placement::mp::mgsearch::CostToGoHeuristicPtr cost_to_go,
-                const std::vector<unsigned int>& grasp_id,
+                const std::vector<unsigned int>& grasp_ids,
                 unsigned int start_id);
             ~MultiGraspRoadmapGraph();
             // GraspAgnostic graph interface
@@ -92,16 +97,20 @@ namespace mp {
 
         private:
             ::placement::mp::mgsearch::RoadmapPtr _roadmap;
+            ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
             ::placement::mp::mgsearch::CostToGoHeuristicPtr _cost_to_go;
             const std::vector<unsigned int> _grasp_ids;
             // hash table mapping (grasp_id, roadmap_id) to graph id
-            std::unordered_map<std::pair<unsigned int, unsigned int>, unsigned int> _roadmap_key_to_graph;
+            typedef std::pair<unsigned int, unsigned int> GraspNodeIDPair;
+            mutable std::unordered_map<GraspNodeIDPair, unsigned int, boost::hash<GraspNodeIDPair>> _roadmap_key_to_graph;
             // hash table mapping graph id to (grasp_id, roadmap_id)
-            std::unordered_map<unsigned int, std::pair<unsigned int, unsigned int>> _graph_key_to_roadmap;
+            mutable std::unordered_map<unsigned int, GraspNodeIDPair> _graph_key_to_roadmap;
+            unsigned int _roadmap_start_id;
 
             std::pair<unsigned int, unsigned int> toRoadmapKey(unsigned int graph_id) const;
             unsigned int toGraphKey(const std::pair<unsigned int, unsigned int>& roadmap_id) const;
             unsigned int toGraphKey(unsigned int grasp_id, unsigned int roadmap_id) const;
+            mutable unsigned int _num_graph_nodes;
         };
     }
 }

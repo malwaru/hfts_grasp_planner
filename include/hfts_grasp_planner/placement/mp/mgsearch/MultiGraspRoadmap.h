@@ -1,5 +1,6 @@
 #pragma once
 // stl
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -52,7 +53,8 @@ namespace mp {
              */
             virtual unsigned int getDimension() const = 0;
             virtual void getBounds(Config& lower, Config& upper) const = 0;
-            // TODO range of valid grasp ids?
+            virtual void getValidGraspIds(std::vector<unsigned int>& grasp_ids) const = 0;
+
             SpaceInformation getSpaceInformation() const
             {
                 SpaceInformation si;
@@ -129,8 +131,8 @@ namespace mp {
                 // Configuration represented by this node
                 const Config config;
                 // goal annotation
-                bool is_goal;
-                unsigned int goal_id;
+                // bool is_goal;
+                // unsigned int goal_id;
                 /**
                  * Return the edge that leads to the node with target_id.  
                  * If the specified node is not adjacent, nullptr is returned.
@@ -160,8 +162,8 @@ namespace mp {
                 // Constructor
                 Node(unsigned int tuid, const Config& tconfig)
                     : uid(tuid)
-                    , is_goal(false)
-                    , goal_id(0)
+                    // , is_goal(false)
+                    // , goal_id(0)
                     , initialized(false)
                     , config(tconfig)
                     , densification_gen(0)
@@ -184,11 +186,34 @@ namespace mp {
                 double getBestKnownCost(unsigned int gid) const;
             };
 
+            class Logger {
+            public:
+                Logger();
+                ~Logger();
+                void setLogPath(const std::string& roadmap_file, const std::string& log_file);
+
+                // log the addition of a new node
+                void newNode(NodePtr node);
+                // log a validity check on the given node
+                void nodeValidityChecked(NodePtr node, bool val);
+                void nodeValidityChecked(NodePtr node, unsigned int grasp_id, bool val);
+                // log the cost computation of an edge
+                void edgeCostChecked(NodePtr a, NodePtr b, double cost);
+                void edgeCostChecked(NodePtr a, NodePtr b, unsigned int grasp_id, double cost);
+
+            private:
+                std::ofstream _roadmap_fs;
+                std::ofstream _log_fs;
+            };
+
             Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr edge_cost_computer, unsigned int batch_size = 10000);
             virtual ~Roadmap();
             // Tell the roadmap to densify
             void densify();
             void densify(unsigned int batch_size);
+
+            // enable logging to the given files
+            void setLogging(const std::string& roadmap_path, const std::string& log_path);
             /**
              * Retrieve a node.
              * Returns nullptr if node with given id doesn't exist.
@@ -202,7 +227,7 @@ namespace mp {
              *  (node->is_goal = true, node->goal_id == goal.id, node->config == goal.config)
              *  The returned pointer is weak. To check validity of the node use checkNode.
              */
-            NodeWeakPtr addGoalNode(const MultiGraspMP::Goal& goal);
+            // NodeWeakPtr addGoalNode(const MultiGraspMP::Goal& goal);
             /**
              * Add a new node at the given configuration.
              * Use this function to add the start node.
@@ -234,6 +259,14 @@ namespace mp {
             bool isValid(NodeWeakPtr node, unsigned int grasp_id);
 
             /**
+             * Return all valid grasp ids. This function simply forwards this call to the underlying state space.
+             */
+            void getValidGraspIds(std::vector<unsigned int>& grasp_ids) const
+            {
+                _state_space->getValidGraspIds(grasp_ids);
+            }
+
+            /**
              * Compute the base cost of the given edge (for no grasp).
              * If the edge is found to be invalid, the edge is removed from the roadmap.
              * In this case, if you called computeCost(EdgeWeakPtr edge), edge will be expired after the function returns.
@@ -256,6 +289,7 @@ namespace mp {
             EdgeCostComputerPtr _cost_computer;
             ::ompl::NearestNeighborsGNAT<NodePtr> _nn; // owner of nodes
             std::unordered_map<unsigned int, NodeWeakPtr> _nodes; // node id to pointer
+            Logger _logger;
             unsigned int _batch_size;
             unsigned int _node_id_counter;
             unsigned int _halton_seq_id;
@@ -267,6 +301,66 @@ namespace mp {
             void deleteEdge(EdgePtr edge);
         };
         typedef std::shared_ptr<Roadmap> RoadmapPtr;
+
+        class MultiGraspGoalSet {
+        public:
+            /**
+             * Construct a new MultiGraspGoalSet.
+             */
+            MultiGraspGoalSet(RoadmapPtr roadmap);
+            ~MultiGraspGoalSet();
+
+            /**
+             *  Add a new goal to the set.
+             *  The corresponding configuration is also added to the underlying roadmap.
+             */
+            void addGoal(const MultiGraspMP::Goal& goal);
+
+            /**
+             *  Remove the specified goal.
+             *  The corresponding configuration is not removed from the underlying roadmap.
+             */
+            void removeGoal(unsigned int gid);
+
+            /**
+             *  Remove the specified goals.
+             *  The corresponding configurations are not removed from the underlying roadmap.
+             */
+            void removeGoals(const std::vector<unsigned int>& goal_ids);
+
+            /**
+             *  Return whether the given node is a goal under the given grasp.
+             */
+            bool isGoal(Roadmap::NodePtr node, unsigned int grasp_id);
+
+            /**
+             *  Return whether the roadmap node with id <node_id> is a goal under the given grasp id.
+             */
+            bool isGoal(unsigned int node_id, unsigned int grasp_id);
+
+            /**
+             * Return the goal id associated with the roadmap node under the given grasp.
+             * If the node is not a goal for this grasp, the returned bool is false, and the returned id meaningless.
+             */
+            std::pair<unsigned int, bool> getGoalId(unsigned int node_id, unsigned int grasp_id);
+
+            /**
+             * Return a vector containing all currently active goals.
+             */
+            void getGoals(std::vector<MultiGraspMP::Goal>& goals) const;
+
+        private:
+            // goal id -> goal
+            std::unordered_map<unsigned int, MultiGraspMP::Goal> _goals;
+            // goal id -> roadmap node id
+            std::unordered_map<unsigned int, unsigned int> _goal_id_to_roadmap_id;
+            // roadmap node id -> goal id
+            std::unordered_map<unsigned int, unsigned int> _roadmap_id_to_goal_id;
+            const RoadmapPtr _roadmap;
+        };
+
+        typedef std::shared_ptr<MultiGraspGoalSet> MultiGraspGoalSetPtr;
+        typedef std::shared_ptr<const MultiGraspGoalSet> MultiGraspGoalSetConstPtr;
 
         class MGGoalDistance : public CostToGoHeuristic {
         public:
@@ -281,11 +375,11 @@ namespace mp {
              *   For new goals, you need to construct a new instance, due to the fact that goal quality values are 
              *   normalized w.r.t min and max quality.
              * 
-             * @param goals - list of goals 
+             * @param goal_set - goals 
              * @param path_cost - lower bound on path cost to move from one configuration to another
              * @param lambda - parameter to scale between path cost and grasp cost
              */
-            MGGoalDistance(const std::vector<MultiGraspMP::Goal>& goals,
+            MGGoalDistance(MultiGraspGoalSetConstPtr goal_set,
                 const std::function<double(const Config&, const Config&)>& path_cost, double lambda);
             ~MGGoalDistance();
             // interface functions

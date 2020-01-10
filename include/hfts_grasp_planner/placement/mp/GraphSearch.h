@@ -44,11 +44,8 @@ namespace mp {
         mgsearch::ORStateSpacePtr _scene_interface;
         mgsearch::RoadmapPtr _roadmap;
         std::set<unsigned int> _grasp_ids;
-        // goal id -> goal
-        std::unordered_map<unsigned int, Goal> _goals;
         mgsearch::Roadmap::NodeWeakPtr _start_node;
-        // goal id -> goal node
-        std::unordered_map<unsigned int, mgsearch::Roadmap::NodeWeakPtr> _goal_nodes;
+        mgsearch::MultiGraspGoalSetPtr _goal_set;
     };
     typedef std::shared_ptr<Astar> AstarPtr;
     typedef std::shared_ptr<const Astar> AstarConstPtr;

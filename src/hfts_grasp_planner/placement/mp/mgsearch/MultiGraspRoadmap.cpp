@@ -95,6 +95,73 @@ double Roadmap::Edge::getBestKnownCost(unsigned int gid) const
     return base_cost;
 }
 
+Roadmap::Logger::Logger() = default;
+
+Roadmap::Logger::~Logger()
+{
+    _roadmap_fs.close();
+    _log_fs.close();
+}
+
+void Roadmap::Logger::setLogPath(const std::string& roadmap_file, const std::string& log_file)
+{
+    if (_roadmap_fs.is_open()) {
+        _roadmap_fs.close();
+    }
+    if (_log_fs.is_open()) {
+        _log_fs.close();
+    }
+    _roadmap_fs.open(roadmap_file, std::ios::out);
+    _log_fs.open(log_file, std::ios::out);
+}
+
+void Roadmap::Logger::newNode(NodePtr node)
+{
+    if (_roadmap_fs.is_open()) {
+        // a node is stored as a single line: id, dim, x1, x2, ..., xdim\n
+        _roadmap_fs << node->uid << ", ";
+        _roadmap_fs << node->config.size();
+        for (auto ci : node->config) {
+            _roadmap_fs << ", " << ci;
+        }
+        _roadmap_fs << "\n";
+    }
+}
+
+void Roadmap::Logger::nodeValidityChecked(NodePtr node, bool bval)
+{
+    if (_log_fs.is_open()) {
+        // log that the validity of node has been checked. format: VALBASE, id, bval\n
+        _log_fs << "VAL_BASE, " << node->uid << ", " << bval << "\n";
+    }
+}
+
+void Roadmap::Logger::nodeValidityChecked(NodePtr node, unsigned int grasp_id, bool bval)
+{
+    if (_log_fs.is_open()) {
+        // log that the validity of node has been checked. format: VALGRASP, id, grasp_id, bval\n
+        _log_fs << "VAL_GRASP, " << node->uid << ", " << grasp_id << ", " << bval << "\n";
+    }
+}
+
+void Roadmap::Logger::edgeCostChecked(NodePtr a, NodePtr b, double cost)
+{
+    if (_log_fs.is_open()) {
+        // log that a cost of the edge connecting a and b has been computed
+        // format: EDGE_COST, aid, bid, cost\n
+        _log_fs << "EDGE_COST, " << a->uid << ", " << b->uid << ", " << cost << "\n";
+    }
+}
+
+void Roadmap::Logger::edgeCostChecked(NodePtr a, NodePtr b, unsigned int grasp_id, double cost)
+{
+    if (_log_fs.is_open()) {
+        // log that a cost of the edge connecting a and b has been computed
+        // format: EDGE_COST_GRASP, aid, bid, grasp_id, cost\n
+        _log_fs << "EDGE_COST_GRASP, " << a->uid << ", " << b->uid << ", " << grasp_id << ", " << cost << "\n";
+    }
+}
+
 Roadmap::Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr cost_computer, unsigned int batch_size)
     : _state_space(state_space)
     , _si(state_space->getSpaceInformation())
@@ -147,6 +214,11 @@ void Roadmap::densify(unsigned int batch_size)
     _densification_gen += 1;
 }
 
+void Roadmap::setLogging(const std::string& roadmap_path, const std::string& log_path)
+{
+    _logger.setLogPath(roadmap_path, log_path);
+}
+
 Roadmap::NodePtr Roadmap::getNode(unsigned int node_id) const
 {
     auto iter = _nodes.find(node_id);
@@ -158,19 +230,12 @@ Roadmap::NodePtr Roadmap::getNode(unsigned int node_id) const
     return ptr;
 }
 
-Roadmap::NodeWeakPtr Roadmap::addGoalNode(const MultiGraspMP::Goal& goal)
-{
-    NodePtr new_node = addNode(goal.config).lock();
-    new_node->is_goal = true;
-    new_node->goal_id = goal.id;
-    return new_node;
-}
-
 Roadmap::NodeWeakPtr Roadmap::addNode(const Config& config)
 {
     NodePtr new_node = std::shared_ptr<Node>(new Node(_node_id_counter++, config));
     _nn.add(new_node);
     _nodes.insert(std::make_pair(new_node->uid, new_node));
+    _logger.newNode(new_node);
     return new_node;
 }
 
@@ -204,8 +269,10 @@ bool Roadmap::isValid(NodeWeakPtr inode)
         return false;
     auto node = inode.lock();
     if (!node->initialized) {
+        bool valid = _state_space->isValid(node->config);
+        _logger.nodeValidityChecked(node, valid);
         // check validity
-        if (not _state_space->isValid(node->config)) {
+        if (not valid) {
             // in case of the node being invalid, remove it
             deleteNode(node);
             return false;
@@ -225,6 +292,7 @@ bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
         if (iter == node->conditional_validity.end()) {
             bool valid = _state_space->isValid(node->config, grasp_id, true);
             node->conditional_validity[grasp_id] = valid;
+            _logger.nodeValidityChecked(node, grasp_id, valid);
             return valid;
         } else {
             return iter->second;
@@ -245,6 +313,7 @@ std::pair<bool, double> Roadmap::computeCost(EdgePtr edge)
     assert(node_b);
     edge->base_cost = _cost_computer->cost(node_a->config, node_b->config);
     edge->base_evaluated = true;
+    _logger.edgeCostChecked(node_a, node_b, edge->base_cost);
     if (std::isinf(edge->base_cost)) {
         // edge is invalid, so let's remove it
         deleteEdge(edge);
@@ -269,6 +338,7 @@ std::pair<bool, double> Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id
         NodePtr node_a = edge->node_a.lock();
         NodePtr node_b = edge->node_b.lock();
         cost = _cost_computer->cost(node_a->config, node_b->config, grasp_id);
+        _logger.edgeCostChecked(node_a, node_b, grasp_id, edge->base_cost);
         edge->conditional_costs.insert(std::make_pair(grasp_id, cost));
     } else {
         cost = iter->second;
@@ -327,12 +397,101 @@ void Roadmap::deleteEdge(EdgePtr edge)
     edge.reset();
 }
 
+/************************************** MultiGraspGoalSet **************************************/
+MultiGraspGoalSet::MultiGraspGoalSet(RoadmapPtr roadmap)
+    : _roadmap(roadmap)
+{
+}
+
+MultiGraspGoalSet::~MultiGraspGoalSet() = default;
+
+void MultiGraspGoalSet::addGoal(const MultiGraspMP::Goal& goal)
+{
+    _goals.insert(std::make_pair(goal.id, goal));
+    auto new_node = _roadmap->addNode(goal.config).lock();
+    assert(new_node);
+    _goal_id_to_roadmap_id[goal.id] = new_node->uid;
+    _roadmap_id_to_goal_id[new_node->uid] = goal.id;
+}
+
+void MultiGraspGoalSet::removeGoal(unsigned int gid)
+{
+    auto goal_iter = _goals.find(gid);
+    if (goal_iter != _goals.end()) {
+        _goals.erase(goal_iter);
+        // remove goal from goal_id_to_roadmap id map
+        auto gid2rid_iter = _goal_id_to_roadmap_id.find(gid);
+        assert(gid2rid_iter != _goal_id_to_roadmap_id.end());
+        unsigned int rid = gid2rid_iter->second;
+        _goal_id_to_roadmap_id.erase(gid2rid_iter);
+        // remove inverse mapping
+        auto rid2gid_iter = _roadmap_id_to_goal_id.find(rid);
+        assert(rid2gid_iter != _roadmap_id_to_goal_id.end());
+        assert(rid2gid_iter->second == gid);
+        _roadmap_id_to_goal_id.erase(rid2gid_iter);
+    }
+}
+
+void MultiGraspGoalSet::removeGoals(const std::vector<unsigned int>& goal_ids)
+{
+    for (unsigned int gid : goal_ids) {
+        removeGoal(gid);
+    }
+}
+
+bool MultiGraspGoalSet::isGoal(Roadmap::NodePtr node, unsigned int grasp_id)
+{
+    // a configuration is not a goal for a grasp if it is invalid
+    if (!_roadmap->isValid(node, grasp_id))
+        return false;
+    // if valid, check whether this roadmap node is affiliated with a goal
+    unsigned int goal_id;
+    {
+        auto iter = _roadmap_id_to_goal_id.find(node->uid);
+        if (iter == _roadmap_id_to_goal_id.end())
+            return false;
+        goal_id = iter->second;
+    }
+    // check whether the goal is for the given grasp
+    return grasp_id == _goals.at(goal_id).grasp_id;
+}
+
+bool MultiGraspGoalSet::isGoal(unsigned int node_id, unsigned int grasp_id)
+{
+    auto node_ptr = _roadmap->getNode(node_id);
+    if (!node_ptr)
+        return false;
+    return isGoal(node_ptr, grasp_id);
+}
+
+std::pair<unsigned int, bool> MultiGraspGoalSet::getGoalId(unsigned int node_id, unsigned int grasp_id)
+{
+    auto iter = _roadmap_id_to_goal_id.find(node_id);
+    if (iter == _roadmap_id_to_goal_id.end()) {
+        return { 0, false };
+    }
+    // get the grasp for this goal
+    bool valid_grasp = _goals.at(iter->second).grasp_id == grasp_id;
+    return { iter->second, valid_grasp };
+}
+
+void MultiGraspGoalSet::getGoals(std::vector<MultiGraspMP::Goal>& goals) const
+{
+    goals.clear();
+    for (auto elem : _goals) {
+        goals.push_back(elem.second);
+    }
+}
+
 /************************************** MGGoalDistance **************************************/
 
-MGGoalDistance::MGGoalDistance(const std::vector<MultiGraspMP::Goal>& goals,
+MGGoalDistance::MGGoalDistance(MultiGraspGoalSetConstPtr goal_set,
     const std::function<double(const Config&, const Config&)>& path_cost, double lambda)
 {
     double max_q, min_q = -INFINITY, INFINITY;
+    // TODO just copying all goals like this is a bit inefficient
+    std::vector<MultiGraspMP::Goal> goals;
+    goal_set->getGoals(goals);
     // first compute min and max quality
     for (const MultiGraspMP::Goal& goal : goals) {
         // add goal to all goals

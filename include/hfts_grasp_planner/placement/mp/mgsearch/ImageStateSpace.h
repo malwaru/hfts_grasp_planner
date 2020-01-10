@@ -23,6 +23,7 @@ namespace mp {
             // space information
             unsigned int getDimension() const override;
             void getBounds(Config& lower, Config& upper) const override;
+            void getValidGraspIds(std::vector<unsigned int>& grasp_ids) const override;
 
         protected:
             struct Image {

@@ -150,6 +150,14 @@ void ORStateSpace::getBounds(Config& lower, Config& upper) const
     _robot->GetActiveDOFLimits(lower, upper);
 }
 
+void ORStateSpace::getValidGraspIds(std::vector<unsigned int>& grasp_ids) const
+{
+    grasp_ids.clear();
+    for (auto elem : _grasps) {
+        grasp_ids.push_back(elem.first);
+    }
+}
+
 double ORStateSpace::distance(const Config& a, const Config& b) const
 {
     return cSpaceDistance(a, b);

@@ -120,3 +120,11 @@ void ImageStateSpace::getBounds(Config& lower, Config& upper) const
     upper[0] = _images.at(0)->width - 0.5;
     upper[1] = _images.at(0)->height - 0.5;
 }
+
+void ImageStateSpace::getValidGraspIds(std::vector<unsigned int>& grasp_ids) const
+{
+    grasp_ids.clear();
+    for (unsigned int i = 0; i < getNumGrasps(); ++i) {
+        grasp_ids.push_back(i);
+    }
+}

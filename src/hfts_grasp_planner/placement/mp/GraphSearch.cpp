@@ -17,6 +17,8 @@ Astar::Astar(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned 
     // create roadmap
     auto edge_computer = std::make_shared<mg::IntegralEdgeCostComputer>(_scene_interface);
     _roadmap = std::make_shared<mg::Roadmap>(_scene_interface, edge_computer);
+    _roadmap->setLogging("/tmp/roadmap", "/tmp/validation_log");
+    _goal_set = std::make_shared<mg::MultiGraspGoalSet>(_roadmap);
     // add start node
     Config start_config;
     _robot->GetActiveDOFValues(start_config);
@@ -32,12 +34,7 @@ void Astar::plan(std::vector<Solution>& new_paths, double time_limit)
 {
     // TODO create goal hierarchy, create graph, execute A* search
     // create goal distance function, for this collect all goals in a vector first
-    // TODO this is a waste of resources to copy goals into a vector
-    std::vector<MultiGraspMP::Goal> goals;
-    for (auto elem : _goals) {
-        goals.push_back(elem.second);
-    }
-    auto goal_distance_fn = std::make_shared<mg::MGGoalDistance>(goals, mg::cSpaceDistance, params.lambda);
+    auto goal_distance_fn = std::make_shared<mg::MGGoalDistance>(_goal_set, mg::cSpaceDistance, params.lambda);
     // create the graph
     switch (params.graph_type) {
     case GraphType::SingleGraspGraph: {
@@ -46,7 +43,7 @@ void Astar::plan(std::vector<Solution>& new_paths, double time_limit)
             RAVELOG_DEBUG("Planning with A* on single grasp graph for grasp " + std::to_string(grasp_id));
             assert(not _start_node.expired());
             unsigned int start_id = _start_node.lock()->uid;
-            mg::SingleGraspRoadmapGraph graph(_roadmap, goal_distance_fn, grasp_id, start_id);
+            mg::SingleGraspRoadmapGraph graph(_roadmap, _goal_set, goal_distance_fn, grasp_id, start_id);
             mg::SearchResult sr;
             mg::astar::aStarSearch<mg::SingleGraspRoadmapGraph>(graph, sr);
             if (sr.solved) {
@@ -58,12 +55,13 @@ void Astar::plan(std::vector<Solution>& new_paths, double time_limit)
                     wp_path->push_back(node->config);
                 }
                 // get goal id
-                auto goal_node = _roadmap->getNode(sr.path.back());
+                auto goal_node = _roadmap->getNode(sr.path.back()); // TODO this assumes that vertex ids are equal to roadmap ids
                 assert(goal_node);
-                unsigned int gid = goal_node->goal_id;
+                auto [goal_id, valid_goal] = _goal_set->getGoalId(goal_node->uid, grasp_id);
+                assert(valid_goal);
                 // get overall cost
-                double overall_cost = sr.path_cost + params.lambda * goal_distance_fn->goalCost(gid);
-                new_paths.push_back(Solution(gid, wp_path, overall_cost));
+                double overall_cost = sr.path_cost + params.lambda * goal_distance_fn->goalCost(goal_id);
+                new_paths.push_back(Solution(goal_id, wp_path, overall_cost));
             }
         }
         break;
@@ -87,24 +85,10 @@ void Astar::addGrasp(const Grasp& grasp)
 
 void Astar::addGoal(const Goal& goal)
 {
-    _goals.insert(std::make_pair(goal.id, goal));
-    auto goal_node = _roadmap->addGoalNode(goal);
-    _goal_nodes.insert(std::make_pair(goal.id, goal_node));
+    _goal_set->addGoal(goal);
 }
 
 void Astar::removeGoals(const std::vector<unsigned int>& goal_ids)
 {
-    for (unsigned int gid : goal_ids) {
-        auto iter = _goals.find(gid);
-        if (iter != _goals.end()) {
-            // remove goal node if it has been added to the roadmap
-            auto goal_node_iter = _goal_nodes.find(gid);
-            if (goal_node_iter != _goal_nodes.end()) {
-                auto goal_node = goal_node_iter->second.lock();
-                goal_node->is_goal = false;
-                _goal_nodes.erase(goal_node_iter);
-            }
-        }
-        _goals.erase(iter);
-    }
+    _goal_set->removeGoals(goal_ids);
 }
