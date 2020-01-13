@@ -29,8 +29,9 @@ openrave_plugin(ormultigraspmp
   MultiGraspBiRRT.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
+  mgsearch/MGGraphSearchMP.cpp
   mgsearch/ORStateSpace.cpp
-  GraphSearch.cpp
+  ORGraphSearch.cpp
   ompl/ORRedirectableBiRRT.cpp
   ../../external/ompl/geometric/RedirectableRRTConnect.cpp
   ../../external/halton/halton.cpp
@@ -46,11 +47,14 @@ add_executable(test_graph_search_algorithm
 target_link_libraries(test_graph_search_algorithm)
 
 add_executable(test_image_space_algorithm
-  test/test_imagespace.cpp
+  # test/test_imagespace.cpp
+  test/test_img_planner.cpp
   mgsearch/ImageStateSpace.cpp
+  mgsearch/MGGraphSearchMP.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
   MultiGraspMP.cpp
+  ImgGraphSearch.cpp
   ../../external/halton/halton.cpp
 )
 

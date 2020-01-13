@@ -111,8 +111,12 @@ void Roadmap::Logger::setLogPath(const std::string& roadmap_file, const std::str
     if (_log_fs.is_open()) {
         _log_fs.close();
     }
-    _roadmap_fs.open(roadmap_file, std::ios::out);
-    _log_fs.open(log_file, std::ios::out);
+    if (!roadmap_file.empty()) {
+        _roadmap_fs.open(roadmap_file, std::ios::out);
+    }
+    if (!log_file.empty()) {
+        _log_fs.open(log_file, std::ios::out);
+    }
 }
 
 void Roadmap::Logger::newNode(NodePtr node)
@@ -124,7 +128,8 @@ void Roadmap::Logger::newNode(NodePtr node)
         for (auto ci : node->config) {
             _roadmap_fs << ", " << ci;
         }
-        _roadmap_fs << "\n";
+        // _roadmap_fs << "\n";
+        _roadmap_fs << std::endl;
     }
 }
 
@@ -162,7 +167,8 @@ void Roadmap::Logger::edgeCostChecked(NodePtr a, NodePtr b, unsigned int grasp_i
     }
 }
 
-Roadmap::Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr cost_computer, unsigned int batch_size)
+Roadmap::Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr cost_computer, unsigned int batch_size,
+    const std::string& log_roadmap_path, const std::string& log_path)
     : _state_space(state_space)
     , _si(state_space->getSpaceInformation())
     , _cost_computer(cost_computer)
@@ -172,6 +178,7 @@ Roadmap::Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr cost_computer, u
     , _densification_gen(0)
 {
     assert(_si.lower.size() == _si.upper.size() and _si.lower.size() == _si.dimension);
+    _logger.setLogPath(log_roadmap_path, log_path);
     // _nn.setDistanceFunction(distanceFn);
     _nn.setDistanceFunction([this](const Roadmap::NodePtr& a, const Roadmap::NodePtr& b) { return _state_space->distance(a->config, b->config); });
     // compute gamma_prm - a constant used to compute the radius for adjacency

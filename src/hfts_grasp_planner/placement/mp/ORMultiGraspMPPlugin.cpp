@@ -1,5 +1,5 @@
-#include <hfts_grasp_planner/placement/mp/GraphSearch.h>
 #include <hfts_grasp_planner/placement/mp/MultiGraspBiRRT.h>
+#include <hfts_grasp_planner/placement/mp/ORGraphSearch.h>
 #include <hfts_grasp_planner/placement/mp/ORMultiGraspMPPlugin.h>
 #include <iostream>
 
@@ -112,10 +112,11 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
         _planner = std::make_shared<SequentialMGBiRRT>(query_env, robot_id, obj_id);
     } else if (_algorithm_name == ASTAR) {
         // TODO make parameters settable
-        Astar::Parameters params;
-        params.graph_type = Astar::SingleGraspGraph;
+        mgsearch::MGGraphSearchMP::Parameters params;
+        params.graph_type = mgsearch::MGGraphSearchMP::GraphType::SingleGraspGraph;
+        params.algo_type = mgsearch::MGGraphSearchMP::AlgorithmType::Astar;
         params.lambda = 1.0;
-        _planner = std::make_shared<Astar>(query_env, robot_id, obj_id, params);
+        _planner = std::make_shared<ORGraphSearch>(query_env, robot_id, obj_id, params);
     } else {
         RAVELOG_ERROR("Unknown algorithm " + _algorithm_name + ". Can not plan.");
         throw std::logic_error("Unknown planning algorithm name " + _algorithm_name);

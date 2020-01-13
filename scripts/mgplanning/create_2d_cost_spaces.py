@@ -133,9 +133,9 @@ if __name__ == "__main__":
     cost_spaces = compute_cost_spaces(collision_spaces)
     # save cost spaces
     for grasp_id, space_image in cost_spaces.iteritems():
-        # np.save(args.output_path + '/' + str(grasp_id) + '.npy', space_image)
+        np.save(args.output_path + '/' + str(grasp_id) + '.npy', space_image)
         space_image -= np.min(space_image)
         space_image /= np.max(space_image) - np.min(space_image)
-        misc.imsave(args.output_path + '/' + str(grasp_id) + '.bmp', space_image.astype(float))
+        # misc.imsave(args.output_path + '/' + str(grasp_id) + '.bmp', space_image.astype(float))
     print "Done"
     sys.exit(0)

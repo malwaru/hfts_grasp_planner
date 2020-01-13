@@ -206,7 +206,8 @@ namespace mp {
                 std::ofstream _log_fs;
             };
 
-            Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr edge_cost_computer, unsigned int batch_size = 10000);
+            Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr edge_cost_computer, unsigned int batch_size = 10000,
+                const std::string& log_roadmap_path = "", const std::string& log_path = "");
             virtual ~Roadmap();
             // Tell the roadmap to densify
             void densify();
