@@ -109,6 +109,8 @@ if __name__ == "__main__":
         'world_image', help='Path to a single image of the world.', type=str)
     parser.add_argument(
         'output_path', help='Path to a folder of where to store the generated cost spaces.', type=str)
+    parser.add_argument(
+        '--render_output_path', help='Path to a folder of where to store the images of the generated cost spaces.', type=str)
     args = parser.parse_args()
     # load grasp images
     if not os.path.isdir(args.grasp_images):
@@ -136,6 +138,8 @@ if __name__ == "__main__":
         np.save(args.output_path + '/' + str(grasp_id) + '.npy', space_image)
         space_image -= np.min(space_image)
         space_image /= np.max(space_image) - np.min(space_image)
-        # misc.imsave(args.output_path + '/' + str(grasp_id) + '.bmp', space_image.astype(float))
+        if args.render_output_path:
+            misc.imsave(args.render_output_path + '/' + str(grasp_id) + '.bmp', space_image.astype(float))
+            misc.imsave(args.render_output_path + '/' + str(grasp_id) + '_col.bmp', collision_spaces[grasp_id])
     print "Done"
     sys.exit(0)
