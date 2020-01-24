@@ -26,6 +26,7 @@ class MGRoadmapVisualizer(object):
             log_file : string
                 path to log file to read evaluations of roadmap states from
         """
+        self._showing_ui = False
         # stores positions of all roadmap vertices, shape: #vertices, 2
         self._vertices = None
         # stores for each vertex whether for which grasp it has been evaluated, shape #vertices, #grasps + 1
@@ -90,71 +91,91 @@ class MGRoadmapVisualizer(object):
         """
             Show the visualizer.
         """
-        # show grasps
-        for (gid, grasp_image) in self._grasp_images.iteritems():
-            grasp_z = float(gid * self.grasp_distance)
-            # draw grasp cost space
-            img_actor = mlab.imshow(grasp_image,
-                                    extent=[0, grasp_image.shape[0], 0, grasp_image.shape[1], grasp_z, grasp_z],
-                                    interpolate=False)
-            # img_actor.actor.position[2] = grasp_z
-            self._img_actors[gid] = img_actor
-            # render roadmap for this grasp
-            mlab.plot3d(self._vertices[:, 1], self._vertices[:, 0], np.repeat(grasp_z + 0.1, self._vertices.shape[0]),
-                        color=(0, 0, 0), representation='points')
-        if os.fork() == 0:
-            try:
-                mlab.show()
-            finally:
-                os._exit(os.EX_OK)
+        if not self._showing_ui:
+            # show grasps
+            for (gid, grasp_image) in self._grasp_images.iteritems():
+                grasp_z = float(gid * self.grasp_distance)
+                # draw grasp cost space
+                img_actor = mlab.imshow(grasp_image,
+                                        extent=[0, grasp_image.shape[0], 0, grasp_image.shape[1], grasp_z, grasp_z],
+                                        interpolate=False)
+                # img_actor.actor.position[2] = grasp_z
+                self._img_actors[gid] = img_actor
+                # render roadmap for this grasp
+                mlab.plot3d(self._vertices[:, 1], self._vertices[:, 0], np.repeat(grasp_z + 0.1, self._vertices.shape[0]),
+                            color=(0, 0, 0), representation='points')
+                self.explored_points = mlab.points3d([0], [0], [0], color=(1, 0, 0), scale_factor=10.0)
+            self._showing_ui = True
+            self._log_line_counter = 0
+            self.animate_exploration_state()
+            # self.fake_animation()
+            mlab.show()
+            # if os.fork() == 0:
+            #     try:
+            #         mlab.show()
+            #     finally:
+            #         os._exit(os.EX_OK)
 
-    def update_exploration_state(self, update_all=False):
+    @mlab.animate(delay=10)
+    def animate_exploration_state(self):  # , update_all=False):
         """
             Issue an update of the visualization of the exploration state of the roadmap.
 
             Arguments
             ---------
-            update_all : bool
-                If True, update the exploration state until to the latest state within the log file.
-                Otherwise, only update one step further.
+            # update_all : bool
+            #     If True, update the exploration state until to the latest state within the log file.
+            #     Otherwise, only update one step further.
         """
-        # check if there are new logs
-        if self._last_log_update != os.path.getmtime(self._log_filename):
-            # reload log file
-            with open(self._log_filename, 'r') as log_file:
-                self._logs = log_file.readlines()
-        update_once = True
-        # update the exploration state
-        while self._log_line_counter < len(self._logs) and (update_all or update_once):
-            update_once = False
-            # read next line
-            log_line = self._logs[self._log_line_counter]
-            self._log_line_counter += 1
-            line_args = log_line.split(',')
-            event_type = line_args[0]
-            if (event_type == "VAL_BASE"):
-                # base evaluation of a vertex
-                vid = int(line_args[1])
-                bvalid = bool(line_args[2])
-                self._vertices_state[vid, 0] = 1.0 if bvalid else -1.0
-                # print vid, bvalid
-            elif (event_type == "VAL_GRASP"):
-                # evaluation of a vertex for a certain grasp
-                vid = int(line_args[1])
-                gid = int(line_args[2])
-                bvalid = bool(line_args[3])
-                self._vertices_state[vid, gid + 1] = 1.0 if bvalid else -1.0
-                # print vid, gid, bvalid
-            elif (event_type == "EDGE_COST"):
-                # base evaluation of an edge
-                # TODO
-                pass
-            elif (event_type == "EDGE_COST_GRASP"):
-                # evaluation of an edge for a certain grasp
-                # TODO
-                pass
-        # TODO update rendering
-        print np.where(self._vertices_state[:, 0] > 0)[0]
+        log_line_counter = 0
+        while True:
+            # while self._log_line_counter < len(self._logs):
+            # check if there are new logs
+            if self._last_log_update != os.path.getmtime(self._log_filename):
+                # reload log file
+                with open(self._log_filename, 'r') as log_file:
+                    self._logs = log_file.readlines()
+            # update the exploration state
+            if log_line_counter < len(self._logs):  # and (update_all or update_once):
+                # update_once = False
+                # read next line
+                log_line = self._logs[log_line_counter]
+                log_line_counter += 1
+                line_args = log_line.split(',')
+                event_type = line_args[0]
+                if (event_type == "VAL_BASE"):
+                    # base evaluation of a vertex
+                    vid = int(line_args[1])
+                    bvalid = bool(line_args[2])
+                    self._vertices_state[vid, 0] = 1.0 if bvalid else -1.0
+                    # print vid, bvalid
+                elif (event_type == "VAL_GRASP"):
+                    # evaluation of a vertex for a certain grasp
+                    vid = int(line_args[1])
+                    gid = int(line_args[2])
+                    bvalid = bool(line_args[3])
+                    self._vertices_state[vid, gid + 1] = 1.0 if bvalid else -1.0
+                    # print vid, gid, bvalid
+                elif (event_type == "EDGE_COST"):
+                    # base evaluation of an edge
+                    # TODO
+                    pass
+                elif (event_type == "EDGE_COST_GRASP"):
+                    # evaluation of an edge for a certain grasp
+                    # TODO
+                    pass
+            # TODO update rendering
+            # print np.where(self._vertices_state[:, 0] > 0)[0]
+            active_nodes = np.where(self._vertices_state > 0)
+            if active_nodes[0].shape[0] > 0:
+                xs = self._vertices[active_nodes[0], 1]
+                ys = self._vertices[active_nodes[0], 0]
+                zs = active_nodes[1] * self.grasp_distance
+                self.explored_points.mlab_source.reset(x=xs, y=ys, z=zs)
+                # print active_nodes
+                # print xs, ys, zs
+            print "Animation progress: ", log_line_counter, len(self._logs)
+            yield
 
 
 if __name__ == "__main__":
