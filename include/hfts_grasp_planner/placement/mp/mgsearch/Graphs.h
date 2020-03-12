@@ -15,6 +15,7 @@ namespace mp {
         class GraspAgnosticGraph {
         public:
             bool checkValidity(unsigned int v) const;
+            // TODO should this function filter invalid successors out or not? Currently it does
             void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
             void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;

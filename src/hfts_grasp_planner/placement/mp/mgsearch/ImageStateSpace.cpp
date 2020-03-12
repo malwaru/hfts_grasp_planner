@@ -56,11 +56,16 @@ void ImageStateSpace::init(const std::experimental::filesystem::path& root_path)
     for (auto& elem : unsorted_images) {
         _images.at(elem.first) = elem.second;
     }
+    if (_images.empty()) {
+        throw std::runtime_error("No valid numpy arrays(images) found.");
+    } else if (_images.size() == 1) {
+        std::cerr << "\033[1;33[Warning] Only base state space found - no grasps.\033[0m" << std::endl;
+    }
 }
 
 unsigned int ImageStateSpace::getNumGrasps() const
 {
-    return _images.size();
+    return _images.size() - 1;
 }
 
 bool ImageStateSpace::isValid(const Config& c) const
@@ -76,13 +81,20 @@ bool ImageStateSpace::isValid(const Config& c, unsigned int grasp_id, bool only_
     assert(c.size() == 2);
     unsigned int i = (unsigned int)std::round(c[0]);
     unsigned int j = (unsigned int)std::round(c[1]);
-    return _images.at(grasp_id)->at(i, j) > 0.0;
+    return _images.at(grasp_id + 1)->at(i, j) > 0.0;
 }
 
 // state cost
 double ImageStateSpace::cost(const Config& a) const
 {
-    return conditional_cost(a, 0);
+    assert(a.size() == 2);
+    unsigned int i = (unsigned int)std::round(a[0]);
+    unsigned int j = (unsigned int)std::round(a[1]);
+    double val = _images.at(0)->at(i, j);
+    if (val <= 0.0) {
+        return std::numeric_limits<float>::infinity();
+    }
+    return val; // TODO reduce as the distance increases?
 }
 
 double ImageStateSpace::conditional_cost(const Config& a, unsigned int grasp_id) const
@@ -90,7 +102,7 @@ double ImageStateSpace::conditional_cost(const Config& a, unsigned int grasp_id)
     assert(a.size() == 2);
     unsigned int i = (unsigned int)std::round(a[0]);
     unsigned int j = (unsigned int)std::round(a[1]);
-    double val = _images.at(grasp_id)->at(i, j);
+    double val = _images.at(grasp_id + 1)->at(i, j);
     if (val <= 0.0) {
         return std::numeric_limits<float>::infinity();
     }
@@ -102,7 +114,8 @@ double ImageStateSpace::distance(const Config& a, const Config& b) const
 {
     assert(a.size() == 2);
     assert(b.size() == 2);
-    return std::abs((a[0] - b[0]) + (a[1] - b[1]));
+    // return std::abs((a[0] - b[0])) + std::abs((a[1] - b[1]));
+    return std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]));
 }
 
 // space information

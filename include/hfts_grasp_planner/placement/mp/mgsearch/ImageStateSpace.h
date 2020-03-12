@@ -8,6 +8,13 @@ namespace mp {
     namespace mgsearch {
         class ImageStateSpace : public StateSpace {
         public:
+            /**
+             * Create a new image state space from numpy arrays stored in the file system in the given folder.
+             * The folder is expected to contain files of name <id>.npy, where <id> denotes the grasp id.
+             * The numpy array with name 0.npy is considered to be the base case, i.e. the state space of
+             * only the robot without any grasp. The remaining files represent the state space of the robot
+             * with grasp <id> - 1.
+             */
             ImageStateSpace(const std::experimental::filesystem::path& root_path);
             ~ImageStateSpace();
             // grasp query

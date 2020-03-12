@@ -15,6 +15,7 @@ void ImgGraphSearch::plan(std::vector<MultiGraspMP::Solution>& new_paths, double
 {
     MultiGraspMP::Solution sol;
     _planner->plan(sol);
+    new_paths.push_back(sol);
 }
 
 void ImgGraphSearch::pausePlanning()

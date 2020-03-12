@@ -345,7 +345,7 @@ std::pair<bool, double> Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id
         NodePtr node_a = edge->node_a.lock();
         NodePtr node_b = edge->node_b.lock();
         cost = _cost_computer->cost(node_a->config, node_b->config, grasp_id);
-        _logger.edgeCostChecked(node_a, node_b, grasp_id, edge->base_cost);
+        _logger.edgeCostChecked(node_a, node_b, grasp_id, cost);
         edge->conditional_costs.insert(std::make_pair(grasp_id, cost));
     } else {
         cost = iter->second;
@@ -419,6 +419,15 @@ void MultiGraspGoalSet::addGoal(const MultiGraspMP::Goal& goal)
     assert(new_node);
     _goal_id_to_roadmap_id[goal.id] = new_node->uid;
     _roadmap_id_to_goal_id[new_node->uid] = goal.id;
+}
+
+placement::mp::MultiGraspMP::Goal MultiGraspGoalSet::getGoal(unsigned int gid) const
+{
+    auto goal_iter = _goals.find(gid);
+    if (goal_iter == _goals.end()) {
+        throw std::logic_error("There is no goal with id " + std::to_string(gid));
+    }
+    return goal_iter->second;
 }
 
 void MultiGraspGoalSet::removeGoal(unsigned int gid)
@@ -506,6 +515,7 @@ MGGoalDistance::MGGoalDistance(MultiGraspGoalSetConstPtr goal_set,
         min_q = std::min(min_q, goal.quality);
     }
     _quality_normalizer = (max_q - min_q);
+    _quality_normalizer = _quality_normalizer == 0.0 ? 1.0 : _quality_normalizer;
     _goal_distance.scaled_lambda = lambda / _quality_normalizer;
     _goal_distance.path_cost = path_cost;
     _max_quality = max_q;
@@ -558,7 +568,7 @@ double MGGoalDistance::costToGo(const Config& a, unsigned int grasp_id) const
     return _goal_distance.distance_const(nn, dummy_goal);
 }
 
-double MGGoalDistance::goalCost(double quality) const
+double MGGoalDistance::qualityToCost(double quality) const
 {
-    return _quality_normalizer * (_max_quality - quality);
+    return 1.0 / _quality_normalizer * (_max_quality - quality);
 }

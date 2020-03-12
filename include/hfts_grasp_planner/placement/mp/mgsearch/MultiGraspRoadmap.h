@@ -111,8 +111,8 @@ namespace mp {
         typedef std::shared_ptr<CostToGoHeuristic> CostToGoHeuristicPtr;
 
         /**
-         * This class encapsulates a conditional roadmap for a robot manipulator transporting 
-         * an object. The roadmap is conditioned on a discrete set of grasps the robot may have 
+         * This class encapsulates a conditional roadmap for a robot manipulator transporting
+         * an object. The roadmap is conditioned on a discrete set of grasps the robot may have
          * on the object. The roadmap is constructed lazily.
          */
         class Roadmap {
@@ -134,7 +134,7 @@ namespace mp {
                 // bool is_goal;
                 // unsigned int goal_id;
                 /**
-                 * Return the edge that leads to the node with target_id.  
+                 * Return the edge that leads to the node with target_id.
                  * If the specified node is not adjacent, nullptr is returned.
                  */
                 EdgePtr getEdge(unsigned int target_id)
@@ -272,7 +272,7 @@ namespace mp {
              * If the edge is found to be invalid, the edge is removed from the roadmap.
              * In this case, if you called computeCost(EdgeWeakPtr edge), edge will be expired after the function returns.
              * If you called computeCost(EdgePtr edge)
-             * 
+             *
              */
             std::pair<bool, double> computeCost(EdgePtr edge);
             std::pair<bool, double> computeCost(EdgeWeakPtr edge);
@@ -316,6 +316,11 @@ namespace mp {
              *  The corresponding configuration is also added to the underlying roadmap.
              */
             void addGoal(const MultiGraspMP::Goal& goal);
+
+            /**
+             *  Return the goal with the given id. Throws an exception if gid is invalid.
+             */
+            MultiGraspMP::Goal getGoal(unsigned int gid) const;
 
             /**
              *  Remove the specified goal.
@@ -367,16 +372,16 @@ namespace mp {
         public:
             /**
              * Construct a new multi-grasp cost-to-go function.
-             * The cost-to-go function expresses the term 
+             * The cost-to-go function expresses the term
              * h(q) = min_{g in G} (d(q, g) + lambda * cost(g)), where g in G are the goals, d(q_1, q_2) a lower bound on path cost.
              * The cost of a goal cost(g) is computed as cost(g) = (o_max - o_g) / (o_max - o_min) where o_g denotes
              * the goal's quality and o_max = max_{g in G} o_g, o_min = min_{g in G} o_g (larger qualities are better).
              * The parameter lambda scales between the grasp cost, which is in range [0, 1], and the path cost d(q1, q2).
              * Note:
-             *   For new goals, you need to construct a new instance, due to the fact that goal quality values are 
+             *   For new goals, you need to construct a new instance, due to the fact that goal quality values are
              *   normalized w.r.t min and max quality.
-             * 
-             * @param goal_set - goals 
+             *
+             * @param goal_set - goals
              * @param path_cost - lower bound on path cost to move from one configuration to another
              * @param lambda - parameter to scale between path cost and grasp cost
              */
@@ -387,7 +392,7 @@ namespace mp {
             double costToGo(const Config& a) const override;
             double costToGo(const Config& a, unsigned int grasp_id) const override;
             // return the goal cost of a goal with the given quality
-            double goalCost(double quality) const;
+            double qualityToCost(double quality) const;
 
         private:
             struct GoalDistanceFn {

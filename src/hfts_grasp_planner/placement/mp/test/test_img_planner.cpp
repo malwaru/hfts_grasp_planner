@@ -1,4 +1,5 @@
 #include <boost/program_options.hpp>
+#include <boost/exception/diagnostic_information.hpp>
 #include <experimental/filesystem>
 #include <hfts_grasp_planner/placement/mp/ImgGraphSearch.h>
 #include <iostream>
@@ -27,13 +28,18 @@ int main(int argc, char** argv)
         ("image-path", po::value<std::string>()->required(), "image file")
         ("start-config", po::value<std::vector<double>>()->multitoken(), "start configuration (2d)")
         ("goal-configs", po::value<std::vector<double>>()->multitoken()->required(), "end configurations (list of triplets (grasp_id, x, y))");
-    // clang-format on  
+    // clang-format on
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
-    po::notify(vm);
     if (vm.count("help")) {
         printHelp(desc);
         return 0;
+    }
+    try {
+        po::notify(vm);
+    } catch (boost::exception& err) {
+        printHelp(desc, boost::diagnostic_information(err));
+        return -1;
     }
     pmp::Config start;
     if (!vm.count("start-config")) {
@@ -53,7 +59,7 @@ int main(int argc, char** argv)
     std::vector<double> goal_values = vm.at("goal-configs").as<std::vector<double>>();
     if (goal_values.size() % 3 != 0) {
         printHelp(desc, "Goal configurations must be a list of triplets");
-        return 0;
+        return -1;
     }
     for (unsigned gid = 0; gid < goal_values.size() / 3; ++gid) {
         pmp::MultiGraspMP::Goal goal;
@@ -87,7 +93,7 @@ int main(int argc, char** argv)
     // pmp::Config lower;
     // pmp::Config upper;
     // state_space.getBounds(lower, upper);
-    // std::cout << "Image dimensions are [" << lower[0] << ", " << lower[1] << "], [ " 
+    // std::cout << "Image dimensions are [" << lower[0] << ", " << lower[1] << "], [ "
     //           << upper[0] << ", " << upper[1] << "]" << std::endl;
     // // print images
     // std::cout << " Printing read in images " << std::endl;
@@ -97,6 +103,6 @@ int main(int argc, char** argv)
     //     }
     //     std::cout << std::endl;
     // }
-    
+
     return 0;
 }

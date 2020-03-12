@@ -209,18 +209,22 @@ class MGRoadmapVisualizer(HasTraits):
             else:
                 self.valid_checked_edges_plot.mlab_source.reset(
                     x=exs[1], y=eys[1], z=ezs[1], u=us[1], v=vs[1], w=np.zeros_like(us[1]))
+        # TODO hide edges when there are none to show
         # render invalid edges
         if len(exs[0]):
             if self.invalid_checked_edges_plot is None:
                 self.invalid_checked_edges_plot = self.scene.mlab.quiver3d(
-                    exs[0], eys[0], ezs[0], us[0], vs[0], np.zeros_like(us[0], scale_factor=1, mode='2ddash', color=(0.4, 0, 0), reset_zoom=False))
+                    exs[0], eys[0], ezs[0], us[0], vs[0], np.zeros_like(us[0]), scale_factor=1, mode='2ddash', color=(0.4, 0, 0), reset_zoom=False)
             else:
                 self.invalid_checked_edges_plot.mlab_source.reset(
                     x=exs[0], y=eys[0], z=ezs[0], u=us[0], v=vs[0], w=np.zeros_like(us[0]))
+        # TODO hide edges when there are none to show
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Visualize roadmap exploration for multi-grasp configuration spaces. ' +
+        'In case of visualization issues, try running with Qt4: 1. install python-qt4, 2. set environment variables ' +
+        'ETS_TOOLKIT=qt4; QT_API=pyqt')
     parser.add_argument(
         'grasp_costs', help='Path to a folder containing numpy arrays storing cost spaces for a 2d robot.' +
         'The files in the folder should be named <id>.npy, where <id> is an integer grasp id.',

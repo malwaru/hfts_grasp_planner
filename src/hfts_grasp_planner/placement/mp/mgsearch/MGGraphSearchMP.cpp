@@ -63,8 +63,9 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
                 assert(goal_node);
                 auto [goal_id, valid_goal] = _goal_set->getGoalId(goal_node->uid, grasp_id);
                 assert(valid_goal);
+                auto goal = _goal_set->getGoal(goal_id);
                 // get overall cost
-                double overall_cost = sr.path_cost + _params.lambda * goal_distance_fn->goalCost(goal_id);
+                double overall_cost = sr.path_cost + _params.lambda * goal_distance_fn->qualityToCost(goal.quality);
                 if (overall_cost < sol.cost) {
                     sol.goal_id = goal_id;
                     sol.path = wp_path;
