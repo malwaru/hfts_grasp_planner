@@ -14,13 +14,40 @@ namespace mp {
          */
         class GraspAgnosticGraph {
         public:
+            /**
+             * Check the validity of v.
+             */
             bool checkValidity(unsigned int v) const;
-            // TODO should this function filter invalid successors out or not? Currently it does
+            /**
+             * Return all successor nodes of the node v.
+             * @param v - node id to return successor node for
+             * @param successors - vector to store successors in
+             * @lazy - if true, no cost evaluation is performed, meaning that a returned successor u may in fact
+             *      not be reachable through v, i.e. cost(v, u) could be infinity.
+             *      if false, the true cost cost(v, u) is computed first and only us with finite cost are returned.
+             * TODO implement function that returns an iterator instead
+             */
             void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
+            /**
+             * Just like getSuccessors but predecessors. In case of a directed graph, identical to getSuccessors.
+             */
             void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
+            /**
+             * Get a cost for the edge from v1 to v2. Optionally, a lower bound of the cost.
+             * @param v1 - id of first node
+             * @param v2 - id of second node
+             * @param lazy - if true, return only the best known lower bound cost of the edge, else compute true cost
+             */
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
+            /**
+             * Return the id of the start node.
+             */
             unsigned int getStartNode() const;
+            /**
+             * Return whether the node with the given id is a goal.
+             */
             bool isGoal(unsigned int v) const;
+
             // Technically not a function of the graph, but the graph might have its own encoding of vertices, so the
             // heuristic needs to be connected to the graph anyways.
             double heuristic(unsigned int v) const;

@@ -75,6 +75,9 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
         }
         break;
     }
+    // case GraphType::MultiGraspGraph: {
+        // TODO implement
+    // }
     default:
         RAVELOG_ERROR("Graph type not implemented yet");
     }

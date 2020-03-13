@@ -95,10 +95,10 @@ namespace mp {
                     } else {
                         // extend current_el.v
                         std::vector<unsigned int> successors;
-                        graph.getSuccessors(current_el.v, successors);
+                        graph.getSuccessors(current_el.v, successors, true);
                         for (unsigned int& s : successors) {
                             // check vertex and edge validity
-                            double wvs = graph.getEdgeCost(current_el.v, s);
+                            double wvs = graph.getEdgeCost(current_el.v, s, false);
                             if (std::isinf(wvs)) {
                                 continue;
                             }

@@ -94,6 +94,7 @@ double ImageStateSpace::cost(const Config& a) const
     if (val <= 0.0) {
         return std::numeric_limits<float>::infinity();
     }
+    return 1.0; // TODO some formula that is 1.0 for distance above some safety margin and increases as we get closer to 0.0
     return val; // TODO reduce as the distance increases?
 }
 
@@ -106,6 +107,7 @@ double ImageStateSpace::conditional_cost(const Config& a, unsigned int grasp_id)
     if (val <= 0.0) {
         return std::numeric_limits<float>::infinity();
     }
+    return 1.0; // TODO some formula that is 1.0 for distance above some safety margin and increases as we get closer to 0.0
     return val; // TODO reduce as the distance increases?
 }
 
