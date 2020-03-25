@@ -193,32 +193,42 @@ class MGRoadmapVisualizer(HasTraits):
                 self.valid_checked_vertices_plot = self.scene.mlab.points3d(
                     nxs[1], nys[1], nzs[1], color=(0, 1, 0), scale_factor=10.0, reset_zoom=False)
             else:
+                self.valid_checked_vertices_plot.actor.visible = True
                 self.valid_checked_vertices_plot.mlab_source.reset(x=nxs[1], y=nys[1], z=nzs[1])
+        elif self.valid_checked_vertices_plot is not None:
+            self.valid_checked_vertices_plot.actor.visible = False
         # render invalid vertices
         if len(nxs[0]):
             if self.invalid_checked_vertices_plot is None:
                 self.invalid_checked_vertices_plot = self.scene.mlab.points3d(
                     nxs[0], nys[0], nzs[0], color=(1, 0, 0), scale_factor=10.0, reset_zoom=False)
             else:
+                self.invalid_checked_vertices_plot.actor.visible = True
                 self.invalid_checked_vertices_plot.mlab_source.reset(x=nxs[0], y=nys[0], z=nzs[0])
+        elif self.invalid_checked_vertices_plot is not None:
+            self.invalid_checked_vertices_plot.actor.visible = False
         # render valid edges
         if len(exs[1]):
             if self.valid_checked_edges_plot is None:
                 self.valid_checked_edges_plot = self.scene.mlab.quiver3d(
                     exs[1], eys[1], ezs[1], us[1], vs[1], np.zeros_like(us[1]), scale_factor=1, mode='2ddash', color=(0, 0.4, 0), reset_zoom=False)
             else:
+                self.valid_checked_edges_plot.actor.visible = True
                 self.valid_checked_edges_plot.mlab_source.reset(
                     x=exs[1], y=eys[1], z=ezs[1], u=us[1], v=vs[1], w=np.zeros_like(us[1]))
-        # TODO hide edges when there are none to show
+        elif self.valid_checked_edges_plot is not None:
+            self.valid_checked_edges_plot.actor.visible = False
         # render invalid edges
         if len(exs[0]):
             if self.invalid_checked_edges_plot is None:
                 self.invalid_checked_edges_plot = self.scene.mlab.quiver3d(
                     exs[0], eys[0], ezs[0], us[0], vs[0], np.zeros_like(us[0]), scale_factor=1, mode='2ddash', color=(0.4, 0, 0), reset_zoom=False)
             else:
+                self.invalid_checked_edges_plot.actor.visible = True
                 self.invalid_checked_edges_plot.mlab_source.reset(
                     x=exs[0], y=eys[0], z=ezs[0], u=us[0], v=vs[0], w=np.zeros_like(us[0]))
-        # TODO hide edges when there are none to show
+        elif self.invalid_checked_edges_plot is not None:
+            self.invalid_checked_edges_plot.actor.visible = False
 
 
 if __name__ == "__main__":

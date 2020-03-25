@@ -46,6 +46,11 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
                 astar::aStarSearch<SingleGraspRoadmapGraph>(graph, sr);
                 break;
             }
+            case AlgorithmType::LWAstar: {
+                RAVELOG_DEBUG("Planning with LWA* on single grasp graph for grasp " + std::to_string(grasp_id));
+                lwastar::lwaStarSearch<SingleGraspRoadmapGraph>(graph, sr);
+                break;
+            }
             default:
                 RAVELOG_ERROR("Algorithm type not implemented yet");
             }
@@ -63,13 +68,13 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
                 assert(goal_node);
                 auto [goal_id, valid_goal] = _goal_set->getGoalId(goal_node->uid, grasp_id);
                 assert(valid_goal);
-                auto goal = _goal_set->getGoal(goal_id);
+                // auto goal = _goal_set->getGoal(goal_id);
                 // get overall cost
-                double overall_cost = sr.path_cost + _params.lambda * goal_distance_fn->qualityToCost(goal.quality);
-                if (overall_cost < sol.cost) {
+                // double overall_cost = sr.path_cost + _params.lambda * goal_distance_fn->qualityToCost(goal.quality);
+                if (sr.path_cost < sol.cost) {
                     sol.goal_id = goal_id;
                     sol.path = wp_path;
-                    sol.cost = overall_cost;
+                    sol.cost = sr.path_cost;
                 }
             }
         }

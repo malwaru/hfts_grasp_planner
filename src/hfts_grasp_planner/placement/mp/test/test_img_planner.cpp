@@ -27,7 +27,8 @@ int main(int argc, char** argv)
         ("help", "produce help message")
         ("image-path", po::value<std::string>()->required(), "image file")
         ("start-config", po::value<std::vector<double>>()->multitoken(), "start configuration (2d)")
-        ("goal-configs", po::value<std::vector<double>>()->multitoken()->required(), "end configurations (list of triplets (grasp_id, x, y))");
+        ("goal-configs", po::value<std::vector<double>>()->multitoken()->required(), "end configurations (list of triplets (grasp_id, x, y))")
+        ("algorithm_type", po::value<unsigned int>()->default_value(0), "Algorithm type: 0 = A*, 1 = LWA*, ...");
     // clang-format on
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -73,7 +74,8 @@ int main(int argc, char** argv)
     fs::path image_file_path(vm["image-path"].as<std::string>());
     std::cout << "Received input path: " << image_file_path << std::endl;
     pmp::mgsearch::MGGraphSearchMP::Parameters params;
-    params.algo_type = pmp::mgsearch::MGGraphSearchMP::AlgorithmType::Astar;
+    params.algo_type = static_cast<pmp::mgsearch::MGGraphSearchMP::AlgorithmType>(vm["algorithm_type"].as<unsigned int>());
+    // params.algo_type = pmp::mgsearch::MGGraphSearchMP::AlgorithmType::Astar;
     params.graph_type = pmp::mgsearch::MGGraphSearchMP::GraphType::SingleGraspGraph;
     pmp::ImgGraphSearch imgs(image_file_path, start, params);
     for (auto& goal : goals ) {

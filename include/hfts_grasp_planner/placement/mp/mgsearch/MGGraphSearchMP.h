@@ -10,15 +10,15 @@ namespace mgsearch {
     class MGGraphSearchMP {
     public:
         enum GraphType {
-            SingleGraspGraph,
-            MultiGraspGraph
+            SingleGraspGraph = 0,
+            MultiGraspGraph = 1
         };
         enum AlgorithmType {
-            Astar,
-            LWAstar, // lazy weighted A*
-            LPAstar, // life-long planning A*
-            LazySP_LPAstar, // Lazy SP using LPAstar
-            LazySP_MultiGraspLPAstar // only makes sense on MultiGraspGraph
+            Astar = 0,
+            LWAstar = 1, // lazy weighted A*
+            LPAstar = 2, // life-long planning A*
+            LazySP_LPAstar = 3, // Lazy SP using LPAstar
+            LazySP_MultiGraspLPAstar = 4 // only makes sense on MultiGraspGraph
         };
         struct Parameters {
             AlgorithmType algo_type;

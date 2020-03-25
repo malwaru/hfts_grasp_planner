@@ -58,10 +58,6 @@ void SingleGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsign
 
 double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy) const
 {
-    if (!checkValidity(v1))
-        return INFINITY;
-    if (!checkValidity(v2))
-        return INFINITY;
     auto node_v1 = _roadmap->getNode(v1);
     // ensure v1's edges are up-to-date
     _roadmap->updateAdjacency(node_v1);
@@ -71,6 +67,11 @@ double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bo
     if (lazy) {
         return edge->getBestKnownCost(_grasp_id);
     }
+    // else not lazy
+    if (not checkValidity(v1))
+        return INFINITY;
+    if (not checkValidity(v2))
+        return INFINITY;
     return _roadmap->computeCost(edge, _grasp_id).second;
 }
 
