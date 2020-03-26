@@ -508,7 +508,8 @@ void MultiGraspGoalSet::getGoals(std::vector<MultiGraspMP::Goal>& goals) const
 MGGoalDistance::MGGoalDistance(MultiGraspGoalSetConstPtr goal_set,
     const std::function<double(const Config&, const Config&)>& path_cost, double lambda)
 {
-    double max_q, min_q = -INFINITY, INFINITY;
+    double max_q = -std::numeric_limits<double>::infinity();
+    double min_q = std::numeric_limits<double>::infinity();
     // TODO just copying all goals like this is a bit inefficient
     std::vector<MultiGraspMP::Goal> goals;
     goal_set->getGoals(goals);

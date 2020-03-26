@@ -25,10 +25,12 @@ int main(int argc, char** argv)
     // clang-format off
     desc.add_options()
         ("help", "produce help message")
-        ("image-path", po::value<std::string>()->required(), "image file")
-        ("start-config", po::value<std::vector<double>>()->multitoken(), "start configuration (2d)")
-        ("goal-configs", po::value<std::vector<double>>()->multitoken()->required(), "end configurations (list of triplets (grasp_id, x, y))")
-        ("algorithm_type", po::value<unsigned int>()->default_value(0), "Algorithm type: 0 = A*, 1 = LWA*, ...");
+        ("image_path", po::value<std::string>()->required(), "image file")
+        ("start_config", po::value<std::vector<double>>()->multitoken(), "start configuration (2d)")
+        ("goal_configs", po::value<std::vector<double>>()->multitoken()->required(), "end configurations (list of quadrets (grasp_id, x, y, quality))")
+        ("lambda", po::value<double>()->default_value(1.0), "Scaling factor between path and goal cost.")
+        ("algorithm_type", po::value<unsigned int>()->default_value(0), "Algorithm type: 0 = A*, 1 = LWA*, ...")
+        ("graph_type", po::value<unsigned int>()->default_value(0), "Graph type: 0 = SingleGraspGraph, 1 = MultiGraspGraph");
     // clang-format on
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -43,12 +45,12 @@ int main(int argc, char** argv)
         return -1;
     }
     pmp::Config start;
-    if (!vm.count("start-config")) {
+    if (!vm.count("start_config")) {
         start.push_back(0.0);
         start.push_back(0.0);
         std::cout << "No start configuration provided. Will use (0.0f, 0.0f)" << std::endl;
     } else {
-        start = vm.at("start-config").as<std::vector<double>>();
+        start = vm.at("start_config").as<std::vector<double>>();
         if (start.size() != 2) {
             printHelp(desc, "Start configuration has an invalid dimension.");
             return 0;
@@ -57,26 +59,26 @@ int main(int argc, char** argv)
     }
     // parse goals
     std::vector<pmp::MultiGraspMP::Goal> goals;
-    std::vector<double> goal_values = vm.at("goal-configs").as<std::vector<double>>();
-    if (goal_values.size() % 3 != 0) {
-        printHelp(desc, "Goal configurations must be a list of triplets");
+    std::vector<double> goal_values = vm.at("goal_configs").as<std::vector<double>>();
+    if (goal_values.size() % 4 != 0) {
+        printHelp(desc, "Goal configurations must be a list of quadrets");
         return -1;
     }
-    for (unsigned gid = 0; gid < goal_values.size() / 3; ++gid) {
+    for (unsigned gid = 0; gid < goal_values.size() / 4; ++gid) {
         pmp::MultiGraspMP::Goal goal;
         goal.id = gid;
-        goal.grasp_id = (unsigned int)goal_values.at(gid * 3);
-        goal.config.push_back(goal_values.at(gid * 3 + 1));
-        goal.config.push_back(goal_values.at(gid * 3 + 2));
-        goal.quality = 0.0; // TODO set goal quality
+        goal.grasp_id = (unsigned int)goal_values.at(gid * 4);
+        goal.config.push_back(goal_values.at(gid * 4 + 1));
+        goal.config.push_back(goal_values.at(gid * 4 + 2));
+        goal.quality = goal_values.at(gid * 4 + 3);
         goals.push_back(goal);
     }
-    fs::path image_file_path(vm["image-path"].as<std::string>());
+    fs::path image_file_path(vm["image_path"].as<std::string>());
     std::cout << "Received input path: " << image_file_path << std::endl;
     pmp::mgsearch::MGGraphSearchMP::Parameters params;
     params.algo_type = static_cast<pmp::mgsearch::MGGraphSearchMP::AlgorithmType>(vm["algorithm_type"].as<unsigned int>());
-    // params.algo_type = pmp::mgsearch::MGGraphSearchMP::AlgorithmType::Astar;
-    params.graph_type = pmp::mgsearch::MGGraphSearchMP::GraphType::SingleGraspGraph;
+    params.graph_type = static_cast<pmp::mgsearch::MGGraphSearchMP::GraphType>(vm["graph_type"].as<unsigned int>());
+    params.lambda = vm["lambda"].as<double>();
     pmp::ImgGraphSearch imgs(image_file_path, start, params);
     for (auto& goal : goals ) {
         imgs.addGoal(goal);

@@ -95,10 +95,14 @@ double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
     return _cost_to_go->costToGo(node->config, _grasp_id);
 }
 
+std::pair<uint, uint> SingleGraspRoadmapGraph::getGraspRoadmapId(uint vid) const {
+    return {vid, _grasp_id};
+}
+
 /************************************* MultiGraspRoadmapGraph ********************************/
 MultiGraspRoadmapGraph::MultiGraspRoadmapGraph(RoadmapPtr roadmap,
     MultiGraspGoalSetPtr goal_set, CostToGoHeuristicPtr cost_to_go,
-    const std::vector<unsigned int>& grasp_ids, unsigned int start_id)
+    const std::set<unsigned int>& grasp_ids, unsigned int start_id)
     : _roadmap(roadmap)
     , _goal_set(goal_set)
     , _cost_to_go(cost_to_go)
@@ -150,13 +154,16 @@ void MultiGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned 
             if (lazy) {
                 // only get best known cost
                 double cost = iter->second->getBestKnownCost(grasp_id);
-                if (not std::isinf(cost))
-                    successors.push_back(iter->first);
+                if (not std::isinf(cost)) {
+                    uint graph_id = toGraphKey(grasp_id, iter->first);
+                    successors.push_back(graph_id);
+                }
             } else {
                 // query true edge cost
                 auto [valid, cost] = _roadmap->computeCost(iter->second, grasp_id);
                 if (valid) {
-                    successors.push_back(iter->first);
+                    uint graph_id = toGraphKey(grasp_id, iter->first);
+                    successors.push_back(graph_id);
                 }
             }
             iter++;
@@ -172,10 +179,6 @@ void MultiGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigne
 
 double MultiGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy) const
 {
-    if (!checkValidity(v1))
-        return INFINITY;
-    if (!checkValidity(v2))
-        return INFINITY;
     // catch special case of start node
     if (v1 == 0 || v2 == 0) {
         return 0.0; // TODO could return here costs for obtaining a grasp
@@ -193,6 +196,10 @@ double MultiGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, boo
     if (lazy) {
         return edge->getBestKnownCost(grasp_1);
     }
+    if (!checkValidity(v1))
+        return INFINITY;
+    if (!checkValidity(v2))
+        return INFINITY;
     return _roadmap->computeCost(edge, grasp_1).second;
 }
 
@@ -203,17 +210,31 @@ unsigned int MultiGraspRoadmapGraph::getStartNode() const
 
 bool MultiGraspRoadmapGraph::isGoal(unsigned int v) const
 {
+    if (v == 0) return false;
     auto [grasp_id, rnid] = toRoadmapKey(v);
     return _goal_set->isGoal(rnid, grasp_id);
 }
 
 double MultiGraspRoadmapGraph::heuristic(unsigned int v) const
 {
+    if (v == 0) {
+        auto node = _roadmap->getNode(_roadmap_start_id);
+        return _cost_to_go->costToGo(node->config);
+    }
+    // else
     auto [grasp_id, rnid] = toRoadmapKey(v);
     auto node = _roadmap->getNode(rnid);
     if (!node)
         return INFINITY;
     return _cost_to_go->costToGo(node->config, grasp_id);
+}
+
+std::pair<uint, uint> MultiGraspRoadmapGraph::getGraspRoadmapId(uint vid) const {
+    if (vid == 0) {
+        return {_roadmap_start_id, 0}; // TODO what makes sense to return here for the grasp?
+    }
+    auto [grasp_id, rid] = toRoadmapKey(vid);
+    return {rid, grasp_id};
 }
 
 std::pair<unsigned int, unsigned int> MultiGraspRoadmapGraph::toRoadmapKey(unsigned int graph_id) const
@@ -228,9 +249,9 @@ unsigned int MultiGraspRoadmapGraph::toGraphKey(const std::pair<unsigned int, un
     auto iter = _roadmap_key_to_graph.find(roadmap_id);
     if (iter == _roadmap_key_to_graph.end()) {
         // we do not have a graph node for this grasp and roadmap node yet, so add a new one
-        unsigned int new_id = _num_graph_nodes++;
-        _roadmap_key_to_graph.at(roadmap_id) = new_id;
-        _graph_key_to_roadmap.at(new_id) = roadmap_id;
+        unsigned int new_id = ++_num_graph_nodes;
+        _roadmap_key_to_graph[roadmap_id] = new_id;
+        _graph_key_to_roadmap[new_id] = roadmap_id;
         return new_id;
     }
     return iter->second;

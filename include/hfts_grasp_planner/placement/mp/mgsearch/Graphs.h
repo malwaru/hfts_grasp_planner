@@ -86,6 +86,8 @@ namespace mp {
             bool isGoal(unsigned int v) const;
             double heuristic(unsigned int v) const;
 
+            std::pair<uint, uint> getGraspRoadmapId(uint vid) const;
+
         private:
             ::placement::mp::mgsearch::RoadmapPtr _roadmap;
             ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
@@ -101,6 +103,7 @@ namespace mp {
          * It is adjacent with cost 0 to #grasps vertices associated with the start configuration - one for each grasp.
          */
         class MultiGraspRoadmapGraph {
+        public:
             /**
              * Create a new MultiGraspRoadmapGraph defined by the given roadmap for the given grasps.
              * @param roadmap - roadmap to use
@@ -111,7 +114,7 @@ namespace mp {
             MultiGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
                 ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set,
                 ::placement::mp::mgsearch::CostToGoHeuristicPtr cost_to_go,
-                const std::vector<unsigned int>& grasp_ids,
+                const std::set<unsigned int>& grasp_ids,
                 unsigned int start_id);
             ~MultiGraspRoadmapGraph();
             // GraspAgnostic graph interface
@@ -123,11 +126,12 @@ namespace mp {
             bool isGoal(unsigned int v) const;
             double heuristic(unsigned int v) const;
 
+            std::pair<uint, uint> getGraspRoadmapId(uint vid) const;
         private:
             ::placement::mp::mgsearch::RoadmapPtr _roadmap;
             ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
             ::placement::mp::mgsearch::CostToGoHeuristicPtr _cost_to_go;
-            const std::vector<unsigned int> _grasp_ids;
+            const std::set<unsigned int> _grasp_ids;
             // hash table mapping (grasp_id, roadmap_id) to graph id
             typedef std::pair<unsigned int, unsigned int> GraspNodeIDPair;
             mutable std::unordered_map<GraspNodeIDPair, unsigned int, boost::hash<GraspNodeIDPair>> _roadmap_key_to_graph;
