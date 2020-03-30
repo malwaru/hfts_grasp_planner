@@ -83,6 +83,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
         if (sr.solved) {
             extractSolution<MultiGraspRoadmapGraph>(sr, sol, graph);
         }
+        break;
     }
     default:
         RAVELOG_ERROR("Graph type not implemented yet");

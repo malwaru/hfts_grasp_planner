@@ -48,6 +48,14 @@ namespace mp {
              */
             bool isGoal(unsigned int v) const;
 
+            /**
+             * Return the additive cost associated with the given goal node.
+             * If the given id is not a goal, 0.0 is returned.
+             * Note that in general getGoalCost(v) can be greater than heuristic(v), as there may
+             * be a better goal with a sufficiently low path cost to be reachable.
+             */
+            double getGoalCost(uint v) const;
+
             // Technically not a function of the graph, but the graph might have its own encoding of vertices, so the
             // heuristic needs to be connected to the graph anyways.
             double heuristic(unsigned int v) const;
@@ -84,6 +92,7 @@ namespace mp {
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
             unsigned int getStartNode() const;
             bool isGoal(unsigned int v) const;
+            double getGoalCost(uint v) const;
             double heuristic(unsigned int v) const;
 
             std::pair<uint, uint> getGraspRoadmapId(uint vid) const;
@@ -124,6 +133,7 @@ namespace mp {
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
             unsigned int getStartNode() const;
             bool isGoal(unsigned int v) const;
+            double getGoalCost(uint v) const;
             double heuristic(unsigned int v) const;
 
             std::pair<uint, uint> getGraspRoadmapId(uint vid) const;

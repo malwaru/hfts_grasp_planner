@@ -73,6 +73,10 @@ struct DummyGraph {
         return v == _num_vertices - 1;
     }
 
+    double getGoalCost(uint v) const {
+        return 0.0;
+    }
+
     double heuristic(unsigned int v) const
     {
         return (_num_vertices - 1 - v) * 0.1;

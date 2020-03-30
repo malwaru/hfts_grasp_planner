@@ -573,7 +573,7 @@ double MGGoalDistance::costToGo(const Config& a, unsigned int grasp_id) const
     return _goal_distance.distance_const(nn, dummy_goal);
 }
 
-double MGGoalDistance::qualityToCost(double quality) const
+double MGGoalDistance::getGoalCost(double quality) const
 {
-    return 1.0 / _quality_normalizer * (_max_quality - quality);
+    return _goal_distance.scaled_lambda * (_max_quality - quality);
 }

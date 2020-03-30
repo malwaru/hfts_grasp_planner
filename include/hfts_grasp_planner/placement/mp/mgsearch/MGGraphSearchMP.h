@@ -63,7 +63,7 @@ namespace mgsearch {
             assert(valid_goal);
             sol.goal_id = goal_id;
             sol.path = wp_path;
-            sol.cost = sr.path_cost;
+            sol.cost = sr.cost();
         }
         mgsearch::StateSpacePtr _state_space;
         mgsearch::RoadmapPtr _roadmap;
