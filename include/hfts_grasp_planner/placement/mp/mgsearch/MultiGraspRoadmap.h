@@ -126,6 +126,7 @@ namespace mp {
 
             struct Node {
                 typedef std::unordered_map<unsigned int, EdgePtr> EdgeMap;
+                typedef EdgeMap::const_iterator EdgeIterator;
                 // unique node id
                 const unsigned int uid;
                 // Configuration represented by this node
@@ -145,6 +146,7 @@ namespace mp {
                     return iter->second;
                 }
 
+                // these iterators remain valid even if edges are deleted, see https://en.cppreference.com/w/cpp/container/unordered_map/erase
                 std::pair<EdgeMap::const_iterator, EdgeMap::const_iterator> getEdgesIterators() const
                 {
                     return std::make_pair(edges.cbegin(), edges.cend());
@@ -222,14 +224,6 @@ namespace mp {
             NodePtr getNode(unsigned int node_id) const;
 
             /**
-             * Add a new goal node.
-             * @param goal - goal information
-             * @return node - a node representing the goal
-             *  (node->is_goal = true, node->goal_id == goal.id, node->config == goal.config)
-             *  The returned pointer is weak. To check validity of the node use checkNode.
-             */
-            // NodeWeakPtr addGoalNode(const MultiGraspMP::Goal& goal);
-            /**
              * Add a new node at the given configuration.
              * Use this function to add the start node.
              */
@@ -238,7 +232,8 @@ namespace mp {
             /**
              * Update the nodes adjacency list if needed. The adjacency list needs to be updated,
              * if this function has a) never been called before on node, or b) densify(..) has been called
-             * after the last time this function was called for node.
+             * after the last time this function was called for node. In addition, this function
+             * removes edges from the adjacency list that have been found to be invalid even without any grasp.
              * To be safe, you should call this function everytime before accessing a node's neighbors.
              */
             void updateAdjacency(NodePtr node);
@@ -269,13 +264,10 @@ namespace mp {
 
             /**
              * Compute the base cost of the given edge (for no grasp).
-             * If the edge is found to be invalid, the edge is removed from the roadmap.
-             * In this case, if you called computeCost(EdgeWeakPtr edge), edge will be expired after the function returns.
-             * If you called computeCost(EdgePtr edge)
-             *
              */
             std::pair<bool, double> computeCost(EdgePtr edge);
             std::pair<bool, double> computeCost(EdgeWeakPtr edge);
+
             /**
              * Compute the edge cost for the given edge given the grasp.
              * @param edge - the edge to compute cost for
@@ -299,7 +291,6 @@ namespace mp {
 
             void scaleToLimits(Config& config) const;
             void deleteNode(NodePtr node);
-            void deleteEdge(EdgePtr edge);
         };
         typedef std::shared_ptr<Roadmap> RoadmapPtr;
 

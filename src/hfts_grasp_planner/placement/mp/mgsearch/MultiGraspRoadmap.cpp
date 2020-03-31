@@ -81,12 +81,10 @@ Roadmap::Edge::Edge(Roadmap::NodePtr a, Roadmap::NodePtr b, double bc)
 Roadmap::NodePtr Roadmap::Edge::getNeighbor(NodePtr n) const
 {
     auto a = node_a.lock();
-    assert(a);
-    if (a->uid != n->uid)
+    if (a != nullptr and a->uid != n->uid)
         return a;
     auto b = node_b.lock();
-    assert(b);
-    assert(b->uid != n->uid);
+    assert(b == nullptr or b->uid != n->uid);
     return b;
 }
 
@@ -272,6 +270,16 @@ void Roadmap::updateAdjacency(NodePtr node)
         }
         node->densification_gen = _densification_gen;
     }
+    // clean up edges that are no longer needed because they are invalid
+    for (auto edge_iter = node->edges.begin(); edge_iter != node->edges.end();) {
+        auto edge = edge_iter->second;
+        if (edge->base_evaluated && std::isinf(edge->base_cost)) {
+            // edge is invalid, so let's remove it
+            edge_iter = node->edges.erase(edge_iter);
+        } else {
+            ++edge_iter;
+        }
+    }
 }
 
 bool Roadmap::isValid(NodeWeakPtr inode)
@@ -315,7 +323,7 @@ bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
 std::pair<bool, double> Roadmap::computeCost(EdgePtr edge)
 {
     if (edge->base_evaluated) {
-        return { true, edge->base_cost };
+        return { !std::isinf(edge->base_cost), edge->base_cost };
     }
     // we have to compute base cost
     NodePtr node_a = edge->node_a.lock();
@@ -325,12 +333,7 @@ std::pair<bool, double> Roadmap::computeCost(EdgePtr edge)
     edge->base_cost = _cost_computer->cost(node_a->config, node_b->config);
     edge->base_evaluated = true;
     _logger.edgeCostChecked(node_a, node_b, edge->base_cost);
-    if (std::isinf(edge->base_cost)) {
-        // edge is invalid, so let's remove it
-        deleteEdge(edge);
-        return { false, edge->base_cost };
-    }
-    return { true, edge->base_cost };
+    return { !std::isinf(edge->base_cost), edge->base_cost };
 }
 
 std::pair<bool, double> Roadmap::computeCost(EdgeWeakPtr weak_edge)
@@ -343,11 +346,16 @@ std::pair<bool, double> Roadmap::computeCost(EdgeWeakPtr weak_edge)
 
 std::pair<bool, double> Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id)
 {
+    if (edge->base_evaluated and std::isinf(edge->base_cost)) {
+        return { false, edge->base_cost };
+    }
     auto iter = edge->conditional_costs.find(grasp_id);
     double cost;
     if (iter == edge->conditional_costs.end()) {
         NodePtr node_a = edge->node_a.lock();
+        assert(node_a);
         NodePtr node_b = edge->node_b.lock();
+        assert(node_b);
         cost = _cost_computer->cost(node_a->config, node_b->config, grasp_id);
         _logger.edgeCostChecked(node_a, node_b, grasp_id, cost);
         edge->conditional_costs.insert(std::make_pair(grasp_id, cost));
@@ -371,41 +379,15 @@ void Roadmap::deleteNode(NodePtr node)
     auto iter = _nodes.find(node->uid);
     assert(iter != _nodes.end());
     _nodes.erase(iter);
-    // remove all edges pointing to it
-    for (auto iter = node->edges.begin(); iter != node->edges.end();) {
+    // set all its edges to infinite cost;
+    // if the neighboring node still exists, its edge map will be eventually updated in updateAdjacency(..)
+    for (auto iter = node->edges.begin(); iter != node->edges.end(); ++iter) {
         // unsigned int edge_target_id = out_info.first;
         EdgePtr edge = iter->second;
-        // delete edge in other node
-        {
-            NodePtr other_node = edge->getNeighbor(node);
-            auto oiter = other_node->edges.find(node->uid);
-            assert(oiter != other_node->edges.end());
-            other_node->edges.erase(oiter);
-        }
-        // delete edge in this node
-        iter = node->edges.erase(iter);
+        edge->base_evaluated = true;
+        edge->base_cost = std::numeric_limits<double>::infinity();
     }
-    assert(node->edges.empty());
     node.reset();
-}
-
-void Roadmap::deleteEdge(EdgePtr edge)
-{
-    NodePtr node_a = edge->node_a.lock();
-    NodePtr node_b = edge->node_b.lock();
-    assert(node_a);
-    assert(node_b);
-    { // remove it from node a
-        auto edge_iter = node_a->edges.find(node_b->uid);
-        assert(edge_iter != node_a->edges.end());
-        node_a->edges.erase(edge_iter);
-    }
-    { // remove it from node b
-        auto edge_iter = node_b->edges.find(node_a->uid);
-        assert(edge_iter != node_b->edges.end());
-        node_b->edges.erase(edge_iter);
-    }
-    edge.reset();
 }
 
 /************************************** MultiGraspGoalSet **************************************/
