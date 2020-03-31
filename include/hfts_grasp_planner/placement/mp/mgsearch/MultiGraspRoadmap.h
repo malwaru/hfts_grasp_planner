@@ -107,6 +107,10 @@ namespace mp {
             virtual ~CostToGoHeuristic() = 0;
             virtual double costToGo(const Config& a) const = 0;
             virtual double costToGo(const Config& a, unsigned int grasp_id) const = 0;
+            /**
+             * Return the cost associated with reaching a goal with the given quality.
+             */
+            virtual double getGoalCost(double quality) const = 0;
         };
         typedef std::shared_ptr<CostToGoHeuristic> CostToGoHeuristicPtr;
 
@@ -383,7 +387,7 @@ namespace mp {
             double costToGo(const Config& a) const override;
             double costToGo(const Config& a, unsigned int grasp_id) const override;
             // return the goal cost of a goal with the given quality
-            double qualityToCost(double quality) const;
+            double getGoalCost(double quality) const override;
 
         private:
             struct GoalDistanceFn {

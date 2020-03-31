@@ -147,6 +147,16 @@ bool SingleGraspRoadmapGraph::isGoal(unsigned int v) const
     return _goal_set->isGoal(node->uid, _grasp_id);
 }
 
+double SingleGraspRoadmapGraph::getGoalCost(uint v) const {
+    auto node = _roadmap->getNode(v);
+    assert(node);
+    auto [goal_id, is_goal] = _goal_set->getGoalId(node->uid, _grasp_id);
+    if (not is_goal) {
+        return 0.0;
+    }
+    return _cost_to_go->getGoalCost(_goal_set->getGoal(goal_id).quality);
+}
+
 double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
 {
     auto node = _roadmap->getNode(v);
@@ -400,6 +410,20 @@ bool MultiGraspRoadmapGraph::isGoal(unsigned int v) const
         return false;
     auto [grasp_id, rnid] = toRoadmapKey(v);
     return _goal_set->isGoal(rnid, grasp_id);
+}
+
+double MultiGraspRoadmapGraph::getGoalCost(uint v) const {
+    if (v == 0) { // can not be a goal
+        return 0.0;
+    }
+    auto [grasp_id, rnid] = toRoadmapKey(v);
+    auto node = _roadmap->getNode(rnid);
+    assert(node);
+    auto [goal_id, is_goal] = _goal_set->getGoalId(node->uid, grasp_id);
+    if (not is_goal) {
+        return 0.0;
+    }
+    return _cost_to_go->getGoalCost(_goal_set->getGoal(goal_id).quality);
 }
 
 double MultiGraspRoadmapGraph::heuristic(unsigned int v) const
