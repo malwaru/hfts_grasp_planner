@@ -1,6 +1,6 @@
 from distutils.core import setup
 from catkin_pkg.python_setup import generate_distutils_setup
-from Cython.Build import cythonize
+# from Cython.Build import cythonize
 
 # fetch values from package.xml
 setup_args = generate_distutils_setup(

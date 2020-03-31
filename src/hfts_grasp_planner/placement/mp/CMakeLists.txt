@@ -1,7 +1,7 @@
 find_package(OpenRAVE REQUIRED)
 find_package(Eigen REQUIRED)
 find_package(Boost REQUIRED COMPONENTS thread program_options)
-find_package(OMPL)
+find_package(ompl)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_COMPILER clang++)
 
@@ -29,6 +29,7 @@ openrave_plugin(ormultigraspmp
   MultiGraspBiRRT.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
+  utils/Profiling.cpp
   mgsearch/MGGraphSearchMP.cpp
   mgsearch/ORStateSpace.cpp
   ORGraphSearch.cpp
@@ -40,11 +41,12 @@ openrave_plugin(ormultigraspmp
 set_target_properties(ormultigraspmp PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS}" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")
 target_link_libraries(ormultigraspmp ${OpenRAVE_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES})
 
-add_executable(test_graph_search_algorithm
-  test/test_mplanner.cpp
-)
+# add_executable(test_graph_search_algorithm
+#   utils/Profiling.cpp
+#   test/test_mplanner.cpp
+# )
 
-target_link_libraries(test_graph_search_algorithm)
+# target_link_libraries(test_graph_search_algorithm)
 
 add_executable(test_image_space_algorithm
   # test/test_imagespace.cpp
@@ -53,6 +55,7 @@ add_executable(test_image_space_algorithm
   mgsearch/MGGraphSearchMP.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
+  utils/Profiling.cpp
   MultiGraspMP.cpp
   ImgGraphSearch.cpp
   ../../external/halton/halton.cpp
