@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <boost/heap/fibonacci_heap.hpp>
 #include <cmath>
+#include <hfts_grasp_planner/placement/mp/utils/Profiling.h>
 #include <vector>
 
 namespace placement {
@@ -64,6 +65,7 @@ namespace mp {
             template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost::heap::compare<PQElementCompare>>>
             void aStarSearch(const G& graph, SearchResult& result)
             {
+                utils::ScopedProfiler("aStarSearch");
                 // initialize result structure
                 result.solved = false;
                 result.path.clear();
@@ -94,9 +96,9 @@ namespace mp {
                         std::reverse(result.path.begin(), result.path.end());
                     } else {
                         // extend current_el.v
-                        std::vector<unsigned int> successors;
-                        graph.getSuccessors(current_el.v, successors, true);
-                        for (unsigned int& s : successors) {
+                        auto [siter, send] = graph.getSuccessors(current_el.v, true);
+                        for (; siter != send; ++siter) {
+                            uint s = *siter;
                             // check vertex and edge validity
                             double wvs = graph.getEdgeCost(current_el.v, s, false);
                             if (std::isinf(wvs)) {
@@ -126,9 +128,9 @@ namespace mp {
                     }
                 }
             }
-            } // astar namespace
+        } // astar namespace
 
-            namespace lwastar {
+        namespace lwastar {
             struct PQElement {
                 /**
                  * Stores information that node v can be reached from node p with at least
@@ -147,7 +149,8 @@ namespace mp {
                 }
             };
 
-            inline double f(const PQElement& el) {
+            inline double f(const PQElement& el)
+            {
                 return el.g_value + el.h_value;
             }
 
@@ -190,6 +193,7 @@ namespace mp {
             template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost::heap::compare<PQElementCompare>>>
             void lwaStarSearch(const G& graph, SearchResult& result)
             {
+                utils::ScopedProfiler("lwaStarSearch");
                 // initialize result structure
                 result.solved = false;
                 result.path.clear();
@@ -244,9 +248,9 @@ namespace mp {
                             std::reverse(result.path.begin(), result.path.end());
                         } else {
                             // actually extend v
-                            std::vector<unsigned int> successors;
-                            graph.getSuccessors(current_el.v, successors, true);
-                            for (unsigned int& s : successors) {
+                            auto [siter, send] = graph.getSuccessors(current_el.v, true);
+                            for (; siter != send; ++siter) {
+                                uint s = *siter;
                                 // get lower bound of edge cost
                                 double wvs = graph.getEdgeCost(current_el.v, s, true);
                                 if (std::isinf(wvs)) { // skip edges that are already known to be invalid

@@ -14,6 +14,10 @@ namespace mp {
          */
         class GraspAgnosticGraph {
         public:
+            struct NeighborIterator {
+                // Graph-specific forward iterator allowing to iterate over a set of vertices, in particular
+                // successors and predecessors
+            };
             /**
              * Check the validity of v.
              */
@@ -22,16 +26,27 @@ namespace mp {
              * Return all successor nodes of the node v.
              * @param v - node id to return successor node for
              * @param successors - vector to store successors in
-             * @lazy - if true, no cost evaluation is performed, meaning that a returned successor u may in fact
+             * @param lazy - if true, no cost evaluation is performed, meaning that a returned successor u may in fact
              *      not be reachable through v, i.e. cost(v, u) could be infinity.
              *      if false, the true cost cost(v, u) is computed first and only us with finite cost are returned.
-             * TODO implement function that returns an iterator instead
              */
             void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
+
+            /**
+             * Just like above getSuccessors function but returning iterators instead.
+             * @param v - node id to return the successors for
+             * @param lazy - if true, no cost evaluation is performed, meaning that a returned successor u may in fact
+             *      not be reachable through v, i.e. cost(v, u) could be infinity.
+             *      if false, the true cost cost(v, u) is computed first and only us with finite cost are returned.
+             * @return <begin, end> - begin and end iterators
+             */
+            std::pair<NeighborIterator, NeighborIterator> getSuccessors(uint v, bool lazy = false) const;
             /**
              * Just like getSuccessors but predecessors. In case of a directed graph, identical to getSuccessors.
              */
             void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
+            std::pair<NeighborIterator, NeighborIterator> getPredecessors(uint v, bool lazy = false) const;
+
             /**
              * Get a cost for the edge from v1 to v2. Optionally, a lower bound of the cost.
              * @param v1 - id of first node
@@ -63,6 +78,33 @@ namespace mp {
          */
         class SingleGraspRoadmapGraph {
         public:
+            struct NeighborIterator {
+                ~NeighborIterator() = default;
+                NeighborIterator& operator++();
+                bool operator==(const NeighborIterator& other) const;
+                bool operator!=(const NeighborIterator& other) const;
+                uint operator*();
+                // iterator traits
+                using difference_type = long;
+                using value_type = uint;
+                using pointer = const uint*;
+                using reference = const uint&;
+                using iterator_category = std::forward_iterator_tag;
+
+                static NeighborIterator begin(uint v, bool lazy, SingleGraspRoadmapGraph const* parent);
+                static NeighborIterator end(uint v, SingleGraspRoadmapGraph const* parent);
+
+            private:
+                NeighborIterator(Roadmap::Node::EdgeIterator eiter, Roadmap::Node::EdgeIterator end,
+                    bool lazy, SingleGraspRoadmapGraph const* parent);
+                SingleGraspRoadmapGraph const* _graph;
+                Roadmap::Node::EdgeIterator _iter;
+                Roadmap::Node::EdgeIterator _end;
+                const bool _lazy;
+                void forwardToNextValid();
+            };
+
+            friend class NeighborIterator;
             /**
              * Create a new roadmap graph defined by the given roadmap for the given grasp.
              * @param roadmap - roadmap to use
@@ -80,7 +122,9 @@ namespace mp {
             // GraspAgnostic graph interface
             bool checkValidity(unsigned int v) const;
             void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
+            std::pair<NeighborIterator, NeighborIterator> getSuccessors(uint v, bool lazy = false) const;
             void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
+            std::pair<NeighborIterator, NeighborIterator> getPredecessors(uint v, bool lazy = false) const;
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
             unsigned int getStartNode() const;
             bool isGoal(unsigned int v) const;
@@ -104,6 +148,38 @@ namespace mp {
          */
         class MultiGraspRoadmapGraph {
         public:
+            struct NeighborIterator {
+                ~NeighborIterator() = default;
+                NeighborIterator& operator++();
+                bool operator==(const NeighborIterator& other) const;
+                bool operator!=(const NeighborIterator& other) const;
+                uint operator*();
+                // iterator traits
+                using difference_type = long;
+                using value_type = uint;
+                using pointer = const uint*;
+                using reference = const uint&;
+                using iterator_category = std::forward_iterator_tag;
+
+                static NeighborIterator begin(uint v, bool lazy, MultiGraspRoadmapGraph const* graph);
+                static NeighborIterator end(uint v, MultiGraspRoadmapGraph const* graph);
+
+            private:
+                NeighborIterator(uint v, bool lazy, MultiGraspRoadmapGraph const* parent);
+                MultiGraspRoadmapGraph const* _graph;
+                uint _v;
+                // information about grasps
+                std::set<uint>::iterator _grasp_iter; // for v == 0
+                uint _grasp_id; // grasp id for any other vertex
+                uint _roadmap_id; // roadmap node if for any other vertex
+                // flag for special case edge back to node 0
+                bool _edge_to_0_returned;
+                // iterators for roadmap edges
+                Roadmap::Node::EdgeIterator _iter;
+                Roadmap::Node::EdgeIterator _end;
+                bool _lazy;
+                void forwardToNextValid();
+            };
             /**
              * Create a new MultiGraspRoadmapGraph defined by the given roadmap for the given grasps.
              * @param roadmap - roadmap to use
@@ -120,13 +196,17 @@ namespace mp {
             // GraspAgnostic graph interface
             bool checkValidity(unsigned int v) const;
             void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
+            std::pair<NeighborIterator, NeighborIterator> getSuccessors(uint v, bool lazy = false) const;
             void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
+            std::pair<NeighborIterator, NeighborIterator> getPredecessors(uint v, bool lazy = false) const;
             double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
             unsigned int getStartNode() const;
             bool isGoal(unsigned int v) const;
             double heuristic(unsigned int v) const;
 
+            // roadmap id, grasp id
             std::pair<uint, uint> getGraspRoadmapId(uint vid) const;
+
         private:
             ::placement::mp::mgsearch::RoadmapPtr _roadmap;
             ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
@@ -139,6 +219,7 @@ namespace mp {
             mutable std::unordered_map<unsigned int, GraspNodeIDPair> _graph_key_to_roadmap;
             unsigned int _roadmap_start_id;
 
+            // grasp id, roadmap id
             std::pair<unsigned int, unsigned int> toRoadmapKey(unsigned int graph_id) const;
             unsigned int toGraphKey(const std::pair<unsigned int, unsigned int>& roadmap_id) const;
             unsigned int toGraphKey(unsigned int grasp_id, unsigned int roadmap_id) const;

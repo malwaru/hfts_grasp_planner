@@ -3,6 +3,76 @@
 
 using namespace placement::mp::mgsearch;
 
+SingleGraspRoadmapGraph::NeighborIterator::NeighborIterator(Roadmap::Node::EdgeIterator eiter, Roadmap::Node::EdgeIterator end,
+    bool lazy, SingleGraspRoadmapGraph const* parent)
+    : _iter(eiter)
+    , _end(end)
+    , _lazy(lazy)
+    , _graph(parent)
+{
+    forwardToNextValid();
+}
+
+SingleGraspRoadmapGraph::NeighborIterator& SingleGraspRoadmapGraph::NeighborIterator::operator++()
+{
+    ++_iter;
+    forwardToNextValid();
+    return (*this);
+}
+
+bool SingleGraspRoadmapGraph::NeighborIterator::operator==(const SingleGraspRoadmapGraph::NeighborIterator& other) const
+{
+    return other._iter == _iter;
+}
+
+bool SingleGraspRoadmapGraph::NeighborIterator::operator!=(const SingleGraspRoadmapGraph::NeighborIterator& other) const
+{
+    return not operator==(other);
+}
+
+uint SingleGraspRoadmapGraph::NeighborIterator::operator*()
+{
+    return _iter->first;
+}
+
+void SingleGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
+{
+    bool valid = false;
+    while (!valid and _iter != _end) {
+        if (_lazy) {
+            double cost = _iter->second->getBestKnownCost(_graph->_grasp_id);
+            valid = not std::isinf(cost);
+        } else {
+            auto [lvalid, cost] = _graph->_roadmap->computeCost(_iter->second, _graph->_grasp_id);
+            valid = lvalid;
+        }
+        if (not valid) {
+            ++_iter;
+        }
+    }
+}
+
+SingleGraspRoadmapGraph::NeighborIterator SingleGraspRoadmapGraph::NeighborIterator::begin(uint v, bool lazy, SingleGraspRoadmapGraph const* parent)
+{
+    auto node = parent->_roadmap->getNode(v);
+    if (!node) {
+        throw std::logic_error("Invalid vertex node");
+    }
+    parent->_roadmap->updateAdjacency(node);
+    auto [begin, end] = node->getEdgesIterators();
+    return NeighborIterator(begin, end, lazy, parent);
+}
+
+SingleGraspRoadmapGraph::NeighborIterator SingleGraspRoadmapGraph::NeighborIterator::end(uint v, SingleGraspRoadmapGraph const* parent)
+{
+    auto node = parent->_roadmap->getNode(v);
+    if (!node) {
+        throw std::logic_error("Invalid vertex node");
+    }
+    auto [begin, end] = node->getEdgesIterators();
+    return NeighborIterator(end, end, true, parent);
+}
+
 SingleGraspRoadmapGraph::SingleGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspGoalSetPtr goal_set,
     CostToGoHeuristicPtr cost_to_go, unsigned int grasp_id, unsigned int start_id)
     : _roadmap(roadmap)
@@ -26,34 +96,24 @@ bool SingleGraspRoadmapGraph::checkValidity(unsigned int v) const
 void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy) const
 {
     successors.clear();
-    auto node = _roadmap->getNode(v);
-    if (!node)
-        return;
-    // ensure the adjacency is up-to-date
-    _roadmap->updateAdjacency(node);
-    // get edges
-    auto [iter, end] = node->getEdgesIterators();
-    while (iter != end) {
-        if (lazy) {
-            // only get best known cost
-            double cost = iter->second->getBestKnownCost(_grasp_id);
-            if (not std::isinf(cost))
-                successors.push_back(iter->first);
-        } else {
-            // query true edge cost
-            auto [valid, cost] = _roadmap->computeCost(iter->second, _grasp_id);
-            if (valid) {
-                successors.push_back(iter->first);
-            }
-        }
-        iter++;
-    }
+    auto [iter, end] = getSuccessors(v, lazy);
+    successors.insert(successors.begin(), iter, end);
+}
+
+std::pair<SingleGraspRoadmapGraph::NeighborIterator, SingleGraspRoadmapGraph::NeighborIterator> SingleGraspRoadmapGraph::getSuccessors(uint v, bool lazy) const
+{
+    return { NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this) };
 }
 
 void SingleGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy) const
 {
     // undirected graph
     getSuccessors(v, predecessors, lazy);
+}
+
+std::pair<SingleGraspRoadmapGraph::NeighborIterator, SingleGraspRoadmapGraph::NeighborIterator> SingleGraspRoadmapGraph::getPredecessors(uint v, bool lazy) const
+{
+    return getSuccessors(v, lazy);
 }
 
 double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy) const
@@ -95,8 +155,121 @@ double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
     return _cost_to_go->costToGo(node->config, _grasp_id);
 }
 
-std::pair<uint, uint> SingleGraspRoadmapGraph::getGraspRoadmapId(uint vid) const {
-    return {vid, _grasp_id};
+std::pair<uint, uint> SingleGraspRoadmapGraph::getGraspRoadmapId(uint vid) const
+{
+    return { vid, _grasp_id };
+}
+
+/************************************* MultiGraspRoadmapGraph::NeighborIterator ********************************/
+MultiGraspRoadmapGraph::NeighborIterator::NeighborIterator(uint v, bool lazy, MultiGraspRoadmapGraph const* parent)
+    : _v(v)
+    , _lazy(lazy)
+    , _graph(parent)
+    , _edge_to_0_returned(false)
+{
+    if (_v == 0) { // initialization for special case v == 0
+        // neighbors are vertices that share the same roadmap node but with different grasp
+        _grasp_iter = _graph->_grasp_ids.begin();
+    } else { // initialization for the standard case v != 0
+        std::tie(_grasp_id, _roadmap_id) = _graph->toRoadmapKey(_v);
+        auto node = _graph->_roadmap->getNode(_roadmap_id);
+        assert(node);
+        // neighbors are vertices associated with the adjacent roadmap nodes
+        std::tie(_iter, _end) = node->getEdgesIterators();
+        // and in case the roadmap node is the start node, we also have an adjacency to node 0
+        _edge_to_0_returned = _roadmap_id != _graph->_roadmap_start_id;
+        // if we do not have the special edge, we need to ensure _iter points to a valid neighbor
+        if (_edge_to_0_returned) {
+            forwardToNextValid();
+        }
+    }
+}
+
+MultiGraspRoadmapGraph::NeighborIterator& MultiGraspRoadmapGraph::NeighborIterator::operator++()
+{
+    if (_v == 0) { // increase iterator for special case v == 0
+        ++_grasp_iter;
+    } else { // increase iterator for default case
+        // treat the special edge back to vertex 0 for start vertices
+        if (not _edge_to_0_returned) {
+            _edge_to_0_returned = true;
+        } else { // increase edge iterator
+            ++_iter;
+        }
+        forwardToNextValid();
+    }
+    return (*this);
+}
+
+bool MultiGraspRoadmapGraph::NeighborIterator::operator==(const MultiGraspRoadmapGraph::NeighborIterator& other) const
+{
+    // TODO take lazy into account?
+    if (other._v != _v) {
+        return false;
+    }
+    if (_v == 0) {
+        return other._grasp_iter == _grasp_iter;
+    }
+    return other._iter == _iter and other._edge_to_0_returned == _edge_to_0_returned;
+}
+
+bool MultiGraspRoadmapGraph::NeighborIterator::operator!=(const MultiGraspRoadmapGraph::NeighborIterator& other) const
+{
+    return not operator==(other);
+}
+
+uint MultiGraspRoadmapGraph::NeighborIterator::operator*()
+{
+    if (_v == 0) {
+        uint gid = *_grasp_iter;
+        return _graph->toGraphKey(gid, _graph->_roadmap_start_id);
+    }
+    // else
+    if (not _edge_to_0_returned) {
+        return 0;
+    }
+    // else
+    uint rid = _iter->first;
+    return _graph->toGraphKey(_grasp_id, rid);
+}
+
+void MultiGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
+{
+    assert(_edge_to_0_returned);
+    assert(_v != 0);
+    bool valid = false;
+    while (!valid and _iter != _end) {
+        if (_lazy) {
+            double cost = _iter->second->getBestKnownCost(_grasp_id);
+            valid = not std::isinf(cost);
+        } else {
+            auto [lvalid, cost] = _graph->_roadmap->computeCost(_iter->second, _grasp_id);
+            valid = lvalid;
+        }
+        if (not valid) {
+            ++_iter;
+        }
+    }
+}
+
+MultiGraspRoadmapGraph::NeighborIterator MultiGraspRoadmapGraph::NeighborIterator::begin(uint v, bool lazy, MultiGraspRoadmapGraph const* graph)
+{
+    if (v != 0) {
+        // update roadmap
+        auto [gid, rid] = graph->toRoadmapKey(v);
+        auto node = graph->_roadmap->getNode(rid);
+        graph->_roadmap->updateAdjacency(node);
+    }
+    return NeighborIterator(v, lazy, graph);
+}
+
+MultiGraspRoadmapGraph::NeighborIterator MultiGraspRoadmapGraph::NeighborIterator::end(uint v, MultiGraspRoadmapGraph const* graph)
+{
+    NeighborIterator end_iter(v, true, graph);
+    end_iter._grasp_iter = graph->_grasp_ids.end(); // covers end condition for v = 0
+    end_iter._iter = end_iter._end; // covers end condition for v != 0
+    end_iter._edge_to_0_returned = true; // covers end condition for v != 0
+    return end_iter;
 }
 
 /************************************* MultiGraspRoadmapGraph ********************************/
@@ -130,51 +303,64 @@ bool MultiGraspRoadmapGraph::checkValidity(unsigned int v) const
 void MultiGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy) const
 {
     successors.clear();
-    if (v == 0) // special case for start node
-    {
-        // the start node is adjacent to every start roadmap node across all grasps
-        for (unsigned int gid : _grasp_ids) {
-            unsigned int graph_id = toGraphKey(gid, _roadmap_start_id); // same roadmap graph, but a specific grasp
-            successors.push_back(graph_id);
-        }
-    } else {
-        // standard case for every other node
-        auto [grasp_id, roadmap_node_id] = toRoadmapKey(v);
-        // catch special case of start node
-        if (roadmap_node_id == _roadmap_start_id) {
-            successors.push_back(0);
-        }
-        auto node = _roadmap->getNode(roadmap_node_id);
-        assert(node);
-        // ensure the adjacency is up-to-date
-        _roadmap->updateAdjacency(node);
-        // get edges
-        auto [iter, end] = node->getEdgesIterators();
-        while (iter != end) {
-            if (lazy) {
-                // only get best known cost
-                double cost = iter->second->getBestKnownCost(grasp_id);
-                if (not std::isinf(cost)) {
-                    uint graph_id = toGraphKey(grasp_id, iter->first);
-                    successors.push_back(graph_id);
-                }
-            } else {
-                // query true edge cost
-                auto [valid, cost] = _roadmap->computeCost(iter->second, grasp_id);
-                if (valid) {
-                    uint graph_id = toGraphKey(grasp_id, iter->first);
-                    successors.push_back(graph_id);
-                }
-            }
-            iter++;
-        }
-    }
+    // if (v == 0) // special case for start node
+    // {
+    //     // the start node is adjacent to every start roadmap node across all grasps
+    //     for (unsigned int gid : _grasp_ids) {
+    //         unsigned int graph_id = toGraphKey(gid, _roadmap_start_id); // same roadmap graph, but a specific grasp
+    //         successors.push_back(graph_id);
+    //     }
+    // } else {
+    //     // standard case for every other node
+    //     auto [grasp_id, roadmap_node_id] = toRoadmapKey(v);
+    //     // catch special case of start node
+    //     if (roadmap_node_id == _roadmap_start_id) {
+    //         successors.push_back(0);
+    //     }
+    //     auto node = _roadmap->getNode(roadmap_node_id);
+    //     assert(node);
+    //     // ensure the adjacency is up-to-date
+    //     _roadmap->updateAdjacency(node);
+    //     // get edges
+    //     auto [iter, end] = node->getEdgesIterators();
+    //     while (iter != end) {
+    //         if (lazy) {
+    //             // only get best known cost
+    //             double cost = iter->second->getBestKnownCost(grasp_id);
+    //             if (not std::isinf(cost)) {
+    //                 uint graph_id = toGraphKey(grasp_id, iter->first);
+    //                 successors.push_back(graph_id);
+    //             }
+    //         } else {
+    //             // query true edge cost
+    //             auto [valid, cost] = _roadmap->computeCost(iter->second, grasp_id);
+    //             if (valid) {
+    //                 uint graph_id = toGraphKey(grasp_id, iter->first);
+    //                 successors.push_back(graph_id);
+    //             }
+    //         }
+    //         iter++;
+    //     }
+    // }
+    auto begin = NeighborIterator::begin(v, lazy, this);
+    auto end = NeighborIterator::end(v, this);
+    successors.insert(successors.begin(), begin, end);
+}
+
+std::pair<MultiGraspRoadmapGraph::NeighborIterator, MultiGraspRoadmapGraph::NeighborIterator> MultiGraspRoadmapGraph::getSuccessors(uint v, bool lazy) const
+{
+    return { NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this) };
 }
 
 void MultiGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy) const
 {
     // undirected graph
     getSuccessors(v, predecessors, lazy);
+}
+
+std::pair<MultiGraspRoadmapGraph::NeighborIterator, MultiGraspRoadmapGraph::NeighborIterator> MultiGraspRoadmapGraph::getPredecessors(uint v, bool lazy) const
+{
+    return getSuccessors(v, lazy);
 }
 
 double MultiGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy) const
@@ -210,7 +396,8 @@ unsigned int MultiGraspRoadmapGraph::getStartNode() const
 
 bool MultiGraspRoadmapGraph::isGoal(unsigned int v) const
 {
-    if (v == 0) return false;
+    if (v == 0)
+        return false;
     auto [grasp_id, rnid] = toRoadmapKey(v);
     return _goal_set->isGoal(rnid, grasp_id);
 }
@@ -229,12 +416,13 @@ double MultiGraspRoadmapGraph::heuristic(unsigned int v) const
     return _cost_to_go->costToGo(node->config, grasp_id);
 }
 
-std::pair<uint, uint> MultiGraspRoadmapGraph::getGraspRoadmapId(uint vid) const {
+std::pair<uint, uint> MultiGraspRoadmapGraph::getGraspRoadmapId(uint vid) const
+{
     if (vid == 0) {
-        return {_roadmap_start_id, 0}; // TODO what makes sense to return here for the grasp?
+        return { _roadmap_start_id, 0 }; // TODO what makes sense to return here for the grasp?
     }
     auto [grasp_id, rid] = toRoadmapKey(vid);
-    return {rid, grasp_id};
+    return { rid, grasp_id };
 }
 
 std::pair<unsigned int, unsigned int> MultiGraspRoadmapGraph::toRoadmapKey(unsigned int graph_id) const

@@ -1,7 +1,8 @@
-#include <boost/program_options.hpp>
 #include <boost/exception/diagnostic_information.hpp>
+#include <boost/program_options.hpp>
 #include <experimental/filesystem>
 #include <hfts_grasp_planner/placement/mp/ImgGraphSearch.h>
+#include <hfts_grasp_planner/placement/mp/utils/Profiling.h>
 #include <iostream>
 #include <string>
 
@@ -22,6 +23,7 @@ void printHelp(const po::options_description& po, const std::string& err_msg = "
 int main(int argc, char** argv)
 {
     po::options_description desc("Test multi-grasp motion planner on 2D image state spaces.");
+    bool print_profile = false;
     // clang-format off
     desc.add_options()
         ("help", "produce help message")
@@ -30,7 +32,8 @@ int main(int argc, char** argv)
         ("goal_configs", po::value<std::vector<double>>()->multitoken()->required(), "end configurations (list of quadrets (grasp_id, x, y, quality))")
         ("lambda", po::value<double>()->default_value(1.0), "Scaling factor between path and goal cost.")
         ("algorithm_type", po::value<unsigned int>()->default_value(0), "Algorithm type: 0 = A*, 1 = LWA*, ...")
-        ("graph_type", po::value<unsigned int>()->default_value(0), "Graph type: 0 = SingleGraspGraph, 1 = MultiGraspGraph");
+        ("graph_type", po::value<unsigned int>()->default_value(0), "Graph type: 0 = SingleGraspGraph, 1 = MultiGraspGraph")
+        ("print_profile", po::bool_switch(&print_profile), "If set, print profiling information");
     // clang-format on
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -80,7 +83,7 @@ int main(int argc, char** argv)
     params.graph_type = static_cast<pmp::mgsearch::MGGraphSearchMP::GraphType>(vm["graph_type"].as<unsigned int>());
     params.lambda = vm["lambda"].as<double>();
     pmp::ImgGraphSearch imgs(image_file_path, start, params);
-    for (auto& goal : goals ) {
+    for (auto& goal : goals) {
         imgs.addGoal(goal);
     }
     std::vector<pmp::MultiGraspMP::Solution> sols;
@@ -91,6 +94,9 @@ int main(int argc, char** argv)
         std::cout << "Solution found!" << std::endl;
         std::cout << "  Goal id: " << sols.at(0).goal_id << std::endl;
         std::cout << "  cost: " << sols.at(0).cost << std::endl;
+    }
+    if (print_profile) {
+        pmp::utils::ScopedProfiler::printProfiles(std::cout, true);
     }
     // mgs::ImageStateSpace state_space(image_file_path);
     // std::cout << "Read in " << state_space.getNumGrasps() << " grasps" << std::endl;

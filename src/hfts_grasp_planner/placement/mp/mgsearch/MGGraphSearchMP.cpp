@@ -16,7 +16,6 @@ MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Conf
 
 MGGraphSearchMP::~MGGraphSearchMP() = default;
 
-
 bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
 {
     // create goal distance function, for this collect all goals in a vector first
@@ -83,6 +82,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
         if (sr.solved) {
             extractSolution<MultiGraspRoadmapGraph>(sr, sol, graph);
         }
+        break;
     }
     default:
         RAVELOG_ERROR("Graph type not implemented yet");
