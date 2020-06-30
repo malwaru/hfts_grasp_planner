@@ -29,6 +29,7 @@ openrave_plugin(ormultigraspmp
   MultiGraspBiRRT.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
+  mgsearch/LPAStar.cpp
   utils/Profiling.cpp
   mgsearch/MGGraphSearchMP.cpp
   mgsearch/ORStateSpace.cpp
@@ -55,6 +56,7 @@ add_executable(test_image_space_algorithm
   mgsearch/MGGraphSearchMP.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
+  mgsearch/LPAStar.cpp
   utils/Profiling.cpp
   MultiGraspMP.cpp
   ImgGraphSearch.cpp

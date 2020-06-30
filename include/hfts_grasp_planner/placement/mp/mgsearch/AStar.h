@@ -37,10 +37,7 @@ namespace mp {
                 {
                     double af = f(a);
                     double bf = f(b);
-                    if (af == bf) { // tie breaker
-                        return a.g_value < b.g_value;
-                    }
-                    return af > bf;
+                    return af > bf or (af == bf and a.g_value > b.g_value);
                 }
             };
 
