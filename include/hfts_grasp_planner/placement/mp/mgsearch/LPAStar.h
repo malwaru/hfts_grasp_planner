@@ -22,6 +22,7 @@ namespace lpastar
 // Key for priority queue
 typedef std::pair<double, double> Key;
 bool operator<(const Key& a, const Key& b);
+bool operator<=(const Key& a, const Key& b);
 
 // Class that encapsulates LPA* algorithm and needed data structures
 template <typename G>
@@ -87,10 +88,9 @@ public:
     // initialize start state
     if (_graph.checkValidity(_v_start))
     {
-      VertexData start_node(_v_start, 0.0, _graph.heuristic(_v_start), 0.0, _v_start);
-      _vertex_data.emplace(std::make_pair(_v_start, start_node));
-      _vertex_data.at(_v_start).pq_handle =
-          _pq.push(PQElement(_v_start, computeKey(start_node.g, start_node.h, start_node.rhs)));
+      VertexData& start_data = getVertexData(_v_start);
+      start_data.rhs = 0.0;
+      updateVertexKey(start_data);
       // initialize result
       _result.solved = false;
       _result.path.clear();
@@ -152,10 +152,9 @@ public:
     {
       assert(_pq.top().key <= _goal_key);
       PQElement current_el(_pq.top());
-      _pq.pop();
       // get vertex data
       VertexData& u_data = getVertexData(current_el.v);
-      // check if us is overconsistent?
+      // check if u is overconsistent?
       if (u_data.g > u_data.rhs)
       {  // make it consistent
         u_data.g = u_data.rhs;
@@ -173,7 +172,7 @@ public:
         // u is underconsistent
         u_data.g = std::numeric_limits<double>::infinity();
         auto [iter, end_iter] = _graph.getSuccessors(u_data.v, _lazy);
-        for (; iter != end_iter; ++end_iter)
+        for (; iter != end_iter; ++iter)
         {
           VertexData& v_data = getVertexData(*iter);
           handleCostIncrease(u_data, v_data);
@@ -283,7 +282,7 @@ protected:
     {
       double goal_cost = _graph.getGoalCost(v_data.v);
       Key v_goal_key = computeKey(v_data.g, goal_cost, v_data.rhs);
-      if (v_goal_key < _goal_key)
+      if (v_goal_key <= _goal_key)
       {
         _goal_key = v_goal_key;
         _result.goal_node = v_data.v;
