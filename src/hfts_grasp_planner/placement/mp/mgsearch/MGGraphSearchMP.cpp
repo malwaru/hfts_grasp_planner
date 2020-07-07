@@ -56,7 +56,13 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
           }
           case AlgorithmType::LPAstar: {
             RAVELOG_DEBUG("Planning with LPA* on single grasp graph for grasp " + std::to_string(grasp_id));
-            lpastar::lpaStarSearch<SingleGraspRoadmapGraph>(graph, sr);
+            lpastar::lpaStarSearch<SingleGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::Explicit>(graph, sr);
+            break;
+          }
+          case AlgorithmType::LWLPAstar: {
+            RAVELOG_DEBUG("Planning with lazy-weighted LPA* on single grasp graph for grasp " +
+                          std::to_string(grasp_id));
+            lpastar::lpaStarSearch<SingleGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::LazyWeighted>(graph, sr);
             break;
           }
           default:
@@ -89,7 +95,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
         }
         case AlgorithmType::LPAstar: {
           RAVELOG_DEBUG("Planning with LPA* on multi-grasp graph");
-          lpastar::lpaStarSearch<MultiGraspRoadmapGraph>(graph, sr);
+          lpastar::lpaStarSearch<MultiGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::Explicit>(graph, sr);
+          break;
+        }
+        case AlgorithmType::LWLPAstar: {
+          RAVELOG_DEBUG("Planning with lazy-weighted LPA* on multi-grasp graph");
+          lpastar::lpaStarSearch<MultiGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::LazyWeighted>(graph, sr);
           break;
         }
         default:

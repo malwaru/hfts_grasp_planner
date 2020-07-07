@@ -24,8 +24,15 @@ typedef std::pair<double, double> Key;
 bool operator<(const Key& a, const Key& b);
 bool operator<=(const Key& a, const Key& b);
 
+enum EdgeCostEvaluationType
+{
+  Lazy,          // always does lazy evaluation, never requests for true cost
+  LazyWeighted,  // lazily requests for true cost (only when resolving inconsistency)
+  Explicit       // always request the true cost of edges
+};
+
 // Class that encapsulates LPA* algorithm and needed data structures
-template <typename G>
+template <typename G, EdgeCostEvaluationType ee_type>
 class LPAStarAlgorithm
 {
 protected:
@@ -82,7 +89,7 @@ public:
    * variable. Hence, an instance of this class should only live as long as the
    * graph.
    */
-  LPAStarAlgorithm(const G& graph, bool lazy = true) : _graph(graph), _lazy(lazy)
+  LPAStarAlgorithm(const G& graph) : _graph(graph)
   {
     _v_start = _graph.getStartNode();
     // initialize start state
@@ -123,7 +130,7 @@ public:
     {
       VertexData& u_data = getVertexData(ec.u);
       VertexData& v_data = getVertexData(ec.v);
-      double new_cost = _graph.getEdgeCost(ec.u, ec.v, _lazy);
+      double new_cost = _graph.getEdgeCost(ec.u, ec.v, ee_type != Explicit);
       if (ec.old_cost > new_cost)  // did edge get cheaper?
       {
         handleCostDecrease(u_data, v_data);
@@ -142,7 +149,9 @@ public:
   void computeShortestPath(SearchResult& result)
   {
     utils::ScopedProfiler("LPAStarAlgorithm::computeShortestPath");
-    // main iteration
+    // main loop
+    // differs depending on edge evaluation type ee_type
+    std::integral_constant<EdgeCostEvaluationType, ee_type> inner_loop_type;
     // keep repeating as long as
     // 1. there are inconsistent nodes with keys less than _goal_key
     //    (_goal_key is initialized with inf or from previous run)
@@ -154,31 +163,8 @@ public:
       PQElement current_el(_pq.top());
       // get vertex data
       VertexData& u_data = getVertexData(current_el.v);
-      // check if u is overconsistent?
-      if (u_data.g > u_data.rhs)
-      {  // make it consistent
-        u_data.g = u_data.rhs;
-        updateVertexKey(u_data);
-        // update neighbors
-        auto [iter, end_iter] = _graph.getSuccessors(u_data.v, _lazy);
-        for (; iter != end_iter; ++iter)
-        {
-          VertexData& v_data = getVertexData(*iter);
-          handleCostDecrease(u_data, v_data);
-        }
-      }
-      else
-      {
-        // u is underconsistent
-        u_data.g = std::numeric_limits<double>::infinity();
-        auto [iter, end_iter] = _graph.getSuccessors(u_data.v, _lazy);
-        for (; iter != end_iter; ++iter)
-        {
-          VertexData& v_data = getVertexData(*iter);
-          handleCostIncrease(u_data, v_data);
-        }
-        updateVertexKey(u_data);
-      }
+      // resolve inconsistency different depending on edge evaluatipn type ee_type
+      innerLoopImplementation(inner_loop_type, u_data);
     }
     // the _result keeps track of reached goal nodes and kept across runs of this algorithm
     result = _result;
@@ -196,8 +182,73 @@ protected:
   SearchResult _result;
   Key _goal_key;
   const G& _graph;
-  bool _lazy;
   unsigned int _v_start;
+
+  // inner loop for when using explicit edge evaluation
+  void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, Explicit>& type, VertexData& u_data)
+  {
+    // simply resolve its inconsistency
+    resolveInconsistency(u_data);
+  }
+
+  // inner loop when using lazy edge evaluation
+  void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, Lazy>& type, VertexData& u_data)
+  {
+    // simply resolve its inconsistency
+    resolveInconsistency(u_data);
+  }
+
+  // inner loop when lazy explicit evalution
+  void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, LazyWeighted>& type,
+                               VertexData& u_data)
+  {
+    // first check whether the incoming edge cost is correct
+    double old_edge_cost = _graph.getEdgeCost(u_data.p, u_data.v, true);
+    double edge_cost = _graph.getEdgeCost(u_data.p, u_data.v, false);
+    if (old_edge_cost != edge_cost)
+    {
+      // if not do not update u and neighbors
+      auto& v_data = getVertexData(u_data.p);
+      handleCostIncrease(v_data, u_data);
+    }
+    else
+    {
+      // edge cost was correct, proceed as usual
+      resolveInconsistency(u_data);
+    }
+  }
+
+  /**
+   * Fix the inconsistency of u and add neighbors to _pq as needed.
+   */
+  void resolveInconsistency(VertexData& u_data)
+  {
+    // check if u is overconsistent?
+    if (u_data.g > u_data.rhs)
+    {  // make it consistent
+      u_data.g = u_data.rhs;
+      updateVertexKey(u_data);
+      // update neighbors
+      auto [iter, end_iter] = _graph.getSuccessors(u_data.v, ee_type != Explicit);
+      for (; iter != end_iter; ++iter)
+      {
+        VertexData& v_data = getVertexData(*iter);
+        handleCostDecrease(u_data, v_data);
+      }
+    }
+    else
+    {
+      // u is underconsistent
+      u_data.g = std::numeric_limits<double>::infinity();
+      auto [iter, end_iter] = _graph.getSuccessors(u_data.v, ee_type != Explicit);
+      for (; iter != end_iter; ++iter)
+      {
+        VertexData& v_data = getVertexData(*iter);
+        handleCostIncrease(u_data, v_data);
+      }
+      updateVertexKey(u_data);
+    }
+  }
 
   /**
    * Handle a cost increase from u to v.
@@ -210,12 +261,12 @@ protected:
     // test whether v needs to care about that. if so, look for a new parent of v
     if (v_data.p == u_data.v)
     {
-      auto [iter, end] = _graph.getPredecessors(v_data.v, _lazy);
+      auto [iter, end] = _graph.getPredecessors(v_data.v, ee_type != Explicit);
       for (; iter != end; ++iter)
       {
         unsigned int s = *iter;
         VertexData& s_data = getVertexData(s);
-        double rhs = s_data.g + _graph.getEdgeCost(s, v_data.v, _lazy);
+        double rhs = s_data.g + _graph.getEdgeCost(s, v_data.v, ee_type != Explicit);
         if (rhs < v_data.rhs)  // v is cheaper to reach through s
         {
           v_data.rhs = rhs;
@@ -309,14 +360,15 @@ protected:
  * LPA* search algorithm.
  * The template parameter G needs to be of a type implementing the
  * GraspAgnosticGraph interface specified in Graphs.h.
+ * The non-type template parameter ee_type specifies what edge evaluation strategy to use.
  * @param graph: The graph to search a path on.
  * @param result: Struct that will contain the search result
  */
-template <typename G>
+template <typename G, EdgeCostEvaluationType ee_type>
 void lpaStarSearch(const G& graph, SearchResult& result)
 {
   utils::ScopedProfiler("lpaStarSearch");
-  LPAStarAlgorithm algorithm(graph, false);
+  LPAStarAlgorithm<G, ee_type> algorithm(graph);
   algorithm.computeShortestPath(result);
 }
 
