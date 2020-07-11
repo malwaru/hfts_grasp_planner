@@ -111,14 +111,6 @@ public:
 
   ~LPAStarAlgorithm() = default;
 
-  // Struct to communicate a cost change to the algorithm
-  struct EdgeChange
-  {
-    unsigned int u;  // edge goes from u to v
-    unsigned int v;
-    double old_cost;  // cost prior to the update
-  };
-
   /**
    * Update algorithm state to reflect edge weight changes.
    * @param edge_changes: the edge changes
