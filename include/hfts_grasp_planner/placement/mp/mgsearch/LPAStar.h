@@ -276,7 +276,7 @@ protected:
    */
   void handleCostDecrease(VertexData& u_data, VertexData& v_data)
   {
-    double edge_cost = _graph.getEdgeCost(u_data.v, v_data.v);
+    double edge_cost = _graph.getEdgeCost(u_data.v, v_data.v, ee_type != Explicit);
     if (v_data.rhs > u_data.g + edge_cost)  // update u if it can now be reached at a lower cost
     {
       v_data.p = u_data.v;
