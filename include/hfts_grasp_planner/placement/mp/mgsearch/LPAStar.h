@@ -26,9 +26,9 @@ bool operator<=(const Key& a, const Key& b);
 
 enum EdgeCostEvaluationType
 {
-  Lazy,          // always does lazy evaluation, never requests for true cost
-  LazyWeighted,  // lazily requests for true cost (only when resolving inconsistency)
-  Explicit       // always request the true cost of edges
+  Lazy,          // always does lazy evaluation, never requests true edge costs. Always checks for node validity though.
+  LazyWeighted,  // lazily requests for true edge costs when resolving inconsistencies.
+  Explicit       // always request the true edge costs
 };
 
 // Class that encapsulates LPA* algorithm and needed data structures
@@ -155,7 +155,7 @@ public:
       PQElement current_el(_pq.top());
       // get vertex data
       VertexData& u_data = getVertexData(current_el.v);
-      // resolve inconsistency different depending on edge evaluatipn type ee_type
+      // resolve inconsistency different depending on edge evaluation type ee_type
       innerLoopImplementation(inner_loop_type, u_data);
     }
     // the _result keeps track of reached goal nodes and kept across runs of this algorithm
@@ -179,34 +179,53 @@ protected:
   // inner loop for when using explicit edge evaluation
   void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, Explicit>& type, VertexData& u_data)
   {
-    // simply resolve its inconsistency
+    // simply resolve its inconsistency; costs have already been computed
     resolveInconsistency(u_data);
   }
 
   // inner loop when using lazy edge evaluation
   void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, Lazy>& type, VertexData& u_data)
   {
-    // simply resolve its inconsistency
-    resolveInconsistency(u_data);
+    if (not _graph.checkValidity(u_data.v))
+    {
+      // u itself is invalid, there is no point in processing it any further
+      // make it consistent (as unreachable)
+      assert(std::isinf(u_data.g));  // this should be the first time we visit u
+      u_data.rhs = std::numeric_limits<double>::infinity();
+      updateVertexKey(u_data);
+    }
+    else
+    {
+      // resolve its inconsistency as usual
+      resolveInconsistency(u_data);
+    }
   }
 
   // inner loop when lazy explicit evalution
   void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, LazyWeighted>& type,
                                VertexData& u_data)
   {
-    // first check whether the incoming edge cost is correct
-    double old_edge_cost = _graph.getEdgeCost(u_data.p, u_data.v, true);
-    double edge_cost = _graph.getEdgeCost(u_data.p, u_data.v, false);
-    if (old_edge_cost != edge_cost)
+    if (not _graph.checkValidity(u_data.v))
     {
-      // if not do not update u and neighbors
-      auto& v_data = getVertexData(u_data.p);
-      handleCostIncrease(v_data, u_data);
+      // u itself is invalid, there is no point in processing it any further
+      // make it consistent (as unreachable)
+      assert(std::isinf(u_data.g));  // this should be the first time we visit u
+      u_data.rhs = std::numeric_limits<double>::infinity();
+      updateVertexKey(u_data);
     }
     else
     {
-      // edge cost was correct, proceed as usual
-      resolveInconsistency(u_data);
+      if (u_data.v != u_data.p and not _graph.trueEdgeCostKnown(u_data.p, u_data.v))
+      {
+        _graph.getEdgeCost(u_data.p, u_data.v, false);
+        VertexData& p_data = getVertexData(u_data.p);
+        handleCostIncrease(p_data, u_data);
+      }
+      else
+      {
+        // edge cost was correct, proceed as usual
+        resolveInconsistency(u_data);
+      }
     }
   }
 
@@ -253,6 +272,8 @@ protected:
     // test whether v needs to care about that. if so, look for a new parent of v
     if (v_data.p == u_data.v)
     {
+      // raise v's rhs temporarily to infinity so that the loop below sets it to the correct minimum
+      v_data.rhs = std::numeric_limits<double>::infinity();
       auto [iter, end] = _graph.getPredecessors(v_data.v, ee_type != Explicit);
       for (; iter != end; ++iter)
       {
@@ -325,7 +346,8 @@ protected:
     {
       double goal_cost = _graph.getGoalCost(v_data.v);
       Key v_goal_key = computeKey(v_data.g, goal_cost, v_data.rhs);
-      if (v_goal_key <= _goal_key)
+      // update goal key when we have a better goal or the goal responsible for goal key changed it key
+      if (v_goal_key <= _goal_key || _result.goal_node == v_data.v)
       {
         _goal_key = v_goal_key;
         _result.goal_node = v_data.v;

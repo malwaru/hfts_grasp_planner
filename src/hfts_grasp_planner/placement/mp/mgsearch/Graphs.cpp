@@ -45,8 +45,11 @@ void SingleGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
     }
     else
     {
-      auto [lvalid, cost] = _graph->_roadmap->computeCost(_iter->second, _graph->_grasp_id);
-      valid = lvalid;
+      if (_graph->_roadmap->isValid(_iter->first, _graph->_grasp_id))
+      {
+        auto [lvalid, cost] = _graph->_roadmap->computeCost(_iter->second, _graph->_grasp_id);
+        valid = lvalid;
+      }
     }
     if (not valid)
     {
@@ -162,7 +165,8 @@ unsigned int SingleGraspRoadmapGraph::getStartNode() const
 bool SingleGraspRoadmapGraph::isGoal(unsigned int v) const
 {
   auto node = _roadmap->getNode(v);
-  assert(node);
+  if (!node)
+    return false;
   return _goal_set->isGoal(node->uid, _grasp_id);
 }
 
@@ -289,8 +293,11 @@ void MultiGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
     }
     else
     {
-      auto [lvalid, cost] = _graph->_roadmap->computeCost(_iter->second, _grasp_id);
-      valid = lvalid;
+      if (_graph->_roadmap->isValid(_iter->first, _grasp_id))
+      {
+        auto [lvalid, cost] = _graph->_roadmap->computeCost(_iter->second, _grasp_id);
+        valid = lvalid;
+      }
     }
     if (not valid)
     {
