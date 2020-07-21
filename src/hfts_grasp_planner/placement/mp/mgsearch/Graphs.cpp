@@ -341,8 +341,8 @@ MultiGraspRoadmapGraph::MultiGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspGoa
   , _goal_set(goal_set)
   , _all_grasps_cost_to_go(goal_set, cost_params)
   , _grasp_ids(grasp_ids)
-  , _num_graph_nodes(0)
   , _roadmap_start_id(start_id)
+  , _num_graph_nodes(0)
 {
   auto quality_range = goal_set->getGoalQualityRange();
   for (unsigned int gid : grasp_ids)

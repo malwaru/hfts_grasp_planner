@@ -125,14 +125,14 @@ public:
   private:
     NeighborIterator(Roadmap::Node::EdgeIterator eiter, Roadmap::Node::EdgeIterator end, bool lazy,
                      SingleGraspRoadmapGraph const* parent);
-    SingleGraspRoadmapGraph const* _graph;
     Roadmap::Node::EdgeIterator _iter;
     Roadmap::Node::EdgeIterator _end;
     const bool _lazy;
+    SingleGraspRoadmapGraph const* _graph;
     void forwardToNextValid();
   };
 
-  friend class NeighborIterator;
+  friend struct NeighborIterator;
   /**
    * Create a new roadmap graph defined by the given roadmap for the given goals.
    * All goals need to correspond to the same grasp (grasp_id).
@@ -198,18 +198,18 @@ public:
 
   private:
     NeighborIterator(uint v, bool lazy, MultiGraspRoadmapGraph const* parent);
-    MultiGraspRoadmapGraph const* _graph;
     uint _v;
     // information about grasps
     std::set<uint>::iterator _grasp_iter;  // for v == 0
     uint _grasp_id;                        // grasp id for any other vertex
     uint _roadmap_id;                      // roadmap node if for any other vertex
-    // flag for special case edge back to node 0
-    bool _edge_to_0_returned;
     // iterators for roadmap edges
     Roadmap::Node::EdgeIterator _iter;
     Roadmap::Node::EdgeIterator _end;
     bool _lazy;
+    MultiGraspRoadmapGraph const* _graph;
+    // flag for special case edge back to node 0
+    bool _edge_to_0_returned;
     void forwardToNextValid();
   };
   /**
@@ -244,10 +244,10 @@ public:
 private:
   ::placement::mp::mgsearch::RoadmapPtr _roadmap;
   ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
-  // cost-to-go heuristics for each grasp (grasp id -> heuristic)
-  std::unordered_map<unsigned int, ::placement::mp::mgsearch::MultiGoalCostToGoPtr> _individual_cost_to_go;
   // cost-to-go heuristics for all grasps
   ::placement::mp::mgsearch::MultiGoalCostToGo _all_grasps_cost_to_go;
+  // cost-to-go heuristics for each grasp (grasp id -> heuristic)
+  std::unordered_map<unsigned int, ::placement::mp::mgsearch::MultiGoalCostToGoPtr> _individual_cost_to_go;
   // grasp ids
   const std::set<unsigned int> _grasp_ids;
   // hash table mapping (grasp_id, roadmap_id) to graph id

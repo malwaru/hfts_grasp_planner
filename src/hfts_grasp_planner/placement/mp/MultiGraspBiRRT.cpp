@@ -160,9 +160,7 @@ void SequentialMGBiRRT::removeGoals(const std::vector<unsigned int>& goal_ids)
 
 /********************************* ParallelMGBiRRT::AsynchPlanner **************************************/
 ParallelMGBiRRT::AsynchPlanner::AsynchPlanner(ompl::ORRedirectableBiRRTPtr planner)
-    : _planner(planner)
-    , _terminate(false)
-    , _paused(false)
+    :_terminate(false), _paused(false), _planner(planner)
 {
     _thread = std::thread(std::bind(&AsynchPlanner::run, this));
 }

@@ -169,16 +169,16 @@ public:
 
   protected:
     friend class Roadmap;
+    bool initialized;  // initialized = collision-free
     // 0 = edges not initialized, >= 1 - last densification generation edges have been updated
     unsigned int densification_gen;
-    bool initialized;  // initialized = collision-free
     // map node id to edge
     EdgeMap edges;
     // stores validity in dependence on grasp id
     std::unordered_map<unsigned int, bool> conditional_validity;
     // Constructor
     Node(unsigned int tuid, const Config& tconfig)
-      : uid(tuid), initialized(false), config(tconfig), densification_gen(0)
+      : uid(tuid), config(tconfig), initialized(false), densification_gen(0)
     {
     }
   };

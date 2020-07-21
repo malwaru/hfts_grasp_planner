@@ -4,7 +4,7 @@ using namespace placement::mp::mgsearch;
 
 MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Config& start_config,
                                  const Parameters& params)
-  : _state_space(state_space), _params(params)
+  : _params(params), _state_space(state_space)
 {
   auto edge_computer = std::make_shared<IntegralEdgeCostComputer>(_state_space);
   _roadmap = std::make_shared<Roadmap>(_state_space, edge_computer, 1000, "/tmp/roadmap", "/tmp/validation_log");
