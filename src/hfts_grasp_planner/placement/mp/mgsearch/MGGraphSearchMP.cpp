@@ -20,7 +20,8 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
 {
   // create goal distance function, for this collect all goals in a vector first
   auto cspace_distance = std::bind(&StateSpace::distance, _state_space, std::placeholders::_1, std::placeholders::_2);
-  auto goal_distance_fn = std::make_shared<MGGoalDistance>(_goal_set, cspace_distance, _params.lambda);
+  // auto goal_distance_fn = std::make_shared<MGGoalDistance>(_goal_set, cspace_distance, _params.lambda);
+  GoalPathCostParameters cost_parameters(cspace_distance, _params.lambda);
   // get the grasps we actually have to plan for
   std::set<unsigned int> grasp_ids;
   std::vector<MultiGraspMP::Goal> goals;
@@ -39,7 +40,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       // solve the problem for each grasp separately
       for (auto grasp_id : grasp_ids)
       {
-        SingleGraspRoadmapGraph graph(_roadmap, _goal_set, goal_distance_fn, grasp_id, start_id);
+        SingleGraspRoadmapGraph graph(_roadmap, _goal_set, cost_parameters, grasp_id, start_id);
         SearchResult sr;
         // now solve the problem for this grasp using the specified algorithm
         switch (_params.algo_type)
@@ -86,7 +87,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
     }
     case GraphType::MultiGraspGraph: {
       // create a graph that captures all grasps
-      MultiGraspRoadmapGraph graph(_roadmap, _goal_set, goal_distance_fn, grasp_ids, start_id);
+      MultiGraspRoadmapGraph graph(_roadmap, _goal_set, cost_parameters, grasp_ids, start_id);
       SearchResult sr;
       // solve the problem with the specified algorithm
       switch (_params.algo_type)

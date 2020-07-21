@@ -84,9 +84,13 @@ SingleGraspRoadmapGraph::NeighborIterator::end(uint v, SingleGraspRoadmapGraph c
 }
 
 SingleGraspRoadmapGraph::SingleGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspGoalSetPtr goal_set,
-                                                 CostToGoHeuristicPtr cost_to_go, unsigned int grasp_id,
-                                                 unsigned int start_id)
-  : _roadmap(roadmap), _goal_set(goal_set), _cost_to_go(cost_to_go), _grasp_id(grasp_id), _start_id(start_id)
+                                                 const ::placement::mp::mgsearch::GoalPathCostParameters& params,
+                                                 unsigned int grasp_id, unsigned int start_id)
+  : _roadmap(roadmap)
+  , _goal_set(goal_set->createSubset(std::set({grasp_id})))
+  , _cost_to_go(_goal_set, params, goal_set->getGoalQualityRange())
+  , _grasp_id(grasp_id)
+  , _start_id(start_id)
 {
 }
 
@@ -179,7 +183,7 @@ double SingleGraspRoadmapGraph::getGoalCost(uint v) const
   {
     return 0.0;
   }
-  return _cost_to_go->getGoalCost(_goal_set->getGoal(goal_id).quality);
+  return _cost_to_go.qualityToGoalCost(_goal_set->getGoal(goal_id).quality);
 }
 
 double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
@@ -187,7 +191,7 @@ double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
   auto node = _roadmap->getNode(v);
   if (!node)
     return INFINITY;
-  return _cost_to_go->costToGo(node->config, _grasp_id);
+  return _cost_to_go.costToGo(node->config);
 }
 
 std::pair<uint, uint> SingleGraspRoadmapGraph::getGraspRoadmapId(uint vid) const
@@ -331,15 +335,24 @@ MultiGraspRoadmapGraph::NeighborIterator::end(uint v, MultiGraspRoadmapGraph con
 
 /************************************* MultiGraspRoadmapGraph ********************************/
 MultiGraspRoadmapGraph::MultiGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspGoalSetPtr goal_set,
-                                               CostToGoHeuristicPtr cost_to_go, const std::set<unsigned int>& grasp_ids,
-                                               unsigned int start_id)
+                                               const ::placement::mp::mgsearch::GoalPathCostParameters& cost_params,
+                                               const std::set<unsigned int>& grasp_ids, unsigned int start_id)
   : _roadmap(roadmap)
   , _goal_set(goal_set)
-  , _cost_to_go(cost_to_go)
+  , _all_grasps_cost_to_go(goal_set, cost_params)
   , _grasp_ids(grasp_ids)
   , _num_graph_nodes(0)
   , _roadmap_start_id(start_id)
 {
+  auto quality_range = goal_set->getGoalQualityRange();
+  for (unsigned int gid : grasp_ids)
+  {
+    // TODO MultiGoalCostToGo has some issue that prevents emplace to work properly. Haven't figured out what yet
+    // _individual_cost_to_go.emplace(gid, MultiGoalCostToGo(goal_set->createSubset({gid}), cost_params,
+    // quality_range));
+    _individual_cost_to_go[gid] =
+        std::make_shared<MultiGoalCostToGo>(goal_set->createSubset({gid}), cost_params, quality_range);
+  }
 }
 
 MultiGraspRoadmapGraph::~MultiGraspRoadmapGraph() = default;
@@ -361,45 +374,6 @@ bool MultiGraspRoadmapGraph::checkValidity(unsigned int v) const
 void MultiGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy) const
 {
   successors.clear();
-  // if (v == 0) // special case for start node
-  // {
-  //     // the start node is adjacent to every start roadmap node across all grasps
-  //     for (unsigned int gid : _grasp_ids) {
-  //         unsigned int graph_id = toGraphKey(gid, _roadmap_start_id); // same roadmap graph, but a specific grasp
-  //         successors.push_back(graph_id);
-  //     }
-  // } else {
-  //     // standard case for every other node
-  //     auto [grasp_id, roadmap_node_id] = toRoadmapKey(v);
-  //     // catch special case of start node
-  //     if (roadmap_node_id == _roadmap_start_id) {
-  //         successors.push_back(0);
-  //     }
-  //     auto node = _roadmap->getNode(roadmap_node_id);
-  //     assert(node);
-  //     // ensure the adjacency is up-to-date
-  //     _roadmap->updateAdjacency(node);
-  //     // get edges
-  //     auto [iter, end] = node->getEdgesIterators();
-  //     while (iter != end) {
-  //         if (lazy) {
-  //             // only get best known cost
-  //             double cost = iter->second->getBestKnownCost(grasp_id);
-  //             if (not std::isinf(cost)) {
-  //                 uint graph_id = toGraphKey(grasp_id, iter->first);
-  //                 successors.push_back(graph_id);
-  //             }
-  //         } else {
-  //             // query true edge cost
-  //             auto [valid, cost] = _roadmap->computeCost(iter->second, grasp_id);
-  //             if (valid) {
-  //                 uint graph_id = toGraphKey(grasp_id, iter->first);
-  //                 successors.push_back(graph_id);
-  //             }
-  //         }
-  //         iter++;
-  //     }
-  // }
   auto begin = NeighborIterator::begin(v, lazy, this);
   auto end = NeighborIterator::end(v, this);
   successors.insert(successors.begin(), begin, end);
@@ -500,7 +474,7 @@ double MultiGraspRoadmapGraph::getGoalCost(uint v) const
   {
     return 0.0;
   }
-  return _cost_to_go->getGoalCost(_goal_set->getGoal(goal_id).quality);
+  return _all_grasps_cost_to_go.qualityToGoalCost(_goal_set->getGoal(goal_id).quality);
 }
 
 double MultiGraspRoadmapGraph::heuristic(unsigned int v) const
@@ -508,14 +482,14 @@ double MultiGraspRoadmapGraph::heuristic(unsigned int v) const
   if (v == 0)
   {
     auto node = _roadmap->getNode(_roadmap_start_id);
-    return _cost_to_go->costToGo(node->config);
+    return _all_grasps_cost_to_go.costToGo(node->config);
   }
   // else
   auto [grasp_id, rnid] = toRoadmapKey(v);
   auto node = _roadmap->getNode(rnid);
   if (!node)
     return INFINITY;
-  return _cost_to_go->costToGo(node->config, grasp_id);
+  return _individual_cost_to_go.at(grasp_id)->costToGo(node->config);
 }
 
 std::pair<uint, uint> MultiGraspRoadmapGraph::getGraspRoadmapId(uint vid) const

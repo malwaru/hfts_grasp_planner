@@ -134,16 +134,17 @@ public:
 
   friend class NeighborIterator;
   /**
-   * Create a new roadmap graph defined by the given roadmap for the given grasp.
+   * Create a new roadmap graph defined by the given roadmap for the given goals.
+   * All goals need to correspond to the same grasp (grasp_id).
    * @param roadmap - roadmap to use
-   * @param goal_set - goal set
-   * @param cost_to_go - cost-to-go-heuristic
-   * @param grasp_id - the id of the grasp
+   * @param goal_set - goal set - all must belong to the same grasp
+   * @param params - Parameters for the goal-path cost trade-off
+   * @param grasp_id - the of the grasp
    * @param start_id - the id of the roadmap node that defines the start node
    */
   SingleGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
                           ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set,
-                          ::placement::mp::mgsearch::CostToGoHeuristicPtr cost_to_go, unsigned int grasp_id,
+                          const ::placement::mp::mgsearch::GoalPathCostParameters& params, unsigned int grasp_id,
                           unsigned int start_id);
   ~SingleGraspRoadmapGraph();
   // GraspAgnostic graph interface
@@ -164,7 +165,7 @@ public:
 private:
   ::placement::mp::mgsearch::RoadmapPtr _roadmap;
   ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
-  ::placement::mp::mgsearch::CostToGoHeuristicPtr _cost_to_go;
+  ::placement::mp::mgsearch::MultiGoalCostToGo _cost_to_go;
   const unsigned int _grasp_id;
   const unsigned int _start_id;
 };
@@ -214,13 +215,14 @@ public:
   /**
    * Create a new MultiGraspRoadmapGraph defined by the given roadmap for the given grasps.
    * @param roadmap - roadmap to use
-   * @param cost_to_go - cost-to-go-heuristic
+   * @param goal_set: Set of goals containing goals for the given grasps
+   * @param cost_params: Parameters for the goal-path cost tradeoff
    * @param grasp_ids - the ids of the grasps
    * @param start_id - the id of the roadmap node that defines the start node
    */
   MultiGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
                          ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set,
-                         ::placement::mp::mgsearch::CostToGoHeuristicPtr cost_to_go,
+                         const ::placement::mp::mgsearch::GoalPathCostParameters& cost_params,
                          const std::set<unsigned int>& grasp_ids, unsigned int start_id);
   ~MultiGraspRoadmapGraph();
   // GraspAgnostic graph interface
@@ -242,7 +244,11 @@ public:
 private:
   ::placement::mp::mgsearch::RoadmapPtr _roadmap;
   ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
-  ::placement::mp::mgsearch::CostToGoHeuristicPtr _cost_to_go;
+  // cost-to-go heuristics for each grasp (grasp id -> heuristic)
+  std::unordered_map<unsigned int, ::placement::mp::mgsearch::MultiGoalCostToGoPtr> _individual_cost_to_go;
+  // cost-to-go heuristics for all grasps
+  ::placement::mp::mgsearch::MultiGoalCostToGo _all_grasps_cost_to_go;
+  // grasp ids
   const std::set<unsigned int> _grasp_ids;
   // hash table mapping (grasp_id, roadmap_id) to graph id
   typedef std::pair<unsigned int, unsigned int> GraspNodeIDPair;

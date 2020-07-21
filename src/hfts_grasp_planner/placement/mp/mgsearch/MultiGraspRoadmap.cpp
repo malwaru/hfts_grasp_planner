@@ -70,8 +70,6 @@ double IntegralEdgeCostComputer::cost(const Config& a, const Config& b, unsigned
   return integrateCosts(a, b, fn);
 }
 
-CostToGoHeuristic::~CostToGoHeuristic() = default;
-
 // double distanceFn(const Roadmap::NodePtr& a, const Roadmap::NodePtr& b)
 // {
 //     return cSpaceDistance(a->config, b->config);
@@ -438,7 +436,41 @@ void Roadmap::deleteNode(NodePtr node)
 }
 
 /************************************** MultiGraspGoalSet **************************************/
-MultiGraspGoalSet::MultiGraspGoalSet(RoadmapPtr roadmap) : _roadmap(roadmap)
+// GoalIterator
+MultiGraspGoalSet::GoalIterator::GoalIterator(std::unordered_map<unsigned int, MultiGraspMP::Goal>::const_iterator iter)
+  : _iter(iter)
+{
+}
+
+MultiGraspGoalSet::GoalIterator& MultiGraspGoalSet::GoalIterator::operator++()
+{
+  _iter++;
+  return (*this);
+}
+
+bool MultiGraspGoalSet::GoalIterator::operator==(const MultiGraspGoalSet::GoalIterator& other) const
+{
+  return other._iter == _iter;
+}
+
+bool MultiGraspGoalSet::GoalIterator::operator!=(const MultiGraspGoalSet::GoalIterator& other) const
+{
+  return other._iter != _iter;
+}
+
+const placement::mp::MultiGraspMP::Goal& MultiGraspGoalSet::GoalIterator::operator*()
+{
+  return _iter->second;
+}
+
+const placement::mp::MultiGraspMP::Goal* MultiGraspGoalSet::GoalIterator::operator->()
+{
+  return &(_iter->second);
+}
+
+// actual set
+MultiGraspGoalSet::MultiGraspGoalSet(RoadmapPtr roadmap)
+  : _roadmap(roadmap), _quality_range{std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()}
 {
 }
 
@@ -450,9 +482,7 @@ bool MultiGraspGoalSet::addGoal(const MultiGraspMP::Goal& goal)
   assert(new_node);
   if (_roadmap->isValid(new_node, goal.grasp_id))
   {
-    _goals.insert(std::make_pair(goal.id, goal));
-    _goal_id_to_roadmap_id[goal.id] = new_node->uid;
-    _roadmap_id_to_goal_id[new_node->uid] = goal.id;
+    addGoalToMembers(goal, new_node->uid);
     return true;
   }
   return false;
@@ -473,7 +503,6 @@ void MultiGraspGoalSet::removeGoal(unsigned int gid)
   auto goal_iter = _goals.find(gid);
   if (goal_iter != _goals.end())
   {
-    _goals.erase(goal_iter);
     // remove goal from goal_id_to_roadmap id map
     auto gid2rid_iter = _goal_id_to_roadmap_id.find(gid);
     assert(gid2rid_iter != _goal_id_to_roadmap_id.end());
@@ -484,6 +513,23 @@ void MultiGraspGoalSet::removeGoal(unsigned int gid)
     assert(rid2gid_iter != _roadmap_id_to_goal_id.end());
     assert(rid2gid_iter->second == gid);
     _roadmap_id_to_goal_id.erase(rid2gid_iter);
+    // remove it from grasp_id_to_goal_id
+    _grasp_id_to_goal_ids.at(goal_iter->second.grasp_id).erase(gid);
+    // fix quality range
+    if (_goals.empty())
+    {
+      _quality_range = {std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()};
+    }
+    else if (goal_iter->second.quality == _quality_range.first || goal_iter->second.quality == _quality_range.second)
+    {
+      for (auto remaining_goal : _goals)
+      {
+        _quality_range.first = std::min(_quality_range.first, remaining_goal.second.quality);
+        _quality_range.second = std::max(_quality_range.second, remaining_goal.second.quality);
+      }
+    }
+    // finally erase goal
+    _goals.erase(goal_iter);
   }
 }
 
@@ -535,87 +581,99 @@ void MultiGraspGoalSet::getGoals(std::vector<MultiGraspMP::Goal>& goals) const
   }
 }
 
-/************************************** MGGoalDistance **************************************/
-
-MGGoalDistance::MGGoalDistance(MultiGraspGoalSetConstPtr goal_set,
-                               const std::function<double(const Config&, const Config&)>& path_cost, double lambda)
+MultiGraspGoalSet::GoalIterator MultiGraspGoalSet::begin() const
 {
-  double max_q = -std::numeric_limits<double>::infinity();
-  double min_q = std::numeric_limits<double>::infinity();
-  // TODO just copying all goals like this is a bit inefficient
-  std::vector<MultiGraspMP::Goal> goals;
-  goal_set->getGoals(goals);
-  // first compute min and max quality
-  for (const MultiGraspMP::Goal& goal : goals)
+  return GoalIterator(_goals.begin());
+}
+
+MultiGraspGoalSet::GoalIterator MultiGraspGoalSet::end() const
+{
+  return GoalIterator(_goals.end());
+}
+
+MultiGraspGoalSetPtr MultiGraspGoalSet::createSubset(const std::set<unsigned int>& grasp_ids) const
+{
+  auto new_goal_set = std::make_shared<MultiGraspGoalSet>(_roadmap);
+  for (unsigned int grasp_id : grasp_ids)
   {
-    // add goal to all goals
-    max_q = std::max(max_q, goal.quality);
-    min_q = std::min(min_q, goal.quality);
+    if (_grasp_id_to_goal_ids.count(grasp_id))
+    {
+      for (auto goal_id : _grasp_id_to_goal_ids.at(grasp_id))
+      {
+        new_goal_set->addGoalToMembers(_goals.at(goal_id), _goal_id_to_roadmap_id.at(goal_id));
+      }
+    }
   }
-  _quality_normalizer = (max_q - min_q);
+  return new_goal_set;
+}
+
+void MultiGraspGoalSet::addGoalToMembers(const MultiGraspMP::Goal& goal, unsigned int rid)
+{
+  _goals.insert(std::make_pair(goal.id, goal));
+  _goal_id_to_roadmap_id[goal.id] = rid;
+  _roadmap_id_to_goal_id[rid] = goal.id;
+  // add to _grasp_id_to_goal_ids mapping
+  auto grasp_iter = _grasp_id_to_goal_ids.find(goal.grasp_id);
+  if (grasp_iter != _grasp_id_to_goal_ids.end())
+  {
+    grasp_iter->second.insert(goal.id);
+  }
+  else
+  {
+    _grasp_id_to_goal_ids[goal.grasp_id] = {goal.id};
+  }
+  // adjust quality range
+  _quality_range.first = std::min(_quality_range.first, goal.quality);
+  _quality_range.second = std::max(_quality_range.second, goal.quality);
+}
+
+/************************************** MultiGoalCostToGo **************************************/
+MultiGoalCostToGo::MultiGoalCostToGo(MultiGraspGoalSetConstPtr goal_set, const GoalPathCostParameters& params,
+                                     std::pair<double, double> quality_range)
+  : MultiGoalCostToGo(goal_set, params.path_cost, params.lambda, quality_range)
+{
+}
+
+MultiGoalCostToGo::MultiGoalCostToGo(MultiGraspGoalSetConstPtr goal_set,
+                                     const std::function<double(const Config&, const Config&)>& path_cost,
+                                     double lambda, std::pair<double, double> quality_range)
+{
+  if (quality_range.first == quality_range.second)  // check if custom goal quality range is provided or not
+  {
+    quality_range = goal_set->getGoalQualityRange();
+  }
+  _quality_normalizer = (quality_range.second - quality_range.first);
   _quality_normalizer = _quality_normalizer == 0.0 ? 1.0 : _quality_normalizer;
   _goal_distance.scaled_lambda = lambda / _quality_normalizer;
   _goal_distance.path_cost = path_cost;
-  _max_quality = max_q;
+  assert(_goal_distance.path_cost);
+  _max_quality = quality_range.second;
   // now add the goals to nearest neighbor data structures
-  auto dist_fun = std::bind(&MGGoalDistance::GoalDistanceFn::distance, &_goal_distance, std::placeholders::_1,
+  auto dist_fun = std::bind(&MultiGoalCostToGo::GoalDistanceFn::distance, &_goal_distance, std::placeholders::_1,
                             std::placeholders::_2);
-  _all_goals.setDistanceFunction(dist_fun);
-  for (auto& goal : goals)
+  _goals.setDistanceFunction(dist_fun);
+  for (auto goal_iter = goal_set->begin(); goal_iter != goal_set->end(); ++goal_iter)
   {
-    _all_goals.add(goal);
-    // add it to goals with the same grasp
-    auto iter = _goals.find(goal.grasp_id);
-    if (iter == _goals.end())
-    {
-      // add new gnat for this grasp
-      auto new_gnat = std::make_shared<::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal>>();
-      new_gnat->setDistanceFunction(dist_fun);
-      new_gnat->add(goal);
-      _goals.insert(std::make_pair(goal.grasp_id, new_gnat));
-    }
-    else
-    {
-      iter->second->add(goal);
-    }
+    _goals.add(*goal_iter);
   }
 }
 
-MGGoalDistance::~MGGoalDistance() = default;
+MultiGoalCostToGo::~MultiGoalCostToGo() = default;
 
-double MGGoalDistance::costToGo(const Config& a) const
+double MultiGoalCostToGo::costToGo(const Config& a) const
 {
-  if (_all_goals.size() == 0)
+  if (_goals.size() == 0)
   {
-    throw std::logic_error("[MGGoalDistance::costToGo] No goals known. Can not compute cost to go.");
+    throw std::logic_error("[MultiGoalCostToGo::costToGo] No goals known. Can not compute cost to go.");
   }
   MultiGraspMP::Goal dummy_goal;
   dummy_goal.config = a;
   dummy_goal.quality = _max_quality;
-  const auto& nn = _all_goals.nearest(dummy_goal);
+  const auto& nn = _goals.nearest(dummy_goal);
   return _goal_distance.distance_const(nn, dummy_goal);
 }
 
-double MGGoalDistance::costToGo(const Config& a, unsigned int grasp_id) const
-{
-  auto iter = _goals.find(grasp_id);
-  if (iter == _goals.end())
-  {
-    throw std::logic_error("[MGGoalDistance::costToGo] Could not find GNAT for the given grasp " +
-                           std::to_string(grasp_id));
-  }
-  if (iter->second->size() == 0)
-  {
-    throw std::logic_error("[MGGoalDistance::costToGo] No goal known for the given grasp " + std::to_string(grasp_id));
-  }
-  MultiGraspMP::Goal dummy_goal;
-  dummy_goal.config = a;
-  dummy_goal.quality = _max_quality;
-  const auto& nn = iter->second->nearest(dummy_goal);
-  return _goal_distance.distance_const(nn, dummy_goal);
-}
-
-double MGGoalDistance::getGoalCost(double quality) const
+double MultiGoalCostToGo::qualityToGoalCost(double quality) const
 {
   return _goal_distance.scaled_lambda * (_max_quality - quality);
 }

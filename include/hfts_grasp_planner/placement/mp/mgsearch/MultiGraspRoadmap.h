@@ -108,19 +108,21 @@ private:
   double integrateCosts(const Config& a, const Config& b, const std::function<double(const Config&)>& cost_fn) const;
 };
 
-class CostToGoHeuristic
+// A single function that provides a lower bound on the cost to move between two configurations.
+typedef std::function<double(const Config&, const Config&)> PathCostFn;
+
+/**
+ *  A struct representing the parameters needed to compute a combined goal and path cost:
+ *  cost = path_cost + lambda * goal_cost
+ */
+struct GoalPathCostParameters
 {
-  // TODO do we need this to be a class? Does it have an internal state?
-public:
-  virtual ~CostToGoHeuristic() = 0;
-  virtual double costToGo(const Config& a) const = 0;
-  virtual double costToGo(const Config& a, unsigned int grasp_id) const = 0;
-  /**
-   * Return the cost associated with reaching a goal with the given quality.
-   */
-  virtual double getGoalCost(double quality) const = 0;
+  PathCostFn path_cost;
+  double lambda;
+  GoalPathCostParameters(const PathCostFn& pc, double l) : path_cost(pc), lambda(l)
+  {
+  }
 };
-typedef std::shared_ptr<CostToGoHeuristic> CostToGoHeuristicPtr;
 
 /**
  * This class encapsulates a conditional roadmap for a robot manipulator transporting
@@ -311,6 +313,11 @@ private:
 };
 typedef std::shared_ptr<Roadmap> RoadmapPtr;
 
+// Forward declarations
+class MultiGraspGoalSet;
+typedef std::shared_ptr<MultiGraspGoalSet> MultiGraspGoalSetPtr;
+typedef std::shared_ptr<const MultiGraspGoalSet> MultiGraspGoalSetConstPtr;
+
 class MultiGraspGoalSet
 {
 public:
@@ -366,6 +373,54 @@ public:
    */
   void getGoals(std::vector<MultiGraspMP::Goal>& goals) const;
 
+  // Provides read access to goals in goal set
+  struct GoalIterator
+  {
+    ~GoalIterator() = default;
+    GoalIterator& operator++();
+    bool operator==(const GoalIterator& other) const;
+    bool operator!=(const GoalIterator& other) const;
+    const MultiGraspMP::Goal& operator*();
+    const MultiGraspMP::Goal* operator->();
+    // iterator traits
+    using difference_type = long;
+    using value_type = MultiGraspMP::Goal;
+    using pointer = const MultiGraspMP::Goal*;
+    using reference = const MultiGraspMP::Goal&;
+    using iterator_category = std::forward_iterator_tag;
+
+  private:
+    friend class MultiGraspGoalSet;
+    GoalIterator(std::unordered_map<unsigned int, MultiGraspMP::Goal>::const_iterator iter);
+    std::unordered_map<unsigned int, MultiGraspMP::Goal>::const_iterator _iter;
+  };
+
+  /**
+   * Return forward iterator over this goal set.
+   */
+  GoalIterator begin() const;
+
+  /**
+   * Return end-iterator for this goal set.
+   */
+  GoalIterator end() const;
+
+  /**
+   * Create a new MultiGraspGoalSet from this set that only contains the goals associated with
+   * the grasps in grasp_ids.
+   * @param grasp_ids: set of grasp ids
+   * @return a new grasp goal with all goals from this set for the given grasps
+   */
+  MultiGraspGoalSetPtr createSubset(const std::set<unsigned int>& grasp_ids) const;
+
+  /**
+   * Return the minimal and maximal goal quality from this set.
+   */
+  std::pair<double, double> getGoalQualityRange() const
+  {
+    return _quality_range;
+  }
+
 private:
   // goal id -> goal
   std::unordered_map<unsigned int, MultiGraspMP::Goal> _goals;
@@ -373,43 +428,54 @@ private:
   std::unordered_map<unsigned int, unsigned int> _goal_id_to_roadmap_id;
   // roadmap node id -> goal id
   std::unordered_map<unsigned int, unsigned int> _roadmap_id_to_goal_id;
+  // grasp id -> list of goals with this grasp
+  std::unordered_map<unsigned int, std::set<unsigned int>> _grasp_id_to_goal_ids;
   const RoadmapPtr _roadmap;
+  std::pair<double, double> _quality_range;
+  // updates member variables to include the given goal. rid is roadmap id
+  void addGoalToMembers(const MultiGraspMP::Goal& goal, unsigned int rid);
 };
 
-typedef std::shared_ptr<MultiGraspGoalSet> MultiGraspGoalSetPtr;
-typedef std::shared_ptr<const MultiGraspGoalSet> MultiGraspGoalSetConstPtr;
-
-class MGGoalDistance : public CostToGoHeuristic
+class MultiGoalCostToGo
 {
 public:
+  // TODO this class can not be moved properly for some reason.
   /**
-   * Construct a new multi-grasp cost-to-go function.
+   * Construct a multi-goal cost-to-go function.
    * The cost-to-go function expresses the term
    * h(q) = min_{g in G} (d(q, g) + lambda * cost(g)), where g in G are the goals, d(q_1, q_2) a lower bound on path
    * cost. The cost of a goal cost(g) is computed as cost(g) = (o_max - o_g) / (o_max - o_min) where o_g denotes the
    * goal's quality and o_max = max_{g in G} o_g, o_min = min_{g in G} o_g (larger qualities are better). The parameter
-   * lambda scales between the grasp cost, which is in range [0, 1], and the path cost d(q1, q2). Note: For new goals,
+   * lambda scales between the goal cost, which is in range [0, 1], and the path cost d(q1, q2). Note: For new goals,
    * you need to construct a new instance, due to the fact that goal quality values are normalized w.r.t min and max
    * quality.
    *
-   * @param goal_set - goals
-   * @param path_cost - lower bound on path cost to move from one configuration to another
-   * @param lambda - parameter to scale between path cost and grasp cost
+   * This function ignores the grasps that each goal is for. If you need a cost-to-go function for a specific
+   * grasp, simply create a new MultiGoalCostToGo with only the goals for the grasp of interest.
+   *
+   * @param goal_set: goals
+   * @param path_cost: lower bound on path cost to move from one configuration to another
+   * @param lambda:  parameter to scale between path cost and grasp cost
+   * @param quality_range: the minimal and maximal goal quality (min, max). If not provided, these values are obtained
+   * by iterating over goal_set.
    */
-  MGGoalDistance(MultiGraspGoalSetConstPtr goal_set,
-                 const std::function<double(const Config&, const Config&)>& path_cost, double lambda);
-  ~MGGoalDistance();
-  // interface functions
-  double costToGo(const Config& a) const override;
-  double costToGo(const Config& a, unsigned int grasp_id) const override;
+  MultiGoalCostToGo(MultiGraspGoalSetConstPtr goal_set, const PathCostFn& path_cost, double lambda,
+                    std::pair<double, double> quality_range = {0.0, 0.0});
+  MultiGoalCostToGo(MultiGraspGoalSetConstPtr goal_set, const GoalPathCostParameters& params,
+                    std::pair<double, double> quality_range = {0.0, 0.0});
+  ~MultiGoalCostToGo();
+  /**
+   * Return a lower bound of the cost to go from a to any of the goals given upon construction.
+   */
+  double costToGo(const Config& a) const;
   // return the goal cost of a goal with the given quality
-  double getGoalCost(double quality) const override;
+  double qualityToGoalCost(double quality) const;
 
 private:
   struct GoalDistanceFn
   {
     double scaled_lambda;
-    std::function<double(const Config&, const Config&)> path_cost;
+    PathCostFn path_cost;
     double distance(const MultiGraspMP::Goal& ga, const MultiGraspMP::Goal& gb)
     {
       return distance_const(ga, gb);
@@ -419,14 +485,12 @@ private:
       return path_cost(ga.config, gb.config) + scaled_lambda * abs(ga.quality - gb.quality);
     }
   };
-  // grasp id -> gnat per grasp
-  std::unordered_map<unsigned int, std::shared_ptr<::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal>>> _goals;
-  ::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal> _all_goals;
+  ::ompl::NearestNeighborsGNAT<MultiGraspMP::Goal> _goals;
   GoalDistanceFn _goal_distance;
   double _max_quality;
   double _quality_normalizer;
 };
-typedef std::shared_ptr<MGGoalDistance> MGGoalDistancePtr;
+typedef std::shared_ptr<MultiGoalCostToGo> MultiGoalCostToGoPtr;
 }  // namespace mgsearch
 }  // namespace mp
 }  // namespace placement
