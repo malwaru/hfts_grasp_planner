@@ -1,4 +1,5 @@
 #include <cmath>
+#include <algorithm>
 #include <hfts_grasp_planner/placement/mp/mgsearch/Graphs.h>
 
 using namespace placement::mp::mgsearch;
@@ -28,7 +29,7 @@ bool SingleGraspRoadmapGraph::NeighborIterator::operator!=(const SingleGraspRoad
   return not operator==(other);
 }
 
-uint SingleGraspRoadmapGraph::NeighborIterator::operator*()
+unsigned int SingleGraspRoadmapGraph::NeighborIterator::operator*()
 {
   return _iter->first;
 }
@@ -59,7 +60,7 @@ void SingleGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
 }
 
 SingleGraspRoadmapGraph::NeighborIterator
-SingleGraspRoadmapGraph::NeighborIterator::begin(uint v, bool lazy, SingleGraspRoadmapGraph const* parent)
+SingleGraspRoadmapGraph::NeighborIterator::begin(unsigned int v, bool lazy, SingleGraspRoadmapGraph const* parent)
 {
   auto node = parent->_roadmap->getNode(v);
   if (!node)
@@ -72,7 +73,7 @@ SingleGraspRoadmapGraph::NeighborIterator::begin(uint v, bool lazy, SingleGraspR
 }
 
 SingleGraspRoadmapGraph::NeighborIterator
-SingleGraspRoadmapGraph::NeighborIterator::end(uint v, SingleGraspRoadmapGraph const* parent)
+SingleGraspRoadmapGraph::NeighborIterator::end(unsigned int v, SingleGraspRoadmapGraph const* parent)
 {
   auto node = parent->_roadmap->getNode(v);
   if (!node)
@@ -112,7 +113,7 @@ void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned
 }
 
 std::pair<SingleGraspRoadmapGraph::NeighborIterator, SingleGraspRoadmapGraph::NeighborIterator>
-SingleGraspRoadmapGraph::getSuccessors(uint v, bool lazy) const
+SingleGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy) const
 {
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
@@ -124,7 +125,7 @@ void SingleGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsign
 }
 
 std::pair<SingleGraspRoadmapGraph::NeighborIterator, SingleGraspRoadmapGraph::NeighborIterator>
-SingleGraspRoadmapGraph::getPredecessors(uint v, bool lazy) const
+SingleGraspRoadmapGraph::getPredecessors(unsigned int v, bool lazy) const
 {
   return getSuccessors(v, lazy);
 }
@@ -174,14 +175,14 @@ bool SingleGraspRoadmapGraph::isGoal(unsigned int v) const
   return _goal_set->isGoal(node->uid, _grasp_id);
 }
 
-double SingleGraspRoadmapGraph::getGoalCost(uint v) const
+double SingleGraspRoadmapGraph::getGoalCost(unsigned int v) const
 {
   auto node = _roadmap->getNode(v);
   assert(node);
   auto [goal_id, is_goal] = _goal_set->getGoalId(node->uid, _grasp_id);
   if (not is_goal)
   {
-    return 0.0;
+    return std::numeric_limits<double>::infinity();
   }
   return _cost_to_go.qualityToGoalCost(_goal_set->getGoal(goal_id).quality);
 }
@@ -194,13 +195,14 @@ double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
   return _cost_to_go.costToGo(node->config);
 }
 
-std::pair<uint, uint> SingleGraspRoadmapGraph::getGraspRoadmapId(uint vid) const
+std::pair<unsigned int, unsigned int> SingleGraspRoadmapGraph::getGraspRoadmapId(unsigned int vid) const
 {
   return {vid, _grasp_id};
 }
 
 /************************************* MultiGraspRoadmapGraph::NeighborIterator ********************************/
-MultiGraspRoadmapGraph::NeighborIterator::NeighborIterator(uint v, bool lazy, MultiGraspRoadmapGraph const* parent)
+MultiGraspRoadmapGraph::NeighborIterator::NeighborIterator(unsigned int v, bool lazy,
+                                                           MultiGraspRoadmapGraph const* parent)
   : _v(v), _lazy(lazy), _graph(parent), _edge_to_0_returned(false)
 {
   if (_v == 0)
@@ -266,11 +268,11 @@ bool MultiGraspRoadmapGraph::NeighborIterator::operator!=(const MultiGraspRoadma
   return not operator==(other);
 }
 
-uint MultiGraspRoadmapGraph::NeighborIterator::operator*()
+unsigned int MultiGraspRoadmapGraph::NeighborIterator::operator*()
 {
   if (_v == 0)
   {
-    uint gid = *_grasp_iter;
+    unsigned int gid = *_grasp_iter;
     return _graph->toGraphKey(gid, _graph->_roadmap_start_id);
   }
   // else
@@ -279,7 +281,7 @@ uint MultiGraspRoadmapGraph::NeighborIterator::operator*()
     return 0;
   }
   // else
-  uint rid = _iter->first;
+  unsigned int rid = _iter->first;
   return _graph->toGraphKey(_grasp_id, rid);
 }
 
@@ -311,7 +313,7 @@ void MultiGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
 }
 
 MultiGraspRoadmapGraph::NeighborIterator
-MultiGraspRoadmapGraph::NeighborIterator::begin(uint v, bool lazy, MultiGraspRoadmapGraph const* graph)
+MultiGraspRoadmapGraph::NeighborIterator::begin(unsigned int v, bool lazy, MultiGraspRoadmapGraph const* graph)
 {
   if (v != 0)
   {
@@ -324,7 +326,7 @@ MultiGraspRoadmapGraph::NeighborIterator::begin(uint v, bool lazy, MultiGraspRoa
 }
 
 MultiGraspRoadmapGraph::NeighborIterator
-MultiGraspRoadmapGraph::NeighborIterator::end(uint v, MultiGraspRoadmapGraph const* graph)
+MultiGraspRoadmapGraph::NeighborIterator::end(unsigned int v, MultiGraspRoadmapGraph const* graph)
 {
   NeighborIterator end_iter(v, true, graph);
   end_iter._grasp_iter = graph->_grasp_ids.end();  // covers end condition for v = 0
@@ -380,7 +382,7 @@ void MultiGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned 
 }
 
 std::pair<MultiGraspRoadmapGraph::NeighborIterator, MultiGraspRoadmapGraph::NeighborIterator>
-MultiGraspRoadmapGraph::getSuccessors(uint v, bool lazy) const
+MultiGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy) const
 {
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
@@ -392,7 +394,7 @@ void MultiGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigne
 }
 
 std::pair<MultiGraspRoadmapGraph::NeighborIterator, MultiGraspRoadmapGraph::NeighborIterator>
-MultiGraspRoadmapGraph::getPredecessors(uint v, bool lazy) const
+MultiGraspRoadmapGraph::getPredecessors(unsigned int v, bool lazy) const
 {
   return getSuccessors(v, lazy);
 }
@@ -460,11 +462,11 @@ bool MultiGraspRoadmapGraph::isGoal(unsigned int v) const
   return _goal_set->isGoal(rnid, grasp_id);
 }
 
-double MultiGraspRoadmapGraph::getGoalCost(uint v) const
+double MultiGraspRoadmapGraph::getGoalCost(unsigned int v) const
 {
   if (v == 0)
   {  // can not be a goal
-    return 0.0;
+    return std::numeric_limits<double>::infinity();
   }
   auto [grasp_id, rnid] = toRoadmapKey(v);
   auto node = _roadmap->getNode(rnid);
@@ -472,7 +474,7 @@ double MultiGraspRoadmapGraph::getGoalCost(uint v) const
   auto [goal_id, is_goal] = _goal_set->getGoalId(node->uid, grasp_id);
   if (not is_goal)
   {
-    return 0.0;
+    return std::numeric_limits<double>::infinity();
   }
   return _all_grasps_cost_to_go.qualityToGoalCost(_goal_set->getGoal(goal_id).quality);
 }
@@ -492,7 +494,7 @@ double MultiGraspRoadmapGraph::heuristic(unsigned int v) const
   return _individual_cost_to_go.at(grasp_id)->costToGo(node->config);
 }
 
-std::pair<uint, uint> MultiGraspRoadmapGraph::getGraspRoadmapId(uint vid) const
+std::pair<unsigned int, unsigned int> MultiGraspRoadmapGraph::getGraspRoadmapId(unsigned int vid) const
 {
   if (vid == 0)
   {

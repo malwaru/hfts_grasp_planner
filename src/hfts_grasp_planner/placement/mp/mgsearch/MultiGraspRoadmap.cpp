@@ -541,12 +541,12 @@ void MultiGraspGoalSet::removeGoals(const std::vector<unsigned int>& goal_ids)
   }
 }
 
-bool MultiGraspGoalSet::isGoal(Roadmap::NodePtr node, unsigned int grasp_id)
+bool MultiGraspGoalSet::isGoal(Roadmap::NodePtr node, unsigned int grasp_id) const
 {
   return isGoal(node->uid, grasp_id);
 }
 
-bool MultiGraspGoalSet::isGoal(unsigned int node_id, unsigned int grasp_id)
+bool MultiGraspGoalSet::isGoal(unsigned int node_id, unsigned int grasp_id) const
 {
   // check whether this roadmap node is affiliated with a goal
   unsigned int goal_id;
@@ -560,6 +560,11 @@ bool MultiGraspGoalSet::isGoal(unsigned int node_id, unsigned int grasp_id)
   return grasp_id == _goals.at(goal_id).grasp_id;
 }
 
+bool MultiGraspGoalSet::canBeGoal(unsigned int node_id) const
+{
+  return _roadmap_id_to_goal_id.find(node_id) != _roadmap_id_to_goal_id.end();
+}
+
 std::pair<unsigned int, bool> MultiGraspGoalSet::getGoalId(unsigned int node_id, unsigned int grasp_id)
 {
   auto iter = _roadmap_id_to_goal_id.find(node_id);
@@ -570,6 +575,16 @@ std::pair<unsigned int, bool> MultiGraspGoalSet::getGoalId(unsigned int node_id,
   // get the grasp for this goal
   bool valid_grasp = _goals.at(iter->second).grasp_id == grasp_id;
   return {iter->second, valid_grasp};
+}
+
+std::vector<unsigned int> MultiGraspGoalSet::getGoalIds(unsigned int node_id) const
+{
+  auto iter = _roadmap_id_to_goal_id.find(node_id);
+  if (iter == _roadmap_id_to_goal_id.end())
+  {
+    return {};
+  }
+  return {iter->second};  // TODO what if there are multiple goals at the same node?
 }
 
 void MultiGraspGoalSet::getGoals(std::vector<MultiGraspMP::Goal>& goals) const
@@ -605,6 +620,16 @@ MultiGraspGoalSetPtr MultiGraspGoalSet::createSubset(const std::set<unsigned int
     }
   }
   return new_goal_set;
+}
+
+std::set<unsigned int> MultiGraspGoalSet::getGraspSet() const
+{
+  std::set<unsigned int> grasp_ids;
+  for (auto id_goal_pair : _goals)
+  {
+    grasp_ids.insert(id_goal_pair.second.grasp_id);
+  }
+  return grasp_ids;
 }
 
 void MultiGraspGoalSet::addGoalToMembers(const MultiGraspMP::Goal& goal, unsigned int rid)

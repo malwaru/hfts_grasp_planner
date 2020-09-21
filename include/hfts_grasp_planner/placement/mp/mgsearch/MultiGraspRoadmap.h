@@ -189,7 +189,8 @@ public:
     // flag whether base_cost is true base cost or just a lower bound
     bool base_evaluated;
     // maps grasp id to a cost
-    std::unordered_map<unsigned int, double> conditional_costs;
+    typedef std::unordered_map<unsigned int, double> GraspConditionalCostMap;
+    GraspConditionalCostMap conditional_costs;
     NodeWeakPtr node_a;
     NodeWeakPtr node_b;
     Edge(NodePtr a, NodePtr b, double bc);
@@ -355,18 +356,28 @@ public:
   /**
    *  Return whether the given node is a goal under the given grasp.
    */
-  bool isGoal(Roadmap::NodePtr node, unsigned int grasp_id);
+  bool isGoal(Roadmap::NodePtr node, unsigned int grasp_id) const;
 
   /**
    *  Return whether the roadmap node with id <node_id> is a goal under the given grasp id.
    */
-  bool isGoal(unsigned int node_id, unsigned int grasp_id);
+  bool isGoal(unsigned int node_id, unsigned int grasp_id) const;
+
+  /**
+   * Return whether there exists a grasp for which the roadmap node with id <node_id> is a goal.
+   */
+  bool canBeGoal(unsigned int node_id) const;
 
   /**
    * Return the goal id associated with the roadmap node under the given grasp.
    * If the node is not a goal for this grasp, the returned bool is false, and the returned id meaningless.
    */
   std::pair<unsigned int, bool> getGoalId(unsigned int node_id, unsigned int grasp_id);
+
+  /**
+   * Return the ids of all goals associated with the given roadmap node.
+   */
+  std::vector<unsigned int> getGoalIds(unsigned int node_id) const;
 
   /**
    * Return a vector containing all currently active goals.
@@ -414,6 +425,11 @@ public:
   MultiGraspGoalSetPtr createSubset(const std::set<unsigned int>& grasp_ids) const;
 
   /**
+   * Return a set containing the grasp ids for which this goal set contains goals.
+   */
+  std::set<unsigned int> getGraspSet() const;
+
+  /**
    * Return the minimal and maximal goal quality from this set.
    */
   std::pair<double, double> getGoalQualityRange() const
@@ -426,7 +442,7 @@ private:
   std::unordered_map<unsigned int, MultiGraspMP::Goal> _goals;
   // goal id -> roadmap node id
   std::unordered_map<unsigned int, unsigned int> _goal_id_to_roadmap_id;
-  // roadmap node id -> goal id
+  // roadmap node id -> goal id; TODO: what if there are multiple goals for the same roadmap node?
   std::unordered_map<unsigned int, unsigned int> _roadmap_id_to_goal_id;
   // grasp id -> list of goals with this grasp
   std::unordered_map<unsigned int, std::set<unsigned int>> _grasp_id_to_goal_ids;
