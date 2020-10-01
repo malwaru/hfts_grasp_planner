@@ -565,6 +565,11 @@ bool MultiGraspGoalSet::canBeGoal(unsigned int node_id) const
   return _roadmap_id_to_goal_id.find(node_id) != _roadmap_id_to_goal_id.end();
 }
 
+unsigned int MultiGraspGoalSet::getRoadmapId(unsigned int goal_id) const
+{
+  return _goal_id_to_roadmap_id.at(goal_id);
+}
+
 std::pair<unsigned int, bool> MultiGraspGoalSet::getGoalId(unsigned int node_id, unsigned int grasp_id)
 {
   auto iter = _roadmap_id_to_goal_id.find(node_id);

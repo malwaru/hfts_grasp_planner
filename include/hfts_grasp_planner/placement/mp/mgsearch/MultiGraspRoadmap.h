@@ -369,6 +369,11 @@ public:
   bool canBeGoal(unsigned int node_id) const;
 
   /**
+   * Return the roadmap id of the goal with the given id.
+   */
+  unsigned int getRoadmapId(unsigned int goal_id) const;
+
+  /**
    * Return the goal id associated with the roadmap node under the given grasp.
    * If the node is not a goal for this grasp, the returned bool is false, and the returned id meaningless.
    */

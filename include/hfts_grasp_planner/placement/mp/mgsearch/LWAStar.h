@@ -27,7 +27,7 @@ struct PQElement
   const unsigned int v;  // the node that can be reached
   const unsigned int p;  // the parent
   double g_value;        // g value that v can be reached with if going through p
-  const double h_value;  // h(v)
+  double h_value;        // h(v)
   PQElement(unsigned int _v, unsigned int _p, double _g, double _h) : v(_v), p(_p), g_value(_g), h_value(_h)
   {
   }
@@ -66,7 +66,58 @@ struct VertexData
 };
 
 typedef std::unordered_map<unsigned int, VertexData> VertexDataMap;
+typedef std::unordered_map<unsigned int, std::list<PQElement>> WaitingListsMap;
 
+/**
+ * Add the given PQ element to the pq or waiting list depending on the heuristic type.
+ * If the heuristic is stationary, the element is always added to pq.
+ * If the heuristic is non-stationary and new_elemn.h_value is infinite, new_elem is added
+ * to waiting_lists as a dependency on the vertex that needs to be explored first
+ * for h_value to be computable. If new_elem.h_value is finite, new_elem is added to pq.
+ */
+template <typename G, typename PQ>
+void addToPQ(G& graph, PQ& pq, WaitingListsMap& waiting_lists, const PQElement& new_elem)
+{
+  if constexpr (G::heuristic_stationary::value)
+  {
+    pq.push(new_elem);
+  }
+  else
+  {
+    // the heuristic may depend on us closing other vertices first. if so add the PQelement to a waiting list
+    if (std::isinf(new_elem.h_value))
+    {
+      unsigned int dependent_v = graph.getHeuristicDependentVertex(new_elem.v);
+      waiting_lists[dependent_v].push_back(new_elem);
+    }
+    else
+    {
+      pq.push(new_elem);
+    }
+  }
+}
+
+/**
+ * Adds all PQElements in waiting_lists that are waiting for v to pq.
+ * Removes waiting_lists[v] afterwards.
+ * Only makes sense for non-stationary heuristic.
+ */
+template <typename G, typename PQ>
+void flushWaitingList(G& graph, PQ& pq, WaitingListsMap& waiting_lists, unsigned int v)
+{
+  static_assert(not G::heuristic_stationary::value);
+  auto iter = waiting_lists.find(v);
+  if (iter != waiting_lists.end())
+  {
+    for (auto& pq_elem : iter->second)
+    {
+      pq_elem.h_value = graph.heuristic(pq_elem.v);
+      assert(not std::isinf(pq_elem.h_value));
+      pq.push(pq_elem);
+    }
+    waiting_lists.erase(iter);
+  }
+}
 /**
  * LWA* search algorithm.
  * The template parameter G needs to be of a type implementing the GraspAgnosticGraph interface specified in Graphs.h.
@@ -74,7 +125,7 @@ typedef std::unordered_map<unsigned int, VertexData> VertexDataMap;
  * most efficient one is and use that
  */
 template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost::heap::compare<PQElementCompare>>>
-void lwaStarSearch(const G& graph, SearchResult& result)
+void lwaStarSearch(G& graph, SearchResult& result)
 {
   utils::ScopedProfiler("lwaStarSearch");
   unsigned int v_start = graph.getStartNode();
@@ -87,6 +138,8 @@ void lwaStarSearch(const G& graph, SearchResult& result)
   // initialize algorithm data structures
   PQ pq;
   VertexDataMap vertex_data;
+  WaitingListsMap waiting_lists;  // waiting list for PQElements for which we don't have stationary h-values yet (in
+                                  // case h is adaptive)
   if (graph.checkValidity(v_start))
   {
     vertex_data.emplace(std::make_pair(v_start, VertexData(v_start, 0.0, v_start)));
@@ -103,24 +156,29 @@ void lwaStarSearch(const G& graph, SearchResult& result)
       vertex_data.at(current_el.v).closed = true;
       continue;
     }
-    // compute true edge cost
+    // check whether current_el is ready for extension, i.e. whether we have the true g
     double true_edge_cost = current_el.p != current_el.v ? graph.getEdgeCost(current_el.p, current_el.v, false) : 0.0;
-    double true_g = vertex_data.at(current_el.p).g + true_edge_cost;
-    // add element back to queue if cost is now larger yet finite
-    if (true_g > current_el.g_value)
+    double old_g = current_el.g_value;
+    current_el.g_value = vertex_data.at(current_el.p).g + true_edge_cost;
+    // we can extend if there is no change, else we should add the element back if the new g is finite
+    if (old_g != current_el.g_value)
     {
-      if (not std::isinf(true_g))
+      if (not std::isinf(current_el.g_value))
       {
-        current_el.g_value = true_g;
         pq.push(current_el);
       }
     }
     else
     {  // we can extend v
-      assert(current_el.g_value == true_g);
       vertex_data.at(current_el.v).closed = true;
-      vertex_data.at(current_el.v).g = true_g;
       vertex_data.at(current_el.v).p = current_el.p;
+      vertex_data.at(current_el.v).g = current_el.g_value;
+      // register minimal cost
+      graph.registerMinimalCost(current_el.v, current_el.g_value);
+      if constexpr (not G::heuristic_stationary::value)
+      {  // add dependent PQElements to PQ in case we have a non-stationary heuristic type
+        flushWaitingList(graph, pq, waiting_lists, current_el.v);
+      }
       if (graph.isGoal(current_el.v))
       {  // is it a goal?
         result.solved = true;
@@ -165,7 +223,7 @@ void lwaStarSearch(const G& graph, SearchResult& result)
             continue;
           }
           // in any case, add a new pq element representing the possibility to reach s from v
-          pq.push(PQElement(s, current_el.v, g_s, graph.heuristic(s)));
+          addToPQ(graph, pq, waiting_lists, PQElement(s, current_el.v, g_s, graph.heuristic(s)));
         }
       }
     }

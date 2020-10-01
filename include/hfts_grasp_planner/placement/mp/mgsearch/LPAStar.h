@@ -89,7 +89,7 @@ public:
    * variable. Hence, an instance of this class should only live as long as the
    * graph.
    */
-  LPAStarAlgorithm(const G& graph) : _graph(graph)
+  LPAStarAlgorithm(G& graph) : _graph(graph)
   {
     _v_start = _graph.getStartNode();
     // initialize start state
@@ -173,7 +173,7 @@ protected:
   VertexDataMap _vertex_data;
   SearchResult _result;
   Key _goal_key;
-  const G& _graph;
+  G& _graph;
   unsigned int _v_start;
 
   // inner loop for when using explicit edge evaluation
@@ -379,7 +379,7 @@ protected:
  * @param result: Struct that will contain the search result
  */
 template <typename G, EdgeCostEvaluationType ee_type>
-void lpaStarSearch(const G& graph, SearchResult& result)
+void lpaStarSearch(G& graph, SearchResult& result)
 {
   utils::ScopedProfiler("lpaStarSearch");
   LPAStarAlgorithm<G, ee_type> algorithm(graph);

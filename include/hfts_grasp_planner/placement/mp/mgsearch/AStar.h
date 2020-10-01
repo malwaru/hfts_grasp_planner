@@ -61,12 +61,14 @@ struct VertexData
 
 /**
  * A* search algorithm.
- * The template parameter G needs to be of a type implementing the GraspAgnosticGraph interface specified in Graphs.h.
+ * The template parameter G needs to be of a type implementing the GraspAgnosticGraph interface specified in Graphs.h
+ * with a stationary heuristic.
  * The template parameter PQ needs to be a boost::heap
  */
 template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost::heap::compare<PQElementCompare>>>
-void aStarSearch(const G& graph, SearchResult& result)
+void aStarSearch(G& graph, SearchResult& result)
 {
+  static_assert(G::heuristic_stationary::value);
   utils::ScopedProfiler("aStarSearch");
   // get start node
   unsigned int v_start = graph.getStartNode();

@@ -27,7 +27,7 @@ public:
   /**
    * Check the validity of v.
    */
-  bool checkValidity(unsigned int v) const;
+  bool checkValidity(unsigned int v);
 
   /**
    * Return all successor nodes of the node v.
@@ -37,7 +37,7 @@ public:
    *      not be reachable through v, i.e. cost(v, u) could be infinity.
    *      if false, the true cost cost(v, u) is computed first and only us with finite cost are returned.
    */
-  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
+  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false);
 
   /**
    * Just like above getSuccessors function but returning iterators instead.
@@ -47,13 +47,13 @@ public:
    *      if false, the true cost cost(v, u) is computed first and only us with finite cost are returned.
    * @return <begin, end> - begin and end iterators
    */
-  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false) const;
+  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false);
 
   /**
    * Just like getSuccessors but predecessors. In case of a directed graph, identical to getSuccessors.
    */
-  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
-  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false) const;
+  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
 
   /**
    * Get a cost for the edge from v1 to v2. Optionally, a lower bound of the cost.
@@ -61,7 +61,7 @@ public:
    * @param v2 - id of second node
    * @param lazy - if true, return only the best known lower bound cost of the edge, else compute true cost
    */
-  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
+  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
 
   /**
    * Return whether the true cost from v1 to v2 has been computed yet.
@@ -93,6 +93,15 @@ public:
   // Technically not a function of the graph, but the graph might have its own encoding of vertices, so the
   // heuristic needs to be connected to the graph anyways.
   double heuristic(unsigned int v) const;
+
+  /**
+   * Inform the heuristic about the minimal cost to reach v from the start node.
+   * This information may be used to improve the heuristic.
+   */
+  void registerMinimalCost(unsigned int v, double cost);
+
+  // A flag whether the heuristic is stationary
+  typedef std::bool_constant<true> heuristic_stationary;
 };
 
 // class GraspAwareGraph {
@@ -149,17 +158,20 @@ public:
                           unsigned int start_id);
   ~SingleGraspRoadmapGraph();
   // GraspAgnostic graph interface
-  bool checkValidity(unsigned int v) const;
-  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
-  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false) const;
-  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
-  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false) const;
-  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
+  bool checkValidity(unsigned int v);
+  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false);
+  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
+  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
   bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
   unsigned int getStartNode() const;
   bool isGoal(unsigned int v) const;
   double getGoalCost(unsigned int v) const;
   double heuristic(unsigned int v) const;
+  // no-op
+  void registerMinimalCost(unsigned int v, double cost);
+  typedef std::bool_constant<true> heuristic_stationary;
 
   std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;
 
@@ -227,17 +239,20 @@ public:
                          const std::set<unsigned int>& grasp_ids, unsigned int start_id);
   ~MultiGraspRoadmapGraph();
   // GraspAgnostic graph interface
-  bool checkValidity(unsigned int v) const;
-  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false) const;
-  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false) const;
-  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false) const;
-  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false) const;
-  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false) const;
+  bool checkValidity(unsigned int v);
+  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false);
+  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
+  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
   bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
   unsigned int getStartNode() const;
   bool isGoal(unsigned int v) const;
   double getGoalCost(unsigned int v) const;
   double heuristic(unsigned int v) const;
+  // no-op
+  void registerMinimalCost(unsigned int v, double cost);
+  typedef std::bool_constant<true> heuristic_stationary;
 
   // roadmap id, grasp id
   std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;
@@ -264,6 +279,393 @@ private:
   unsigned int toGraphKey(unsigned int grasp_id, unsigned int roadmap_id) const;
   mutable unsigned int _num_graph_nodes;
 };
+
+/**
+ * Heuristic types for layers of the FoldedMultiGraspRoadmapGraph other than the base layer.
+ */
+enum BackwardsHeuristicType
+{
+  LowerBound,  // simply compute the lower bound c_l(v, s) of the path cost to go to the start, h_i(v) = c_l(v, s)
+  // BestKnownDistance,            // use registered shortest path costs to start, i.e. h_i(v) = min(g(v), c_l(v, s))
+  SearchAwareBestKnownDistance  // estimate g(v) from the current f-values, i.e. h_i(v) = min(g(v), max(f_c - h_0(v),
+                                // c_l(v, s))), where f_c is the current f value and h_0(v) the heuristic of v's
+                                // corresponding vertex in the base layer
+};
+/**
+ * The FoldedMultiGraspRoadmapGraph is a special graph view on a MultiGraspRoadmap that aims to facilitate
+ * exploiting similarities between the different cost spaces across grasps. Similar to the MultiGraspRoadmapGraph
+ * this graph consists of different layers, where each layer represents the roadmap conditioned on a different grasp.
+ * In addition, this graph contains a root layer representing the roadmap without any grasp, i.e. only the robot.
+ * Let in the following "vertex" refer to a vertex in this graph and "node" refer to a node, i.e. a configuration, in
+ * the roadmap. The start vertex of the graph is at the start roadmap node in the root layer. From there, most vertices
+ * are only adjacent to other vertices within the same layer. An exception to this are the vertices in the base layer
+ * that are at the goal configurations (nodes). Rather than being goal vertices, these vertices instead connect to the
+ * other layers of the graph with a special edge that has negative costs. This cost is computed dynamically and
+ * represents the lower bound on the cost of moving from the start node to the respective goal node.
+ * The actual goal vertices are the vertices at the start node in the layers associated with specific grasps. This
+ * means that any valid path first moves through the base layer to a goal node and from there into the layer of the
+ * grasp that the goal is associated with and then in this layer back to the start node.
+ * The advantage of this structure is that a search algorithm can first explore the base layer, which provides
+ * significant information for all grasps, before commiting to a specific grasp.
+ *
+ * This is achieved by dynamically adjusting the heuristic values depending on what the search algorithm has discovered.
+ * For this dynamic adjustment, the graph provides a function registerMinimalCost(v, cost) that a search algorithm
+ * should call after the minimal cost for v has been computed. The registration of minimal costs on the base layer, i.e.
+ * shortest path costs to move to a node without considering any grasp, allows to provide strong heuristic values for
+ * the return paths through the grasp-specific layers.
+ *
+ * To evaluate the effect of the backwards heuristic, this class is parameterized by the enum BackwardsHeuristicType.
+ * It governs how the heuristic for vertices in the grasp-specific layers is computed.
+ */
+template <BackwardsHeuristicType htype>
+class FoldedMultiGraspRoadmapGraph
+{
+public:
+  struct NeighborIterator
+  {
+    NeighborIterator(const NeighborIterator& other);
+    NeighborIterator(NeighborIterator&& other);
+    ~NeighborIterator() = default;
+    NeighborIterator& operator++();
+    bool operator==(const NeighborIterator& other) const;
+    bool operator!=(const NeighborIterator& other) const;
+    unsigned int operator*();
+    // iterator traits
+    using difference_type = long;
+    using value_type = unsigned int;
+    using pointer = const unsigned int*;
+    using reference = const unsigned int&;
+    using iterator_category = std::forward_iterator_tag;
+
+    static NeighborIterator begin(unsigned int v, bool forward, bool lazy, FoldedMultiGraspRoadmapGraph const* graph);
+    static NeighborIterator end(unsigned int v, bool forward, bool lazy, FoldedMultiGraspRoadmapGraph const* graph);
+
+    struct IteratorImplementation
+    {
+      // virtual bool equals(const std::unique_ptr<IteratorImplementation>& other) const = 0;
+      virtual ~IteratorImplementation() = 0;
+      virtual bool equals(const IteratorImplementation* const other) const = 0;
+      virtual unsigned int dereference() const = 0;
+      virtual void next() = 0;
+      virtual std::unique_ptr<IteratorImplementation> copy() const = 0;
+      virtual void setToEnd() = 0;
+    };
+
+  private:
+    NeighborIterator(unsigned int v, bool forward, bool lazy, FoldedMultiGraspRoadmapGraph const* parent);
+    std::unique_ptr<IteratorImplementation> _impl;
+  };
+
+  /**
+   * Create a new MultiGraspRoadmapGraph defined by the given roadmap for the given grasps.
+   * @param roadmap - roadmap to use
+   * @param goal_set: Set of goals containing goals for the given grasps
+   * @param cost_params: Parameters for the goal-path cost tradeoff
+   * @param start_id - the id of the roadmap node that defines the start node
+   */
+  FoldedMultiGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
+                               ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set,
+                               const ::placement::mp::mgsearch::GoalPathCostParameters& cost_params,
+                               unsigned int start_id);
+
+  ~FoldedMultiGraspRoadmapGraph() = default;
+
+  // GraspAgnostic graph interface
+  bool checkValidity(unsigned int v);
+
+  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false);
+  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
+
+  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
+  bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
+  unsigned int getStartNode() const;
+
+  bool isGoal(unsigned int v) const;
+  double getGoalCost(unsigned int v) const;
+  double heuristic(unsigned int v) const;
+
+  // cost aware interface
+  void registerMinimalCost(unsigned int v, double cost);
+  typedef std::is_same<std::integral_constant<BackwardsHeuristicType, htype>,
+                       std::integral_constant<BackwardsHeuristicType, BackwardsHeuristicType::LowerBound>>
+      heuristic_stationary;
+  // return the id of the vertex v0 that needs to be closed so that v has a valid heuristic value
+  unsigned int getHeuristicDependentVertex(unsigned int v) const;
+
+  /**
+   * Return the roadmap id and grasp id associated with the given vertex.
+   * @return ((rid, gid), gid_valid): The flag gid_valid is true if vid is a vertex associated with
+   *  a specific grasp. If it is not, i.e. on the base layer, gid_valid is false.
+   */
+  std::pair<std::pair<unsigned int, unsigned int>, bool> getGraspRoadmapId(unsigned int vid) const;
+
+private:
+  const ::placement::mp::mgsearch::RoadmapPtr _roadmap;
+  const ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
+  const ::placement::mp::mgsearch::MultiGoalCostToGo _cost_to_go;
+  const ::placement::mp::mgsearch::PathCostFn _lower_bound;
+  // const BackwardsHeuristicType _htype;
+  const unsigned int _start_rid;  // roadmap id of the start node
+
+  struct VertexInformation
+  {
+    VertexInformation(unsigned int rid, unsigned int lid) : roadmap_id(rid), layer_id(lid)
+    {
+    }
+    VertexInformation() : roadmap_id(0), layer_id(0)
+    {
+    }
+    VertexInformation(const VertexInformation&) = default;
+    unsigned int roadmap_id;
+    unsigned int layer_id;  // grasp_id + 1 (0 = base layer = no grasp)
+  };
+
+  // array of vertex information, indexed by vertex id
+  mutable std::vector<VertexInformation> _vertex_info;
+  // map from (roadmap_id, layer_id) -> vertex_id.
+  typedef std::pair<unsigned int, unsigned int> GraspNodeIDPair;
+  mutable std::unordered_map<GraspNodeIDPair, unsigned int, boost::hash<GraspNodeIDPair>> _vertex_ids;
+  // maps vertex id to registered path cost
+  std::unordered_map<unsigned int, double> _registered_costs;
+
+  // convenience function to add/retrieve vertex id from _vertex_ids
+  unsigned int getVertexId(unsigned int roadmap_id, unsigned int layer_id) const;
+
+  double baseLayerHeuristic(unsigned int v) const;
+  /**** Heuristic implementations for grasp-specific layers  ****/
+  // simple lower bound heuristic
+  double getLowerBound(unsigned int v) const;
+
+  double graspLayerHeuristicImplementation(
+      unsigned int v,
+      const std::integral_constant<BackwardsHeuristicType, BackwardsHeuristicType::LowerBound>& htype_flag) const;
+
+  double graspLayerHeuristicImplementation(
+      unsigned int v,
+      const std::integral_constant<BackwardsHeuristicType, BackwardsHeuristicType::SearchAwareBestKnownDistance>&
+          htype_flag) const;
+  // Iterator implementations
+  /**
+   * Neighbor iterator for vertices that are only adjacent to other vertices in the same layer.
+   * Template arguments:
+   *  lazy = lazy cost evaluation
+   *  base = base layer
+   */
+  template <bool lazy, bool base>
+  class InLayerIterator : public NeighborIterator::IteratorImplementation
+  {
+  public:
+    InLayerIterator(unsigned int v, FoldedMultiGraspRoadmapGraph<htype> const* parent)
+      : _v(v)
+      , _graph(parent)
+      , _layer_id(_graph->_vertex_info.at(v).layer_id)
+      , _roadmap_id(_graph->_vertex_info.at(v).roadmap_id)
+    {
+      auto node = _graph->_roadmap->getNode(_roadmap_id);
+      assert(node);
+      std::tie(_iter, _end) = node->getEdgesIterators();
+    }
+
+    // InLayerIterator(const InLayerIterator<lazy, base>& other)
+    //   : _v(other._v)
+    //   , _graph(other._graph)
+    //   , _layer_id(other._layer_id)
+    //   , _roadmap_id(other._roadmap_id)
+    //   , _iter(other._iter)
+    //   , _end(other._end)
+    // {
+    // }
+
+    ~InLayerIterator() = default;
+
+    bool equals(const typename NeighborIterator::IteratorImplementation* const other) const override
+    {
+      auto other_casted = dynamic_cast<const InLayerIterator<lazy, base>*>(other);
+      if (!other_casted)
+        return false;
+      return other_casted->_graph == _graph && other_casted->_v == _v && other_casted->_iter == _iter;
+    }
+
+    unsigned int dereference() const override
+    {
+      return _graph->getVertexId(_iter->first, _layer_id);
+    }
+
+    void next() override
+    {
+      if (_iter != _end)
+      {
+        ++_iter;
+      }
+      forwardToNextValid();
+    }
+
+    std::unique_ptr<typename NeighborIterator::IteratorImplementation> copy() const override
+    {
+      return std::make_unique<InLayerIterator<lazy, base>>(*this);
+    }
+
+    void setToEnd() override
+    {
+      _iter = _end;
+    }
+
+  private:
+    // const information
+    const unsigned int _v;
+    FoldedMultiGraspRoadmapGraph const* const _graph;
+    const unsigned int _layer_id;
+    const unsigned int _roadmap_id;
+    // iterators for roadmap edges
+    Roadmap::Node::EdgeIterator _iter;
+    Roadmap::Node::EdgeIterator _end;
+
+    void forwardToNextValid()
+    {
+      std::integral_constant<bool, lazy> lazy_flag;
+      std::integral_constant<bool, base> base_flag;
+      while (_iter != _end and !checkEdgeValidity(lazy_flag, base_flag))
+      {
+        _iter++;
+      }
+    }
+
+    bool checkEdgeValidity(const std::true_type& lazy_flag, const std::true_type& base_flag)
+    {
+      return not std::isinf(_iter->second->base_cost);
+    }
+
+    bool checkEdgeValidity(const std::false_type& non_lazy, const std::true_type& base_flag)
+    {
+      return _graph->_roadmap->computeCost(_iter->second).first;
+    }
+
+    bool checkEdgeValidity(const std::true_type& lazy_flag, const std::false_type& non_base)
+    {
+      double cost = _iter->second->getBestKnownCost(_layer_id - 1);
+      return not std::isinf(cost);
+    }
+
+    bool checkEdgeValidity(const std::false_type& non_lazy, const std::false_type& non_base)
+    {
+      return _graph->_roadmap->computeCost(_iter->second, _layer_id - 1).first;
+    }
+  };
+  template <bool lazy, bool base>
+  friend class InLayerIterator;
+
+  /**
+   * Neighbor iterator for vertices that bridge between layers.
+   * Template arguments:
+   *  lazy = lazy cost evaluation
+   *  base = base layer
+   */
+  template <bool lazy, bool base>
+  class LayerBridgeIterator : public NeighborIterator::IteratorImplementation
+  {
+  public:
+    LayerBridgeIterator(unsigned int v, FoldedMultiGraspRoadmapGraph const* parent)
+      : _v(v)
+      , _graph(parent)
+      , _layer_id(_graph->_vertex_info.at(v).layer_id)
+      , _roadmap_id(_graph->_vertex_info.at(v).roadmap_id)
+      , _in_layer_iter(v, parent)
+      , _in_layer_end(v, parent)
+      , _current_goal_idx(0)
+      , _num_remaining_bridges(1)
+    {
+      _in_layer_end.setToEnd();
+      if constexpr (base)
+      {
+        _goal_ids = _graph->_goal_set->getGoalIds(_roadmap_id);
+        _num_remaining_bridges = _goal_ids.size();
+      }
+    }
+
+    LayerBridgeIterator(const LayerBridgeIterator& other) = default;
+
+    ~LayerBridgeIterator() = default;
+
+    bool equals(const typename NeighborIterator::IteratorImplementation* const other) const override
+    {
+      auto other_casted = dynamic_cast<const LayerBridgeIterator<lazy, base>*>(other);
+      if (!other_casted)
+        return false;
+      return other_casted->_graph == _graph && other_casted->_v == _v &&
+             other_casted->_in_layer_iter.equals(&_in_layer_iter) &&
+             _current_goal_idx == other_casted->_current_goal_idx &&
+             _num_remaining_bridges == other_casted->_num_remaining_bridges;
+    }
+
+    unsigned int dereference() const override
+    {
+      if (_in_layer_iter.equals(&_in_layer_end))
+      {
+        if constexpr (base)
+        {
+          assert(_current_goal_idx != _goal_ids.size());
+          unsigned int new_layer = _graph->_goal_set->getGoal(_goal_ids.at(_current_goal_idx)).grasp_id + 1;
+          return _graph->getVertexId(_roadmap_id, new_layer);
+        }
+        else
+        {
+          assert(_num_remaining_bridges > 0);
+          return _graph->getVertexId(_roadmap_id, 0);
+        }
+      }
+      return _in_layer_iter.dereference();
+    }
+
+    void next() override
+    {
+      if (!_in_layer_iter.equals(&_in_layer_end))
+      {
+        _in_layer_iter.next();
+      }
+      else
+      {
+        if (base && _current_goal_idx != _goal_ids.size())
+        {
+          _current_goal_idx++;
+        }
+        _num_remaining_bridges = _num_remaining_bridges > 0 ? _num_remaining_bridges - 1 : 0;
+      }
+    }
+
+    std::unique_ptr<typename NeighborIterator::IteratorImplementation> copy() const override
+    {
+      return std::make_unique<LayerBridgeIterator<lazy, base>>(*this);
+    }
+
+    void setToEnd() override
+    {
+      _in_layer_iter.setToEnd();
+      if constexpr (base)
+      {
+        _current_goal_idx = _goal_ids.size();
+      }
+      _num_remaining_bridges = 0;
+    }
+
+  private:
+    const unsigned int _v;
+    const FoldedMultiGraspRoadmapGraph* const _graph;
+    const unsigned int _layer_id;
+    const unsigned int _roadmap_id;
+    InLayerIterator<lazy, base> _in_layer_iter;
+    InLayerIterator<lazy, base> _in_layer_end;
+    std::vector<unsigned int> _goal_ids;
+    size_t _current_goal_idx;
+    unsigned int _num_remaining_bridges;
+  };
+  template <bool lazy, bool base>
+  friend class LayerBridgeIterator;
+};
+// include implementation of FoldedMultiGraspRoadmapGraph
+#include <hfts_grasp_planner/placement/mp/mgsearch/Graphs-impl.h>
+
 }  // namespace mgsearch
 }  // namespace mp
 }  // namespace placement

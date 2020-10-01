@@ -62,13 +62,13 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
           }
           case AlgorithmType::LWLPAstar: {
             RAVELOG_INFO("Planning with lazy-weighted LPA* on single grasp graph for grasp " +
-                          std::to_string(grasp_id));
+                         std::to_string(grasp_id));
             lpastar::lpaStarSearch<SingleGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::LazyWeighted>(graph, sr);
             break;
           }
           case AlgorithmType::LazySP_LPAstar: {
             RAVELOG_INFO("Planning with LazySP using lazy-weighted LPA* on single grasp graph for grasp " +
-                          std::to_string(grasp_id));
+                         std::to_string(grasp_id));
             typedef lpastar::LPAStarAlgorithm<SingleGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::Lazy>
                 SearchAlgorithmType;
             lazysp::lazySP<SingleGraspRoadmapGraph, lazysp::FirstUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
@@ -113,7 +113,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
           break;
         }
         case AlgorithmType::LazySP_LPAstar: {
-          RAVELOG_INFO("Planning with LazySP using lazy-weighted LPA* on multi-grasp graph");
+          RAVELOG_INFO("Planning with LazySP using lazy LPA* on multi-grasp graph");
           typedef lpastar::LPAStarAlgorithm<MultiGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::Lazy>
               SearchAlgorithmType;
           lazysp::lazySP<MultiGraspRoadmapGraph, lazysp::FirstUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
@@ -125,6 +125,51 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       if (sr.solved)
       {
         extractSolution<MultiGraspRoadmapGraph>(sr, sol, graph);
+      }
+      break;
+    }
+    case GraphType::FoldedMultiGraspGraphStationary: {
+      // create folded multi-grasp graph
+      typedef FoldedMultiGraspRoadmapGraph<BackwardsHeuristicType::LowerBound> FoldedGraph;
+      FoldedGraph graph(_roadmap, _goal_set, cost_parameters, start_id);
+      SearchResult sr;
+      // solve the problem with the specified algorithm
+      switch (_params.algo_type)
+      {
+        case AlgorithmType::LWAstar: {
+          RAVELOG_INFO("Planning with LWA* on FoldedMultiGraspRoadmapGraph and naive heuristic");
+          lwastar::lwaStarSearch<FoldedGraph>(graph, sr);
+          break;
+        }
+        default:
+          // TODO the stationary version should be compatible with all algrotithms, no?
+          RAVELOG_ERROR("Algorithm type doesn't support FoldedMultiGraspGraph yet");
+      }
+      if (sr.solved)
+      {
+        extractSolution<BackwardsHeuristicType::LowerBound>(sr, sol, graph);
+      }
+      break;
+    }
+    case GraphType::FoldedMultiGraspGraphDynamic: {
+      // create folded multi-grasp graph
+      typedef FoldedMultiGraspRoadmapGraph<BackwardsHeuristicType::SearchAwareBestKnownDistance> FoldedGraph;
+      FoldedGraph graph(_roadmap, _goal_set, cost_parameters, start_id);
+      SearchResult sr;
+      // solve the problem with the specified algorithm
+      switch (_params.algo_type)
+      {
+        case AlgorithmType::LWAstar: {
+          RAVELOG_INFO("Planning with LWA* on FoldedMultiGraspRoadmapGraph and dynamic heuristic");
+          lwastar::lwaStarSearch<FoldedGraph>(graph, sr);
+          break;
+        }
+        default:
+          RAVELOG_ERROR("Algorithm type doesn't support FoldedMultiGraspGraph yet");
+      }
+      if (sr.solved)
+      {
+        extractSolution<BackwardsHeuristicType::SearchAwareBestKnownDistance>(sr, sol, graph);
       }
       break;
     }

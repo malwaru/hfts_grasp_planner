@@ -97,7 +97,7 @@ SingleGraspRoadmapGraph::SingleGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspG
 
 SingleGraspRoadmapGraph::~SingleGraspRoadmapGraph() = default;
 
-bool SingleGraspRoadmapGraph::checkValidity(unsigned int v) const
+bool SingleGraspRoadmapGraph::checkValidity(unsigned int v)
 {
   auto node = _roadmap->getNode(v);
   if (!node)
@@ -105,7 +105,7 @@ bool SingleGraspRoadmapGraph::checkValidity(unsigned int v) const
   return _roadmap->isValid(node, _grasp_id);
 }
 
-void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy) const
+void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy)
 {
   successors.clear();
   auto [iter, end] = getSuccessors(v, lazy);
@@ -113,24 +113,24 @@ void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned
 }
 
 std::pair<SingleGraspRoadmapGraph::NeighborIterator, SingleGraspRoadmapGraph::NeighborIterator>
-SingleGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy) const
+SingleGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy)
 {
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
 
-void SingleGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy) const
+void SingleGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy)
 {
   // undirected graph
   getSuccessors(v, predecessors, lazy);
 }
 
 std::pair<SingleGraspRoadmapGraph::NeighborIterator, SingleGraspRoadmapGraph::NeighborIterator>
-SingleGraspRoadmapGraph::getPredecessors(unsigned int v, bool lazy) const
+SingleGraspRoadmapGraph::getPredecessors(unsigned int v, bool lazy)
 {
   return getSuccessors(v, lazy);
 }
 
-double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy) const
+double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy)
 {
   auto node_v1 = _roadmap->getNode(v1);
   // ensure v1's edges are up-to-date
@@ -193,6 +193,11 @@ double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
   if (!node)
     return INFINITY;
   return _cost_to_go.costToGo(node->config);
+}
+
+void SingleGraspRoadmapGraph::registerMinimalCost(unsigned int v, double cost)
+{
+  // no-op
 }
 
 std::pair<unsigned int, unsigned int> SingleGraspRoadmapGraph::getGraspRoadmapId(unsigned int vid) const
@@ -359,7 +364,7 @@ MultiGraspRoadmapGraph::MultiGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspGoa
 
 MultiGraspRoadmapGraph::~MultiGraspRoadmapGraph() = default;
 
-bool MultiGraspRoadmapGraph::checkValidity(unsigned int v) const
+bool MultiGraspRoadmapGraph::checkValidity(unsigned int v)
 {
   if (v == 0)
   {
@@ -373,7 +378,7 @@ bool MultiGraspRoadmapGraph::checkValidity(unsigned int v) const
   return _roadmap->isValid(node, grasp_id);
 }
 
-void MultiGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy) const
+void MultiGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy)
 {
   successors.clear();
   auto begin = NeighborIterator::begin(v, lazy, this);
@@ -382,24 +387,24 @@ void MultiGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned 
 }
 
 std::pair<MultiGraspRoadmapGraph::NeighborIterator, MultiGraspRoadmapGraph::NeighborIterator>
-MultiGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy) const
+MultiGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy)
 {
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
 
-void MultiGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy) const
+void MultiGraspRoadmapGraph::getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy)
 {
   // undirected graph
   getSuccessors(v, predecessors, lazy);
 }
 
 std::pair<MultiGraspRoadmapGraph::NeighborIterator, MultiGraspRoadmapGraph::NeighborIterator>
-MultiGraspRoadmapGraph::getPredecessors(unsigned int v, bool lazy) const
+MultiGraspRoadmapGraph::getPredecessors(unsigned int v, bool lazy)
 {
   return getSuccessors(v, lazy);
 }
 
-double MultiGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy) const
+double MultiGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy)
 {
   // catch special case of start node
   if (v1 == 0 || v2 == 0)
@@ -492,6 +497,11 @@ double MultiGraspRoadmapGraph::heuristic(unsigned int v) const
   if (!node)
     return INFINITY;
   return _individual_cost_to_go.at(grasp_id)->costToGo(node->config);
+}
+
+void MultiGraspRoadmapGraph::registerMinimalCost(unsigned int v, double cost)
+{
+  // no-op
 }
 
 std::pair<unsigned int, unsigned int> MultiGraspRoadmapGraph::getGraspRoadmapId(unsigned int vid) const
