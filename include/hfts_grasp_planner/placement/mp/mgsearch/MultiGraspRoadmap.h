@@ -261,6 +261,12 @@ public:
   bool isValid(NodeWeakPtr node);
 
   /**
+   * Convenience wrapper for isValid(NodeWeakPtr) with node id instead.
+   * @param node_id: the id of the roadmap node to check for validity. If the node does not exist, return false.
+   */
+  bool isValid(unsigned int node_id);
+
+  /**
    * Just like isValid, but the return value indicates whether the node is valid for the given grasp.
    * The node is of course only removed if the base is invalid, not if the collision is induced by the grasp.
    * @return true, if the node is valid and not in collision for the given grasp, else false.

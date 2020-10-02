@@ -15,26 +15,31 @@ namespace mp {
                 SingleGraspGraph = 0,
                 MultiGraspGraph = 1,
                 FoldedMultiGraspGraphStationary = 2, // naive, stationary heuristic
-                FoldedMultiGraspGraphDynamic = 3 // non-stationary heuristic, TODO: currently only compatible with LPAStar
+                FoldedMultiGraspGraphDynamic = 3, // non-stationary heuristic, TODO: currently only compatible with LPAStar
+                LazyWeightedMultiGraspGraph = 4, // evalutes costs only for the robot without grasps unless explicity asked
             };
             enum AlgorithmType {
                 Astar = 0,
                 LWAstar = 1, // lazy weighted A*
                 LPAstar = 2, // life-long planning A*
                 LWLPAstar = 3, // lazy weighted life-long planning A*
-                LazySP_LPAstar = 4, // Lazy SP using LPAstar
-                // LazySP_MultiGraspLPAstar = 5 // only makes sense on MultiGraspGraph
+                LazySP_LLPAstar = 4, // Lazy SP using lazy LPAstar
+                LazySP_LWLPAstar = 5, // Lazy SP using lazy-weighted LPAstar; only makes sense with LazyWeightedMultiGraspGraph
+                LazySP_LPAstar = 6, // Lazy SP using non-lazy LPAstar; only makes sense with LazyWeightedMultiGraspGraph
+            };
+            enum EdgeSelectorType {
+                FirstUnknown = 0,
+                LastUnknown = 1
             };
             struct Parameters {
                 AlgorithmType algo_type;
                 GraphType graph_type;
+                EdgeSelectorType edge_selector_type; // only for LazySP
                 double lambda; // weight between path and goal cost
-                bool extreme_lazy; // only for LazySP_MultiGraspLPAstar
                 Parameters()
                     : algo_type(AlgorithmType::Astar)
                     , graph_type(GraphType::SingleGraspGraph)
                     , lambda(1.0)
-                    , extreme_lazy(false)
                 {
                 }
             };

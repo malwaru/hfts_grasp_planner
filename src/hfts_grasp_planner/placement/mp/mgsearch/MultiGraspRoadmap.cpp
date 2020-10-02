@@ -327,6 +327,14 @@ bool Roadmap::isValid(NodeWeakPtr inode)
   return true;
 }
 
+bool Roadmap::isValid(unsigned int node_id)
+{
+  auto iter = _nodes.find(node_id);
+  if (iter == _nodes.end())
+    return false;
+  return isValid(iter->second);
+}
+
 bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
 {
   bool base_valid = isValid(wnode);

@@ -61,6 +61,36 @@ struct LastUnknownEdgeSelector
 };
 
 /**
+ * Compute true edge cost and return it plus the previously best-known cost.
+ * This is the default implementation for normal graphs.
+ * @param graph: the graph
+ * @param v1: first vertex id
+ * @param v2: second vertex_id
+ * @return: {old_Cost, new_cost}
+ */
+template <typename G>
+std::pair<double, double> getEdgeCost(G& graph, unsigned int v1, unsigned int v2)
+{
+  double old_cost = graph.getEdgeCost(v1, v2, true);
+  double new_cost = graph.getEdgeCost(v1, v2, false);
+  return {old_cost, new_cost};
+}
+
+/**
+ * Check whether the true edge cost from u to v is known.
+ * This is the default implementation.
+ * @param graph: the graph
+ * @param u: first vertex id
+ * @param v: second vertex id
+ * @return: whether the true cost is known
+ */
+template <typename G>
+bool trueEdgeCostKnown(G& graph, unsigned int u, unsigned int v)
+{
+  return graph.trueEdgeCostKnown(u, v);
+}
+
+/**
  * LazySP algorithm to plan a path on the given graph.
  * Template arguments:
  * type G: the type of the graph
@@ -87,7 +117,7 @@ void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_sel
       for (size_t vidx = 1; vidx < result.path.size(); ++vidx)
       {
         unsigned int v = result.path.at(vidx);
-        if (not graph.trueEdgeCostKnown(u, v))
+        if (not trueEdgeCostKnown(graph, u, v))
         {
           unknown_edges.push_back(Edge(u, v));
         }
@@ -103,8 +133,7 @@ void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_sel
         for (auto& edge_iter : edges_to_evaluate)
         {
           // evaluate the given edge
-          double old_cost = graph.getEdgeCost(edge_iter->first, edge_iter->second, true);
-          double new_cost = graph.getEdgeCost(edge_iter->first, edge_iter->second, false);
+          auto [old_cost, new_cost] = getEdgeCost(graph, edge_iter->first, edge_iter->second);
           if (old_cost != new_cost)
           {
             edge_changes.emplace_back(EdgeChange(edge_iter->first, edge_iter->second, old_cost));

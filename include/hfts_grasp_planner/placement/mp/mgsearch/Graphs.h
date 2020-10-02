@@ -188,7 +188,19 @@ private:
  * implements the GraspAgnostic graph interface.
  * The start vertex of this graph is a special vertex that is not associated with any grasp yet.
  * It is adjacent with cost 0 to #grasps vertices associated with the start configuration - one for each grasp.
+ *
+ * The graph is template-parameterized by a bool flag lazy_grasp_check that, if true,
+ * lets the graph perform cost evaluations only for the base (robot) without considering the actual grasp.
+ * In this case, the cost of an edge for the actual grasp needs to be explicitly queried using:
+ *    double getEdgeCostWithGrasp(unsigned int v1, unsigned int v2);
+ * Whether the edge cost for the actual grasp is known can then be queried via:
+ *    bool trueEdgeCostWithGraspKnown(unsigned int v1, unsigned int v2) const;
+ *
+ * If the flag is false, the graph always takes the grasp into account in cost evaluations.
+ * In this case the above functions simply return the same as getEdgeCost(v1, v2, lazy=false) and
+ * trueEdgeCostKnown(v1, v2)
  */
+template <bool lazy_grasp_check = false>
 class MultiGraspRoadmapGraph
 {
 public:
@@ -253,6 +265,9 @@ public:
   // no-op
   void registerMinimalCost(unsigned int v, double cost);
   typedef std::bool_constant<true> heuristic_stationary;
+  // additional functions to evaluate grasp-specific costs in case lazy_grasp_check is true
+  double getEdgeCostWithGrasp(unsigned int v1, unsigned int v2);
+  bool trueEdgeCostWithGraspKnown(unsigned int v1, unsigned int v2) const;
 
   // roadmap id, grasp id
   std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;

@@ -66,7 +66,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
             lpastar::lpaStarSearch<SingleGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::LazyWeighted>(graph, sr);
             break;
           }
-          case AlgorithmType::LazySP_LPAstar: {
+          case AlgorithmType::LazySP_LLPAstar: {
             RAVELOG_INFO("Planning with LazySP using lazy-weighted LPA* on single grasp graph for grasp " +
                          std::to_string(grasp_id));
             typedef lpastar::LPAStarAlgorithm<SingleGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::Lazy>
@@ -94,37 +94,37 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       {
         case AlgorithmType::Astar: {
           RAVELOG_INFO("Planning with A* on multi-grasp graph");
-          astar::aStarSearch<MultiGraspRoadmapGraph>(graph, sr);
+          astar::aStarSearch<MultiGraspRoadmapGraph<>>(graph, sr);
           break;
         }
         case AlgorithmType::LWAstar: {
           RAVELOG_INFO("Planning with LWA* on multi-grasp graph");
-          lwastar::lwaStarSearch<MultiGraspRoadmapGraph>(graph, sr);
+          lwastar::lwaStarSearch<MultiGraspRoadmapGraph<>>(graph, sr);
           break;
         }
         case AlgorithmType::LPAstar: {
           RAVELOG_INFO("Planning with LPA* on multi-grasp graph");
-          lpastar::lpaStarSearch<MultiGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::Explicit>(graph, sr);
+          lpastar::lpaStarSearch<MultiGraspRoadmapGraph<>, lpastar::EdgeCostEvaluationType::Explicit>(graph, sr);
           break;
         }
         case AlgorithmType::LWLPAstar: {
           RAVELOG_INFO("Planning with lazy-weighted LPA* on multi-grasp graph");
-          lpastar::lpaStarSearch<MultiGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::LazyWeighted>(graph, sr);
+          lpastar::lpaStarSearch<MultiGraspRoadmapGraph<>, lpastar::EdgeCostEvaluationType::LazyWeighted>(graph, sr);
           break;
         }
-        case AlgorithmType::LazySP_LPAstar: {
+        case AlgorithmType::LazySP_LLPAstar: {
           RAVELOG_INFO("Planning with LazySP using lazy LPA* on multi-grasp graph");
-          typedef lpastar::LPAStarAlgorithm<MultiGraspRoadmapGraph, lpastar::EdgeCostEvaluationType::Lazy>
+          typedef lpastar::LPAStarAlgorithm<MultiGraspRoadmapGraph<>, lpastar::EdgeCostEvaluationType::Lazy>
               SearchAlgorithmType;
-          lazysp::lazySP<MultiGraspRoadmapGraph, lazysp::FirstUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
+          lazysp::lazySP<MultiGraspRoadmapGraph<>, lazysp::FirstUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
           break;
         }
         default:
-          RAVELOG_ERROR("Algorithm type not implemented yet");
+          RAVELOG_ERROR("Algorithm type not supported in combination with MultiGraspRoadmapGraph");
       }
       if (sr.solved)
       {
-        extractSolution<MultiGraspRoadmapGraph>(sr, sol, graph);
+        extractSolution<MultiGraspRoadmapGraph<>>(sr, sol, graph);
       }
       break;
     }
@@ -170,6 +170,43 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       if (sr.solved)
       {
         extractSolution<BackwardsHeuristicType::SearchAwareBestKnownDistance>(sr, sol, graph);
+      }
+      break;
+    }
+    case GraphType::LazyWeightedMultiGraspGraph: {
+      MultiGraspRoadmapGraph<true> graph(_roadmap, _goal_set, cost_parameters, grasp_ids, start_id);
+      SearchResult sr;
+      switch (_params.algo_type)
+      {
+        case AlgorithmType::LazySP_LLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy LPA* on lazy-weighted multi-grasp graph");
+          // TODO this is equivalent to LazySP on normal multi-grasp graph (apart from Edge selector)
+          typedef lpastar::LPAStarAlgorithm<MultiGraspRoadmapGraph<true>, lpastar::EdgeCostEvaluationType::Lazy>
+              SearchAlgorithmType;
+          lazysp::lazySP<MultiGraspRoadmapGraph<true>, lazysp::LastUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LWLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy weighted LPA* on lazy-weighted multi-grasp graph");
+          typedef lpastar::LPAStarAlgorithm<MultiGraspRoadmapGraph<true>, lpastar::EdgeCostEvaluationType::LazyWeighted>
+              SearchAlgorithmType;
+          lazysp::lazySP<MultiGraspRoadmapGraph<true>, lazysp::LastUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LPAstar: {
+          RAVELOG_INFO("Planning with LazySP using (non-lazy!) LPA* on lazy-weighted multi-grasp graph");
+          typedef lpastar::LPAStarAlgorithm<MultiGraspRoadmapGraph<true>, lpastar::EdgeCostEvaluationType::Explicit>
+              SearchAlgorithmType;
+          lazysp::lazySP<MultiGraspRoadmapGraph<true>, lazysp::LastUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
+          break;
+        }
+        default: {
+          RAVELOG_ERROR("Algorithm type doesn't support LazyWeightedMultiGraspGraph");
+        }
+      }
+      if (sr.solved)
+      {
+        extractSolution<MultiGraspRoadmapGraph<true>>(sr, sol, graph);
       }
       break;
     }
