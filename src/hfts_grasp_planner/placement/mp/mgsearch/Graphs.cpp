@@ -4,6 +4,22 @@
 
 using namespace placement::mp::mgsearch;
 
+VertexExpansionLogger::VertexExpansionLogger(RoadmapPtr roadmap) : _roadmap(roadmap)
+{
+}
+
+VertexExpansionLogger::~VertexExpansionLogger() = default;
+
+void VertexExpansionLogger::logExpansion(unsigned int rid)
+{
+  _roadmap->logCustomEvent("BASE_EXPANSION, " + std::to_string(rid));
+}
+
+void VertexExpansionLogger::logExpansion(unsigned int rid, unsigned int gid)
+{
+  _roadmap->logCustomEvent("EXPANSION, " + std::to_string(rid) + ", " + std::to_string(gid));
+}
+/********************************* SingleGraspRoadmapGraph *************************************/
 SingleGraspRoadmapGraph::NeighborIterator::NeighborIterator(Roadmap::Node::EdgeIterator eiter,
                                                             Roadmap::Node::EdgeIterator end, bool lazy,
                                                             SingleGraspRoadmapGraph const* parent)
@@ -92,6 +108,7 @@ SingleGraspRoadmapGraph::SingleGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspG
   , _cost_to_go(_goal_set, params, goal_set->getGoalQualityRange())
   , _grasp_id(grasp_id)
   , _start_id(start_id)
+  , _logger(_roadmap)
 {
 }
 
@@ -115,6 +132,9 @@ void SingleGraspRoadmapGraph::getSuccessors(unsigned int v, std::vector<unsigned
 std::pair<SingleGraspRoadmapGraph::NeighborIterator, SingleGraspRoadmapGraph::NeighborIterator>
 SingleGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy)
 {
+#ifdef ENABLE_GRAPH_LOGGING
+  _logger.logExpansion(v, _grasp_id);
+#endif
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
 

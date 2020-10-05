@@ -181,6 +181,14 @@ void Roadmap::Logger::edgeCostChecked(NodePtr a, NodePtr b, unsigned int grasp_i
   }
 }
 
+void Roadmap::Logger::logCustomEvent(const std::string& msg)
+{
+  if (_log_fs.is_open())
+  {
+    _log_fs << msg << FLUSH_END;
+  }
+}
+
 Roadmap::Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr cost_computer, unsigned int batch_size,
                  const std::string& log_roadmap_path, const std::string& log_path)
   : _state_space(state_space)
@@ -242,6 +250,11 @@ void Roadmap::densify(unsigned int batch_size)
 void Roadmap::setLogging(const std::string& roadmap_path, const std::string& log_path)
 {
   _logger.setLogPath(roadmap_path, log_path);
+}
+
+void Roadmap::logCustomEvent(const std::string& msg)
+{
+  _logger.logCustomEvent(msg);
 }
 
 Roadmap::NodePtr Roadmap::getNode(unsigned int node_id) const

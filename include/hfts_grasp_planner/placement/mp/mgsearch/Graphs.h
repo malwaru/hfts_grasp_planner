@@ -104,9 +104,17 @@ public:
   typedef std::bool_constant<true> heuristic_stationary;
 };
 
-// class GraspAwareGraph {
-//     // TODO
-// };
+class VertexExpansionLogger
+{
+public:
+  VertexExpansionLogger(RoadmapPtr roadmap);
+  ~VertexExpansionLogger();
+  void logExpansion(unsigned int rid);
+  void logExpansion(unsigned int rid, unsigned int gid);
+
+private:
+  RoadmapPtr _roadmap;
+};
 
 /**
  * The SingleGraspRoadmapGraph class implements a view on a MultiGraspRoadmap for a single grasp.
@@ -181,6 +189,7 @@ private:
   ::placement::mp::mgsearch::MultiGoalCostToGo _cost_to_go;
   const unsigned int _grasp_id;
   const unsigned int _start_id;
+  VertexExpansionLogger _logger;
 };
 
 /**
@@ -293,6 +302,8 @@ private:
   unsigned int toGraphKey(const std::pair<unsigned int, unsigned int>& roadmap_id) const;
   unsigned int toGraphKey(unsigned int grasp_id, unsigned int roadmap_id) const;
   mutable unsigned int _num_graph_nodes;
+  // logger
+  VertexExpansionLogger _logger;
 };
 
 /**
@@ -444,6 +455,8 @@ private:
   mutable std::unordered_map<GraspNodeIDPair, unsigned int, boost::hash<GraspNodeIDPair>> _vertex_ids;
   // maps vertex id to registered path cost
   std::unordered_map<unsigned int, double> _registered_costs;
+  // logger
+  VertexExpansionLogger _logger;
 
   // convenience function to add/retrieve vertex id from _vertex_ids
   unsigned int getVertexId(unsigned int roadmap_id, unsigned int layer_id) const;

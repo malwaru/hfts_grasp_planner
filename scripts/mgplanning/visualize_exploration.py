@@ -22,6 +22,7 @@ class MGRoadmapVisualizer(HasTraits):
     invalid_checked_vertices_plot = Instance(PipelineBase)
     valid_checked_edges_plot = Instance(PipelineBase)
     invalid_checked_edges_plot = Instance(PipelineBase)
+    num_extensions_plot = Instance(PipelineBase)
 
     view = traitsui.api.View(
         traitsui.api.Item('scene', editor=SceneEditor(scene_class=MayaviScene),
@@ -100,27 +101,37 @@ class MGRoadmapVisualizer(HasTraits):
                 # base evaluation of a vertex
                 vid = int(line_args[1])
                 bvalid = bool(int(line_args[2]))
-                return ((vid, None, bvalid), ())
+                return ((vid, None, bvalid), (), ())
                 # print vid, bvalid
             elif (event_type == "VAL_GRASP"):
                 # evaluation of a vertex for a certain grasp
                 vid = int(line_args[1])
                 gid = int(line_args[2])
                 bvalid = bool(int(line_args[3]))
-                return ((vid, gid, bvalid), ())
+                return ((vid, gid, bvalid), (), ())
             elif (event_type == "EDGE_COST"):
                 # base evaluation of an edge
                 vid1 = int(line_args[1])
                 vid2 = int(line_args[2])
                 cost = float(line_args[3])
-                return ((), (vid1, vid2, None, cost))
+                return ((), (vid1, vid2, None, cost), ())
             elif (event_type == "EDGE_COST_GRASP"):
                 # evaluation of an edge for a certain grasp
                 vid1 = int(line_args[1])
                 vid2 = int(line_args[2])
                 gid = int(line_args[3])
                 cost = float(line_args[4])
-                return ((), (vid1, vid2, gid, cost))
+                return ((), (vid1, vid2, gid, cost), ())
+            elif (event_type == "EXPANSION"):
+                # expanding a node (iterating over its neighbors)
+                vid = int(line_args[1])
+                gid = int(line_args[2])
+                return ((), (), (vid, gid))
+            elif (event_type == "BASE_EXPANSION"):
+                # expanding a node (iterating over its neighbors)
+                vid = int(line_args[1])
+                return ((), (), (vid, None))
+
         # check if there are new logs
         if self._last_log_update != os.path.getmtime(self._log_filename):
             self._last_log_update = os.path.getmtime(self._log_filename)
@@ -169,8 +180,10 @@ class MGRoadmapVisualizer(HasTraits):
         nxs, nys, nzs = [[], []], [[], []], [[], []]
         # and checked edges (invalid valid)
         exs, eys, ezs, us, vs = [[], []], [[], []], [[], []], [[], []], [[], []]
+        # map from (vid, layer_id) -> number of expansions
+        num_expansions = {}
         for i in xrange(int(idx)):
-            node_check, edge_check = self._logs[i]
+            node_check, edge_check, node_expansion = self._logs[i]
             if len(node_check):
                 vid, gid, valid = node_check
                 gid = 0 if gid is None else gid + 1
@@ -187,6 +200,14 @@ class MGRoadmapVisualizer(HasTraits):
                 edge_dir = self._vertices[vid2] - self._vertices[vid1]
                 us[valid].append(edge_dir[1])
                 vs[valid].append(edge_dir[0])
+            if len(node_expansion):
+                layer_idx = node_expansion[1] + 1 if node_expansion[1] is not None else 0
+                key = (node_expansion[0], layer_idx)
+                if key in num_expansions:
+                    num_expansions[key] += 1
+                else:
+                    num_expansions[key] = 1
+
         # render valid vertices
         if len(nxs[1]):
             if self.valid_checked_vertices_plot is None:
@@ -229,12 +250,27 @@ class MGRoadmapVisualizer(HasTraits):
                     x=exs[0], y=eys[0], z=ezs[0], u=us[0], v=vs[0], w=np.zeros_like(us[0]))
         elif self.invalid_checked_edges_plot is not None:
             self.invalid_checked_edges_plot.actor.visible = False
+        # render number of expansions
+        if len(num_expansions) > 0:
+            xs, ys, zs, ss = [], [], [], []
+            for key, num in num_expansions.iteritems():
+                vid, layer_id = key
+                xs.append(self._vertices[vid, 1])
+                ys.append(self._vertices[vid, 0])
+                zs.append(layer_id * self.grasp_distance)
+                ss.append(num)
+            if self.num_extensions_plot is None:
+                self.num_extensions_plot = self.scene.mlab.points3d(
+                    xs, ys, zs, ss, mode="2dcircle", reset_zoom=False, scale_mode='scalar')
+            else:
+                self.num_extensions_plot.actor.visible = True
+                self.num_extensions_plot.mlab_source.reset(x=xs, y=ys, z=zs, scalars=ss)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Visualize roadmap exploration for multi-grasp configuration spaces. ' +
-        'In case of visualization issues, try running with Qt4: 1. install python-qt4, 2. set environment variables ' +
-        'ETS_TOOLKIT=qt4; QT_API=pyqt')
+                                     'In case of visualization issues, try running with Qt4: 1. install python-qt4, 2. set environment variables ' +
+                                     'ETS_TOOLKIT=qt4; QT_API=pyqt')
     parser.add_argument(
         'grasp_costs', help='Path to a folder containing numpy arrays storing cost spaces for a 2d robot.' +
         'The files in the folder should be named <id>.npy, where <id> is an integer grasp id.',

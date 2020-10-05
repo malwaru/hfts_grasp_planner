@@ -215,6 +215,8 @@ public:
     // log the cost computation of an edge
     void edgeCostChecked(NodePtr a, NodePtr b, double cost);
     void edgeCostChecked(NodePtr a, NodePtr b, unsigned int grasp_id, double cost);
+    // log custom event
+    void logCustomEvent(const std::string& msg);
 
   private:
     std::ofstream _roadmap_fs;
@@ -230,6 +232,11 @@ public:
 
   // enable logging to the given files
   void setLogging(const std::string& roadmap_path, const std::string& log_path);
+
+  /**
+   * Log a custom event message to the log file logging cost evaluations.
+   */
+  void logCustomEvent(const std::string& msg);
   /**
    * Retrieve a node.
    * Returns nullptr if node with given id doesn't exist.

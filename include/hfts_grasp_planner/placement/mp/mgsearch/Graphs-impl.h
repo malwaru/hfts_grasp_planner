@@ -170,6 +170,7 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::MultiGraspRoadmapGraph(
   , _grasp_ids(grasp_ids)
   , _roadmap_start_id(start_id)
   , _num_graph_nodes(0)
+  , _logger(_roadmap)
 {
   auto quality_range = goal_set->getGoalQualityRange();
   for (unsigned int gid : grasp_ids)
@@ -204,6 +205,17 @@ template <bool lazy_grasp_check>
 void MultiGraspRoadmapGraph<lazy_grasp_check>::getSuccessors(unsigned int v, std::vector<unsigned int>& successors,
                                                              bool lazy)
 {
+#ifdef ENABLE_GRAPH_LOGGING
+  if (v == 0)
+  {
+    _logger.logExpansion(_roadmap_start_id);
+  }
+  else
+  {
+    auto [rid, gid] = getGraspRoadmapId(v);
+    _logger.logExpansion(rid, gid);
+  }
+#endif
   successors.clear();
   auto begin = NeighborIterator::begin(v, lazy, this);
   auto end = NeighborIterator::end(v, this);
@@ -599,6 +611,7 @@ FoldedMultiGraspRoadmapGraph<htype>::FoldedMultiGraspRoadmapGraph(
   , _cost_to_go(goal_set, cost_params)
   , _lower_bound(cost_params.path_cost)
   , _start_rid(start_id)
+  , _logger(_roadmap)
 {
   _vertex_info.emplace_back(_start_rid, 0);
   _vertex_ids[{_start_rid, 0}] = 0;
@@ -633,6 +646,17 @@ std::pair<typename FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator,
           typename FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator>
 FoldedMultiGraspRoadmapGraph<htype>::getSuccessors(unsigned int v, bool lazy)
 {
+#ifdef ENABLE_GRAPH_LOGGING
+  auto [rid_gid_pair, gid_valid] = getGraspRoadmapId(v);
+  if (gid_valid)
+  {
+    _logger.logExpansion(rid_gid_pair.first, rid_gid_pair.second);
+  }
+  else
+  {
+    _logger.logExpansion(rid_gid_pair.first);
+  }
+#endif
   auto begin = FoldedMultiGraspRoadmapGraph::NeighborIterator::begin(v, true, lazy, this);
   auto end = FoldedMultiGraspRoadmapGraph::NeighborIterator::end(v, true, lazy, this);
   return {std::move(begin), std::move(end)};
@@ -652,6 +676,17 @@ std::pair<typename FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator,
           typename FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator>
 FoldedMultiGraspRoadmapGraph<htype>::getPredecessors(unsigned int v, bool lazy)
 {
+#ifdef ENABLE_GRAPH_LOGGING
+  auto [rid_gid_pair, gid_valid] = getGraspRoadmapId(v);
+  if (gid_valid)
+  {
+    _logger.logExpansion(rid_gid_pair.first, rid_gid_pair.second);
+  }
+  else
+  {
+    _logger.logExpansion(rid_gid_pair.first);
+  }
+#endif
   auto begin = FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator::begin(v, false, lazy, this);
   auto end = FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator::end(v, false, lazy, this);
   return {std::move(begin), std::move(end)};
