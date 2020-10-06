@@ -262,7 +262,7 @@ class MGRoadmapVisualizer(HasTraits):
                 xs.append(self._vertices[vid, 1])
                 ys.append(self._vertices[vid, 0])
                 zs.append(layer_id * self.grasp_distance)
-                ss.append(float(num) + 1)
+                ss.append(num + 1)
             if self.num_extensions_plot is None:
                 self.num_extensions_plot = self.scene.mlab.points3d(
                     xs, ys, zs, ss, mode="2dcircle", reset_zoom=False, scale_mode='none', scale_factor=15,
