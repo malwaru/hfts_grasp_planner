@@ -33,7 +33,7 @@ class MGRoadmapVisualizer(HasTraits):
         traitsui.api.Item('max_log_length', label='Max log steps', style='readonly'),
         resizable=True)
 
-    def __init__(self, roadmap_file, grasp_folder, log_file, grasp_distance=400):
+    def __init__(self, roadmap_file, grasp_folder, log_file, max_num_visits, grasp_distance=400):
         """
             Create a new MGRoadmapVisualizer.
 
@@ -45,6 +45,8 @@ class MGRoadmapVisualizer(HasTraits):
                 path to folder containing different grasp images.
             log_file : string
                 path to log file to read evaluations of roadmap states from
+            max_num_visits : int
+                the maximal number of visits to expect for a node. This is used to normalize the color of the visit indicator.
         """
         super(MGRoadmapVisualizer, self).__init__()
         # stores positions of all roadmap vertices, shape: #vertices, 2
@@ -63,6 +65,8 @@ class MGRoadmapVisualizer(HasTraits):
         self._synch_logs()
         self._img_actors = {}
         self.grasp_distance = grasp_distance
+        self._max_num_visits = max_num_visits
+        self._auto_adapt_max_num_vists = self._max_num_visits == 0
 
     # def _get_max_log_length(self):
     #     return len(self._logs)
@@ -258,10 +262,11 @@ class MGRoadmapVisualizer(HasTraits):
                 xs.append(self._vertices[vid, 1])
                 ys.append(self._vertices[vid, 0])
                 zs.append(layer_id * self.grasp_distance)
-                ss.append(num)
+                ss.append(float(num) + 1)
             if self.num_extensions_plot is None:
                 self.num_extensions_plot = self.scene.mlab.points3d(
-                    xs, ys, zs, ss, mode="2dcircle", reset_zoom=False, scale_mode='scalar')
+                    xs, ys, zs, ss, mode="2dcircle", reset_zoom=False, scale_mode='none', scale_factor=15,
+                    vmin=0.0, vmax=self._max_num_visits)
             else:
                 self.num_extensions_plot.actor.visible = True
                 self.num_extensions_plot.mlab_source.reset(x=xs, y=ys, z=zs, scalars=ss)
@@ -279,7 +284,11 @@ if __name__ == "__main__":
         'roadmap_file', help='Path to a single file containing the roadmap to visualize.', type=str)
     parser.add_argument(
         'log_file', help='Path to a single file containing the evaluation logs to visualize.', type=str)
+    parser.add_argument(
+        '--max_num_visits', help='The maximal number of visits of a node used to normalize the color of the visit'
+        ' indicator.', type=int, default=100
+    )
     args = parser.parse_args()
-    viewer = MGRoadmapVisualizer(args.roadmap_file, args.grasp_costs, args.log_file)
+    viewer = MGRoadmapVisualizer(args.roadmap_file, args.grasp_costs, args.log_file, args.max_num_visits)
     viewer.configure_traits()
     # IPython.embed()
