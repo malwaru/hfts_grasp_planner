@@ -2,6 +2,84 @@
 
 using namespace placement::mp::mgsearch;
 
+std::string MGGraphSearchMP::getName(GraphType gtype)
+{
+  switch (gtype)
+  {
+    case GraphType::FoldedMultiGraspGraphDynamic: {
+      return "FoldedMultiGraspGraphDynamic";
+    }
+    case GraphType::FoldedMultiGraspGraphStationary: {
+      return "FoldedMultiGraspGraphStationary";
+    }
+    case GraphType::LazyWeightedMultiGraspGraph: {
+      return "LazyWeightedMultiGraspGraph";
+    }
+    case GraphType::MultiGraspGraph: {
+      return "MultiGraspGraph";
+    }
+    case GraphType::SingleGraspGraph: {
+      return "SingleGraspGraph";
+    }
+    default:
+      throw std::logic_error("Unknown graph type");
+  }
+}
+
+std::string MGGraphSearchMP::getName(AlgorithmType atype)
+{
+  switch (atype)
+  {
+    case AlgorithmType::Astar: {
+      return "Astar";
+    }
+    case AlgorithmType::LPAstar: {
+      return "LPAstar";
+    }
+    case AlgorithmType::LWAstar: {
+      return "LWAstar";
+    }
+    case AlgorithmType::LWLPAstar: {
+      return "LWLPAstar";
+    }
+    case AlgorithmType::LazySP_LLPAstar: {
+      return "LazySP_LLPAstar";
+    }
+    case AlgorithmType::LazySP_LPAstar: {
+      return "LazySP_LPAstar";
+    }
+    case AlgorithmType::LazySP_LWLPAstar: {
+      return "LazySP_LWLPAstar";
+    }
+    default:
+      throw std::logic_error("Unknown algorithm type");
+  }
+}
+
+MGGraphSearchMP::GraphType MGGraphSearchMP::getGraphType(const std::string& name)
+{
+  for (unsigned int enum_id = 0; enum_id < NUM_GRAPH_TYPES; ++enum_id)
+  {
+    if (getName(static_cast<GraphType>(enum_id)) == name)
+    {
+      return static_cast<GraphType>(enum_id);
+    }
+  }
+  throw std::runtime_error("Invalid graph type " + name);
+}
+
+MGGraphSearchMP::AlgorithmType MGGraphSearchMP::getAlgorithmType(const std::string& name)
+{
+  for (unsigned int enum_id = 0; enum_id < NUM_ALGORITHM_TYPES; ++enum_id)
+  {
+    if (getName(static_cast<AlgorithmType>(enum_id)) == name)
+    {
+      return static_cast<AlgorithmType>(enum_id);
+    }
+  }
+  throw std::runtime_error("Invalid algorithm type " + name);
+}
+
 MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Config& start_config,
                                  const Parameters& params)
   : _params(params), _state_space(state_space)

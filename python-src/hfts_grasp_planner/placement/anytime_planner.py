@@ -10,7 +10,6 @@ class MGMotionPlanner(object):
     """
         Wrapper around OpenRAVE plugin for multi-grasp motion planning.
     """
-
     def __init__(self, algorithm_name, manip, vel_factor=0.4):
         """
             Create a new instance of a multi-grasp motion planner using the given
@@ -18,7 +17,7 @@ class MGMotionPlanner(object):
             ---------
             Arguments
             ---------
-            planner_name, string - name of the algorithm.
+            algorithm_name, string - name of the algorithm.
                 Valid choices: SequentialMGBiRRT, ParallelMGBiRRT
             manip, OpenRAVE Manipulator - manipulator to use
             vel_factor, float - percentage of maximum velocity for trajectories
@@ -26,9 +25,11 @@ class MGMotionPlanner(object):
         self._manip = manip
         self._robot = manip.GetRobot()
         self._env = self._robot.GetEnv()
-        self._planner_interface = orpy.RaveCreateModule(self._env, algorithm_name)
+        self._planner_interface = orpy.RaveCreateModule(
+            self._env, algorithm_name)
         if self._planner_interface == None:
-            raise ValueError("Could not create planner with name %s" % algorithm_name)
+            raise ValueError("Could not create planner with name %s" %
+                             algorithm_name)
         self._simplifier = orpy.RaveCreatePlanner(self._env, "OMPL_Simplifier")
         self._grasped_obj = None
         self._known_grasps = None
@@ -53,8 +54,9 @@ class MGMotionPlanner(object):
             if start_config is not None:
                 self._robot.SetActiveDOFValues(start_config)
             self._grasped_obj = grasped_obj
-            self._planner_interface.SendCommand("initPlan %i %i" %
-                                                (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId()))
+            self._planner_interface.SendCommand(
+                "initPlan %i %i" % (self._robot.GetEnvironmentId(),
+                                    self._grasped_obj.GetEnvironmentId()))
             self._known_grasps = set()
             self._goals = {}
             self._dof = self._robot.GetActiveDOF()
@@ -83,7 +85,8 @@ class MGMotionPlanner(object):
             trajs = []
             reached_goals = []
             for idx in ids:
-                path_str = self._planner_interface.SendCommand("getPath " + str(idx))
+                path_str = self._planner_interface.SendCommand("getPath " +
+                                                               str(idx))
                 reached_goals.append(self._goals[idx])
                 self._goals.pop(idx)
                 # need to parse path now
@@ -93,7 +96,9 @@ class MGMotionPlanner(object):
                     path.append(np.array(map(float, l.split(" "))))
                 with self._robot:
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
-                    traj = hfts_utils.path_to_trajectory(self._robot, path, bvelocities=False)
+                    traj = hfts_utils.path_to_trajectory(self._robot,
+                                                         path,
+                                                         bvelocities=False)
                     trajs.append(traj)
             return trajs, reached_goals
         return [], []
@@ -110,9 +115,11 @@ class MGMotionPlanner(object):
         for g in goals:
             if g.grasp_id not in self._known_grasps:
                 command_str = "addGrasp %i" % g.grasp_id
-                command_str += " %f %f %f" % (g.grasp_tf[0, 3], g.grasp_tf[1, 3], g.grasp_tf[2, 3])
+                command_str += " %f %f %f" % (
+                    g.grasp_tf[0, 3], g.grasp_tf[1, 3], g.grasp_tf[2, 3])
                 gquat = orpy.quatFromRotationMatrix(g.grasp_tf)
-                command_str += " %f %f %f %f" % (gquat[0], gquat[1], gquat[2], gquat[3])
+                command_str += " %f %f %f %f" % (gquat[0], gquat[1], gquat[2],
+                                                 gquat[3])
                 for v in g.grasp_config:
                     command_str += " %f" % v
                 self._planner_interface.SendCommand(command_str)
@@ -135,7 +142,8 @@ class MGMotionPlanner(object):
         """
         goal_ids = [g.key for g in goals if g.key in self._goals]
         if len(goal_ids) > 0:
-            command_str = "removeGoals " + str(goal_ids).replace('[', '').replace(']', '').replace(',', '')
+            command_str = "removeGoals " + str(goal_ids).replace(
+                '[', '').replace(']', '').replace(',', '')
             self._planner_interface.SendCommand(command_str)
             for g in goal_ids:
                 self._goals.pop(g)
@@ -171,7 +179,6 @@ class PathSimplifier(object):
     """
         Wrapper around OR_OMPL_Simplifier.
     """
-
     def __init__(self, manip):
         """
             Create a new instance of a path simplifier for the given manipulator.
@@ -209,10 +216,12 @@ class PathSimplifier(object):
         with self._robot:
             with grasped_obj:
                 try:
-                    hfts_utils.set_grasp(self._manip, grasped_obj, inv_grasp_tf, goal.grasp_config)
+                    hfts_utils.set_grasp(self._manip, grasped_obj,
+                                         inv_grasp_tf, goal.grasp_config)
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
                     params = orpy.Planner.PlannerParameters()
-                    params.SetExtraParameters("<time_limit>%f</time_limit>" % time_limit)
+                    params.SetExtraParameters("<time_limit>%f</time_limit>" %
+                                              time_limit)
                     self._simplifier.InitPlan(self._robot, params)
                     self._simplifier.PlanPath(traj)
                 finally:
@@ -231,8 +240,12 @@ class MGAnytimePlacementPlanner(object):
             vel_scale, float - percentage of max velocity
             mp_timeout, float - computation time the motion planner for each manipulator has in each iteration
     """
-
-    def __init__(self, goal_sampler, manips, mplanner=None, stats_recorder=None, **kwargs):
+    def __init__(self,
+                 goal_sampler,
+                 manips,
+                 mplanner=None,
+                 stats_recorder=None,
+                 **kwargs):
         """
             Create a new MGAnytimePlacementPlanner.
             ---------
@@ -247,14 +260,20 @@ class MGAnytimePlacementPlanner(object):
         if mplanner is None:
             mplanner = "ParallelMGBiRRT"
         self.goal_sampler = goal_sampler
-        self._motion_planners = {}  # store separate motion planner for each manipulator
+        self._motion_planners = {
+        }  # store separate motion planner for each manipulator
         self._simplifiers = {}  # same for path simplifiers
-        self._params = {"num_goal_samples": 2, "num_goal_iterations": 50, "vel_scale": 0.1,
-                        "mp_timeout": 1.0}
+        self._params = {
+            "num_goal_samples": 2,
+            "num_goal_iterations": 50,
+            "vel_scale": 0.1,
+            "mp_timeout": 1.0
+        }
         if mplanner == "ParallelMGBiRRT":
             self._params["mp_timeout"] = 0.0
         for manip in manips:
-            self._motion_planners[manip.GetName()] = MGMotionPlanner(mplanner, manip)
+            self._motion_planners[manip.GetName()] = MGMotionPlanner(
+                mplanner, manip)
             self._simplifiers[manip.GetName()] = PathSimplifier(manip)
         self._robot = manips[0].GetRobot()
         self.set_parameters(**kwargs)
@@ -292,10 +311,12 @@ class MGAnytimePlacementPlanner(object):
         iter_idx = 0
         while time.time() - start_time < timeout:
             rospy.logdebug("Running iteration %i" % iter_idx)
-            connected_goals = []  # store goals that we manage to connect to in this iteration
+            connected_goals = [
+            ]  # store goals that we manage to connect to in this iteration
             # sample new goals
             rospy.logdebug("Sampling %i new goals" % num_goal_samples)
-            new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter, True)
+            new_goals, num_new_goals = self.goal_sampler.sample(
+                num_goal_samples, num_goal_iter, True)
             rospy.logdebug("Got %i valid new goals" % num_new_goals)
             self._merge_goal_sets(goal_set, new_goals)
             # add new goals
@@ -305,30 +326,37 @@ class MGAnytimePlacementPlanner(object):
             for manip_name, planner in self._motion_planners.iteritems():
                 # filter goals out that are worse than our current best solution
                 current_goals = goal_set[manip_name]
-                current_goals, goals_to_remove = self._filter_goals(current_goals, best_solution)
+                current_goals, goals_to_remove = self._filter_goals(
+                    current_goals, best_solution)
                 goal_set[manip_name] = current_goals
                 planner.removeGoals(goals_to_remove)
                 if len(current_goals) > 0:
-                    trajs, reached_goals = planner.plan(self._params["mp_timeout"])
+                    trajs, reached_goals = planner.plan(
+                        self._params["mp_timeout"])
                     if len(trajs) > 0:
                         # select the reached goal with maximal objective value
-                        idx = np.argmax([g.objective_value for g in reached_goals])
+                        idx = np.argmax(
+                            [g.objective_value for g in reached_goals])
                         reached_goal = reached_goals[idx]
                         traj = trajs[idx]
                         # locally improve this goal
-                        traj, improved_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
+                        traj, improved_goal = self.goal_sampler.improve_path_goal(
+                            traj, reached_goal)
                         self.solutions.append((traj, improved_goal))
                         best_solution = (traj, improved_goal)
-                        rospy.logdebug("Found new solution - it has objective value %f" %
-                                       best_solution[1].objective_value)
+                        rospy.logdebug(
+                            "Found new solution - it has objective value %f" %
+                            best_solution[1].objective_value)
                         connected_goals.extend(reached_goals)
                         connected_goals.append(improved_goal)
                         if self._stats_recorder:
                             # record both reached and improved goal (before and after local optimization)
-                            self._stats_recorder.register_new_solution(reached_goal, planner.get_num_known_grasps())
+                            self._stats_recorder.register_new_solution(
+                                reached_goal, planner.get_num_known_grasps())
                             if reached_goal != improved_goal:
                                 self._stats_recorder.register_new_solution(
-                                    improved_goal, planner.get_num_known_grasps())
+                                    improved_goal,
+                                    planner.get_num_known_grasps())
             # lastly, inform goal sampler about the goals we reached this round
             self.goal_sampler.set_reached_goals(connected_goals)
             iter_idx += 1
@@ -337,7 +365,8 @@ class MGAnytimePlacementPlanner(object):
             planner.clear()
         if best_solution is not None:
             simplifier = self._simplifiers[best_solution[1].manip.GetName()]
-            simplifier.simplify(best_solution[0], best_solution[1], target_object)
+            simplifier.simplify(best_solution[0], best_solution[1],
+                                target_object)
             self.time_traj(best_solution[0])
             return best_solution
         return None, None
@@ -348,7 +377,8 @@ class MGAnytimePlacementPlanner(object):
         """
         with self._robot:
             vel_limits = self._robot.GetDOFVelocityLimits()
-            self._robot.SetDOFVelocityLimits(self._params['vel_scale'] * vel_limits)
+            self._robot.SetDOFVelocityLimits(self._params['vel_scale'] *
+                                             vel_limits)
             orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
             self._robot.SetDOFVelocityLimits(vel_limits)
         return traj
@@ -360,7 +390,8 @@ class MGAnytimePlacementPlanner(object):
         if i >= len(self.solutions):
             return None, None
         if bsimplify:
-            simplifier = self._simplifiers[self.solutions[i][1].manip.GetName()]
+            simplifier = self._simplifiers[self.solutions[i]
+                                           [1].manip.GetName()]
             simplifier.simplify(self.solutions[i][0], self.solutions[i][1])
         self.time_traj(self.solutions[i][0])
         return self.solutions[i]
@@ -381,8 +412,14 @@ class MGAnytimePlacementPlanner(object):
         """
         if best_solution is None:
             return goals, []
-        goals_to_keep = [x for x in goals if x.objective_value > best_solution[1].objective_value]
-        goals_to_remove = [x for x in goals if x.objective_value <= best_solution[1].objective_value]
+        goals_to_keep = [
+            x for x in goals
+            if x.objective_value > best_solution[1].objective_value
+        ]
+        goals_to_remove = [
+            x for x in goals
+            if x.objective_value <= best_solution[1].objective_value
+        ]
         return goals_to_keep, goals_to_remove
 
     def _merge_goal_sets(self, old_goals, new_goals):
@@ -422,8 +459,11 @@ class DummyPlanner(object):
         It samples several goals, and then randomly decides that one of them was reached by a motion planner.
         Subsequently, the goal sampler is informed about this and queried again.
     """
-
-    def __init__(self, goal_sampler, num_goal_samples=10, num_goal_iterations=10, stats_recorder=None):
+    def __init__(self,
+                 goal_sampler,
+                 num_goal_samples=10,
+                 num_goal_iterations=10,
+                 stats_recorder=None):
         """
             num_goal_samples, int - number of goal samples the goal sampler should acquire in each iteration
             num_goal_trials, int - total number of trials the goal sampler has to do so in each iteration
@@ -448,7 +488,9 @@ class DummyPlanner(object):
         best_solution = None
         start_time = time.time()
         while time.time() - start_time < timeout:
-            new_goals, _ = self._goal_sampler.sample(self.num_goal_samples, self.num_goal_iterations, True)
+            new_goals, _ = self._goal_sampler.sample(self.num_goal_samples,
+                                                     self.num_goal_iterations,
+                                                     True)
             self._check_objective_invariant(new_goals, best_solution)
             goal_set = self._merge_goal_sets(goal_set, new_goals)
             if len(goal_set) > 0:
@@ -463,7 +505,8 @@ class DummyPlanner(object):
                     objectives.append(best_solution.objective_value)
                     solutions.append(best_solution)
                     if self._stats_recorder:
-                        self._stats_recorder.register_new_solution(selected_goal)
+                        self._stats_recorder.register_new_solution(
+                            selected_goal)
 
         return objectives, solutions
 
@@ -472,7 +515,7 @@ class DummyPlanner(object):
             return
         for (key, goal_set) in goals.iteritems():
             for goal in goal_set:
-                assert(goal.objective_value >= best_sol.objective_value)
+                assert (goal.objective_value >= best_sol.objective_value)
 
     def _merge_goal_sets(self, old_goals, new_goals):
         """
@@ -509,14 +552,16 @@ class DummyPlanner(object):
         """
         if best_solution is None:
             return goals
-        return [x for x in goals if x.objective_value > best_solution.objective_value]
+        return [
+            x for x in goals
+            if x.objective_value > best_solution.objective_value
+        ]
 
 
 class RedirectableOMPLPlanner(object):
     """
         Convenience wrapper around the RedirectableOMPLPlanner from or_ompl.
     """
-
     def __init__(self, planner_name, manip):
         """
             Create a new instance of a RedirectableOMPLPlanner using the given algorithm for
@@ -537,7 +582,8 @@ class RedirectableOMPLPlanner(object):
             self._params.SetRobotActiveJoints(self._robot)
         self._ompl_planner = orpy.RaveCreatePlanner(env, planner_name)
         if self._ompl_planner is None:
-            raise ValueError("Could not create OMPL planner with name %s" % planner_name)
+            raise ValueError("Could not create OMPL planner with name %s" %
+                             planner_name)
         self._simplifier = orpy.RaveCreatePlanner(env, "OMPL_Simplifier")
         self._manip = manip
         self._bplanner_initialized = False  # whether the underlying motion planner has been intialized
@@ -562,7 +608,8 @@ class RedirectableOMPLPlanner(object):
             with self._robot:
                 self._robot.SetActiveDOFs(self._manip.GetArmIndices())
                 self._params.SetInitialConfig(self._robot.GetActiveDOFValues())
-        self._params.SetExtraParameters("<time_limit>%f</time_limit>" % time_limit)
+        self._params.SetExtraParameters("<time_limit>%f</time_limit>" %
+                                        time_limit)
         self._bplanner_initialized = False
         self._self_initialized = True
         self._grasped_obj = grasped_obj
@@ -585,40 +632,51 @@ class RedirectableOMPLPlanner(object):
             goal_id, int - index of the goal that was reached. If no solution found, -1
         """
         if not self._self_initialized:
-            raise RuntimeError("Can not plan path before setup has been called!")
+            raise RuntimeError(
+                "Can not plan path before setup has been called!")
         goals = np.array([goal.arm_config for goal in plcmnt_goals])
         # TODO for now we assume that for particular manipulator there is always a single grasp
         inv_grasp_tf = hfts_utils.inverse_transform(plcmnt_goals[0].grasp_tf)
         grasp_config = plcmnt_goals[0].grasp_config
         # TODO set timeout
         self._traj = orpy.RaveCreateTrajectory(self._robot.GetEnv(), '')
-        if (type(goals) != np.ndarray or len(goals.shape) != 2 or goals.shape[1] != self._manip.GetArmDOF()):
+        if (type(goals) != np.ndarray or len(goals.shape) != 2
+                or goals.shape[1] != self._manip.GetArmDOF()):
             raise ValueError("Invalid goals input: " + str(goals))
         with self._robot:
             with self._grasped_obj:
                 try:
                     # grasp object first
-                    hfts_utils.set_grasp(self._manip, self._grasped_obj, inv_grasp_tf, grasp_config)
+                    hfts_utils.set_grasp(self._manip, self._grasped_obj,
+                                         inv_grasp_tf, grasp_config)
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
-                    rospy.logdebug("Querying motion planner with %i goals" % goals.shape[0])
-                    if not self._bplanner_initialized or not self._supports_goal_reset():
+                    rospy.logdebug("Querying motion planner with %i goals" %
+                                   goals.shape[0])
+                    if not self._bplanner_initialized or not self._supports_goal_reset(
+                    ):
                         self._params.SetGoalConfig(goals.flat)
                         self._ompl_planner.InitPlan(self._robot, self._params)
                         self._bplanner_initialized = True
                     else:
-                        goals_string = np.array2string(goals, separator=',').replace('\n', '').replace(' ', '')
-                        self._ompl_planner.SendCommand("ResetGoals " + goals_string)
+                        goals_string = np.array2string(
+                            goals, separator=',').replace('\n',
+                                                          '').replace(' ', '')
+                        self._ompl_planner.SendCommand("ResetGoals " +
+                                                       goals_string)
                     # do the actual planning!
                     result = self._ompl_planner.PlanPath(self._traj)
                     if result == orpy.PlannerStatus.HasSolution:
                         # check what goal we planned to
-                        return_string = self._ompl_planner.SendCommand("GetReachedGoals")
+                        return_string = self._ompl_planner.SendCommand(
+                            "GetReachedGoals")
                         try:
                             reached_goal = int(return_string)
                         except ValueError:
                             raise RuntimeError(
-                                "OMPLPlanner function GetReachedGoals returned invalid string: " + return_string)
-                        assert(reached_goal >= 0 and reached_goal < goals.shape[0])
+                                "OMPLPlanner function GetReachedGoals returned invalid string: "
+                                + return_string)
+                        assert (reached_goal >= 0
+                                and reached_goal < goals.shape[0])
                         return self._traj, reached_goal
                     return None, -1
                 finally:
@@ -640,15 +698,18 @@ class RedirectableOMPLPlanner(object):
             traj, OpenRAVE trajectory, the same object as traj
         """
         if not self._self_initialized:
-            raise RuntimeError("Can not simplify path before setup has been called!")
+            raise RuntimeError(
+                "Can not simplify path before setup has been called!")
         inv_grasp_tf = hfts_utils.inverse_transform(goal.grasp_tf)
         with self._robot:
             with self._grasped_obj:
                 try:
-                    hfts_utils.set_grasp(self._manip, self._grasped_obj, inv_grasp_tf, goal.grasp_config)
+                    hfts_utils.set_grasp(self._manip, self._grasped_obj,
+                                         inv_grasp_tf, goal.grasp_config)
                     self._robot.SetActiveDOFs(self._manip.GetArmIndices())
                     params = orpy.Planner.PlannerParameters()
-                    params.SetExtraParameters("<time_limit>%f</time_limit>" % time_limit)
+                    params.SetExtraParameters("<time_limit>%f</time_limit>" %
+                                              time_limit)
                     self._simplifier.InitPlan(self._robot, params)
                     self._simplifier.PlanPath(traj)
                 finally:
@@ -661,7 +722,9 @@ class RedirectableOMPLPlanner(object):
             bool_val = bool(int(return_string))
             return bool_val
         except ValueError:
-            raise RuntimeError("OMPLPlanner function IsSupportingGoalReset returned invalid string: " + return_string)
+            raise RuntimeError(
+                "OMPLPlanner function IsSupportingGoalReset returned invalid string: "
+                + return_string)
 
 
 class AnyTimePlacementPlanner(object):
@@ -675,8 +738,12 @@ class AnyTimePlacementPlanner(object):
             vel_scale, float - percentage of max velocity
             mp_timeout, float - computation time each motion planner has in each iteration
     """
-
-    def __init__(self, goal_sampler, manips, mplanner=None, stats_recorder=None, **kwargs):
+    def __init__(self,
+                 goal_sampler,
+                 manips,
+                 mplanner=None,
+                 stats_recorder=None,
+                 **kwargs):
         """
             Create a new AnyTimePlacementPlanner.
             ---------
@@ -697,11 +764,17 @@ class AnyTimePlacementPlanner(object):
             mplanner = "OMPL_RedirectableRRTConnect"
             # mplanner = "OMPL_SPARStwo"
         self.goal_sampler = goal_sampler
-        self._motion_planners = {}  # store separate motion planner for each manipulator
-        self._params = {"num_goal_samples": 2, "num_goal_iterations": 50, "vel_scale": 0.1,
-                        "mp_timeout": 5.0}
+        self._motion_planners = {
+        }  # store separate motion planner for each manipulator
+        self._params = {
+            "num_goal_samples": 2,
+            "num_goal_iterations": 50,
+            "vel_scale": 0.1,
+            "mp_timeout": 5.0
+        }
         for manip in manips:
-            self._motion_planners[manip.GetName()] = RedirectableOMPLPlanner(mplanner, manip)
+            self._motion_planners[manip.GetName()] = RedirectableOMPLPlanner(
+                mplanner, manip)
         self._robot = manips[0].GetRobot()
         self.set_parameters(**kwargs)
         self.solutions = []
@@ -730,15 +803,18 @@ class AnyTimePlacementPlanner(object):
         goal_set = {}
         # initialize motion planners
         for _, planner in self._motion_planners.iteritems():
-            planner.setup(grasped_obj=target_object, time_limit=self._params["mp_timeout"])
+            planner.setup(grasped_obj=target_object,
+                          time_limit=self._params["mp_timeout"])
         # repeatedly query new goals, and plan motions
         start_time = time.time()
         iter_idx = 0
         while time.time() - start_time < timeout:
             rospy.logdebug("Running iteration %i" % iter_idx)
-            connected_goals = []  # store goals that we manage to connect to in this iteration
+            connected_goals = [
+            ]  # store goals that we manage to connect to in this iteration
             rospy.logdebug("Sampling %i new goals" % num_goal_samples)
-            new_goals, num_new_goals = self.goal_sampler.sample(num_goal_samples, num_goal_iter, True)
+            new_goals, num_new_goals = self.goal_sampler.sample(
+                num_goal_samples, num_goal_iter, True)
             rospy.logdebug("Got %i valid new goals" % num_new_goals)
             goal_set = self._merge_goal_sets(goal_set, new_goals)
             # TODO we could/should plan motions for each manipulator in parallel. For now, instead, plan
@@ -750,25 +826,31 @@ class AnyTimePlacementPlanner(object):
                     # get motion planner for this manipulator
                     motion_planner = self._motion_planners[manip_name]
                     # filter goals out that are worse than our current best solution
-                    remaining_goals = self._filter_goals(manip_goals, best_solution)
+                    remaining_goals = self._filter_goals(
+                        manip_goals, best_solution)
                     if len(remaining_goals) > 0:
                         traj, goal_id = motion_planner.plan(remaining_goals)
                         if traj is not None:
                             reached_goal = remaining_goals[goal_id]
                             # by invariant a newly reached goal should always have better objective
-                            assert(best_solution is None or
-                                   best_solution[1].objective_value < reached_goal.objective_value)
-                            traj, improved_goal = self.goal_sampler.improve_path_goal(traj, reached_goal)
+                            assert (best_solution is None
+                                    or best_solution[1].objective_value <
+                                    reached_goal.objective_value)
+                            traj, improved_goal = self.goal_sampler.improve_path_goal(
+                                traj, reached_goal)
                             self.solutions.append((traj, improved_goal))
                             best_solution = (traj, improved_goal)
-                            rospy.logdebug("Found new solution - it has objective value %f" %
-                                           best_solution[1].objective_value)
+                            rospy.logdebug(
+                                "Found new solution - it has objective value %f"
+                                % best_solution[1].objective_value)
                             connected_goals.append(improved_goal)
                             if self._stats_recorder:
                                 # record both reached and improved goal (before and after local optimization)
-                                self._stats_recorder.register_new_solution(reached_goal)
+                                self._stats_recorder.register_new_solution(
+                                    reached_goal)
                                 if reached_goal != improved_goal:
-                                    self._stats_recorder.register_new_solution(improved_goal)
+                                    self._stats_recorder.register_new_solution(
+                                        improved_goal)
             # lastly, inform goal sampler about the goals we reached this round
             self.goal_sampler.set_reached_goals(connected_goals)
             iter_idx += 1
@@ -785,7 +867,8 @@ class AnyTimePlacementPlanner(object):
         """
         with self._robot:
             vel_limits = self._robot.GetDOFVelocityLimits()
-            self._robot.SetDOFVelocityLimits(self._params['vel_scale'] * vel_limits)
+            self._robot.SetDOFVelocityLimits(self._params['vel_scale'] *
+                                             vel_limits)
             orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
             self._robot.SetDOFVelocityLimits(vel_limits)
         return traj
@@ -797,7 +880,8 @@ class AnyTimePlacementPlanner(object):
         if i >= len(self.solutions):
             return None, None
         if bsimplify:
-            planner = self._motion_planners[self.solutions[i][1].manip.GetName()]
+            planner = self._motion_planners[self.solutions[i]
+                                            [1].manip.GetName()]
             planner.simplify(self.solutions[i][0], self.solutions[i][1])
         self.time_traj(self.solutions[i][0])
         return self.solutions[i]
@@ -818,8 +902,11 @@ class AnyTimePlacementPlanner(object):
                 w.r.t to value
         """
         # compute average score per manipulator
-        goal_candidates = [(manip_name, sum([goal.objective_value for goal in goals]) / len(goals), goals)
-                           for manip_name, goals in new_goals.iteritems() if len(goals) > 0]
+        goal_candidates = [(manip_name,
+                            sum([goal.objective_value
+                                 for goal in goals]) / len(goals), goals)
+                           for manip_name, goals in new_goals.iteritems()
+                           if len(goals) > 0]
         # sort based on average score
         goal_candidates.sort(key=lambda x: x[1])
         goal_candidates.reverse()
@@ -840,7 +927,10 @@ class AnyTimePlacementPlanner(object):
         """
         if best_solution is None:
             return goals
-        return [x for x in goals if x.objective_value > best_solution[1].objective_value]
+        return [
+            x for x in goals
+            if x.objective_value > best_solution[1].objective_value
+        ]
 
     def _merge_goal_sets(self, old_goals, new_goals):
         """
