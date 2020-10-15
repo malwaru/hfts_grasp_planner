@@ -205,20 +205,8 @@ template <bool lazy_grasp_check>
 void MultiGraspRoadmapGraph<lazy_grasp_check>::getSuccessors(unsigned int v, std::vector<unsigned int>& successors,
                                                              bool lazy)
 {
-#ifdef ENABLE_GRAPH_LOGGING
-  if (v == 0)
-  {
-    _logger.logExpansion(_roadmap_start_id);
-  }
-  else
-  {
-    auto [rid, gid] = getGraspRoadmapId(v);
-    _logger.logExpansion(rid, gid);
-  }
-#endif
   successors.clear();
-  auto begin = NeighborIterator::begin(v, lazy, this);
-  auto end = NeighborIterator::end(v, this);
+  auto [begin, end] = getSuccessors(v, lazy);
   successors.insert(successors.begin(), begin, end);
 }
 

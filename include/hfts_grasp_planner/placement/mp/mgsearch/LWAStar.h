@@ -40,7 +40,7 @@ inline double f(const PQElement& el)
 
 struct PQElementCompare
 {
-  // for max heaps
+  // for max heaps (should a come after b?)
   bool operator()(const PQElement& a, const PQElement& b) const
   {
     double af = f(a);
