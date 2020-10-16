@@ -245,6 +245,8 @@ void Roadmap::densify(unsigned int batch_size)
   }
   delete[] new_samples;
   _densification_gen += 1;
+  // update adjacency radius according to RRT*/PRM* paper
+  _adjacency_radius = _gamma_prm * pow(log(_halton_seq_id) / _halton_seq_id, 1.0 / _si.dimension);
 }
 
 void Roadmap::setLogging(const std::string& roadmap_path, const std::string& log_path)
@@ -283,10 +285,8 @@ void Roadmap::updateAdjacency(NodePtr node)
   // update the node's adjacency
   if (node->densification_gen != _densification_gen)
   {
-    // radius computed according to RRT*/PRM* paper
-    double r = _gamma_prm * pow(log(_nn.size()) / _nn.size(), 1.0 / _si.dimension);
     std::vector<NodePtr> neighbors;
-    _nn.nearestR(node, r, neighbors);
+    _nn.nearestR(node, _adjacency_radius, neighbors);
     // add new edges, keep old ones
     for (auto& neigh : neighbors)
     {

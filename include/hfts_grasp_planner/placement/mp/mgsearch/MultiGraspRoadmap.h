@@ -321,6 +321,7 @@ private:
   unsigned int _halton_seq_id;
   unsigned int _densification_gen;
   double _gamma_prm;
+  double _adjacency_radius;
 
   void scaleToLimits(Config& config) const;
   void deleteNode(NodePtr node);
