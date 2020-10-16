@@ -42,8 +42,20 @@ def show_goals(goals, manip, target_object):
         time.sleep(1.3)
 
 
+def time_traj(robot, traj, vel_scale=0.4):
+    """
+        Retime the given trajectory.
+    """
+    with robot:
+        vel_limits = robot.GetDOFVelocityLimits()
+        robot.SetDOFVelocityLimits(vel_scale * vel_limits)
+        orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
+        robot.SetDOFVelocityLimits(vel_limits)
+    return traj
+
+
 def show_traj(robot, traj):
-    # execute tra
+    # execute traj
     robot.GetController().SetPath(traj)
     robot.WaitForController(0)
 
@@ -72,18 +84,24 @@ if __name__ == "__main__":
     # planner.addGoals([goal])
     # ids, trajs = planner.plan(0.5)
 
-    arm_configs = np.array(
-        [[1.25258009, -1.93622083, -1.77695288,  1.01818061, -4.83087776, -1.03938177, -0.82435254],
-         [1.11597062, -0.28492879,  2.78850779, -0.87283519, -3.15051852, 1.32253751,  2.97237394],
-         [1.00281921,  0.51366662, -2.16203263, -2.13098839,  5.03660588, -1.26111986,  3.91137734],
-         [-0.85163025, -1.4762257,  0.69984902, -0.69804897,  4.2517744, -0.37408561, -3.3408329],
-         [-0.10277229, -2.37251086,  0.61479298, -1.43631191, -4.38698001, 0.02923189,  0.87474853],
-         [-0.19612599, -1.33136467, -1.86323676,  0.61238113,  3.25175716, 1.4431787,  1.05532095],
-         [-1.51859361, -0.61244252, -1.4749193, -1.59033694, -0.28297413, 0.78712868, -1.53804721],
-         [-1.70009506, -0.18605498, -1.56330288, -0.27473375, -0.00539935, 1.85570684, -3.71383803],
-         [0.11127244, -0.65327576,  2.4378246, -1.93000283, -5.02064425, 2.10443872,  2.55133075],
-         [-0.17231944, -1.05836212,  2.18901789, -0.24468057, -1.43317494, 0.83649861, -1.66937163]]
-    )
+    # arm_configs = np.array(
+    #     [[1.25258009, -1.93622083, -1.77695288,  1.01818061, -4.83087776, -1.03938177, -0.82435254],
+    #      [1.11597062, -0.28492879,  2.78850779, -0.87283519, -3.15051852, 1.32253751,  2.97237394],
+    #      [1.00281921,  0.51366662, -2.16203263, -2.13098839,  5.03660588, -1.26111986,  3.91137734],
+    #      [-0.85163025, -1.4762257,  0.69984902, -0.69804897,  4.2517744, -0.37408561, -3.3408329],
+    #      [-0.10277229, -2.37251086,  0.61479298, -1.43631191, -4.38698001, 0.02923189,  0.87474853],
+    #      [-0.19612599, -1.33136467, -1.86323676,  0.61238113,  3.25175716, 1.4431787,  1.05532095],
+    #      [-1.51859361, -0.61244252, -1.4749193, -1.59033694, -0.28297413, 0.78712868, -1.53804721],
+    #      [-1.70009506, -0.18605498, -1.56330288, -0.27473375, -0.00539935, 1.85570684, -3.71383803],
+    #      [0.11127244, -0.65327576,  2.4378246, -1.93000283, -5.02064425, 2.10443872,  2.55133075],
+    #      [-0.17231944, -1.05836212,  2.18901789, -0.24468057, -1.43317494, 0.83649861, -1.66937163]]
+    # )
+    arm_configs = np.array([
+        [2.03163983e+00, -1.43301054e+00,  3.00463621e-08,  3.51604524e-01,
+         6.42155124e-08, -1.02065013e+00,  2.22185747e-01],
+        [2.9408798, -1.65156305, -0.38921859, -0.02757271,  0.34295812,
+         -0.78592355, -0.35071443]
+    ])
     goals = []
     print "setting goals"
     env.SetViewer('qtcoin')
@@ -98,7 +116,7 @@ if __name__ == "__main__":
     for i in range(1):
         print "Creating planner"
         # planner = MGMotionPlanner("SequentialMGBiRRT", manip)
-        planner = MGMotionPlanner("Astar", manip)
+        planner = MGMotionPlanner("LWAStar;MultiGraspGraph", manip)
         planner.setup(target_object)
         print "Adding goals"
         planner.addGoals(goals)
@@ -108,6 +126,7 @@ if __name__ == "__main__":
         # print "PLANNING TOWARDS:\n", str(np.array([goal.arm_config for goal in goals))
         print "Entering planning loop"
         trajectories, reached_goals = planner.plan(1.0)
+        trajectories = [time_traj(robot, traj) for traj in trajectories]
         # print "Reached goals: ", [g.key for g in reached_goals]
         # unreached_goals = [g for g in goals if g not in reached_goals]
         # if len(unreached_goals) > 0:

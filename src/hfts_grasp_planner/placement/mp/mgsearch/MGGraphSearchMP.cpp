@@ -56,11 +56,18 @@ std::string MGGraphSearchMP::getName(AlgorithmType atype)
   }
 }
 
+std::string strToLower(std::string s)
+{
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+  return s;
+}
+
 MGGraphSearchMP::GraphType MGGraphSearchMP::getGraphType(const std::string& name)
 {
   for (unsigned int enum_id = 0; enum_id < NUM_GRAPH_TYPES; ++enum_id)
   {
-    if (getName(static_cast<GraphType>(enum_id)) == name)
+    std::string original_name = getName(static_cast<GraphType>(enum_id));
+    if (name == original_name or name == strToLower(original_name))
     {
       return static_cast<GraphType>(enum_id);
     }
@@ -72,7 +79,8 @@ MGGraphSearchMP::AlgorithmType MGGraphSearchMP::getAlgorithmType(const std::stri
 {
   for (unsigned int enum_id = 0; enum_id < NUM_ALGORITHM_TYPES; ++enum_id)
   {
-    if (getName(static_cast<AlgorithmType>(enum_id)) == name)
+    std::string original_name = getName(static_cast<AlgorithmType>(enum_id));
+    if (name == original_name or name == strToLower(original_name))
     {
       return static_cast<AlgorithmType>(enum_id);
     }
@@ -153,10 +161,10 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
             break;
           }
           default:
-            RAVELOG_ERROR("Algorithm type not implemented yet");
+            RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) + " not implemented for SingleGraspGraph.");
         }
         // pick the best solution
-        if (sr.solved && sr.path_cost < sol.cost)
+        if (sr.solved && sr.cost() < sol.cost)
         {
           extractSolution<SingleGraspRoadmapGraph>(sr, sol, graph);
         }
@@ -198,7 +206,8 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
           break;
         }
         default:
-          RAVELOG_ERROR("Algorithm type not supported in combination with MultiGraspRoadmapGraph");
+          RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) +
+                        " not supported in combination with MultiGraspRoadmapGraph");
       }
       if (sr.solved)
       {
@@ -221,7 +230,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
         }
         default:
           // TODO the stationary version should be compatible with all algrotithms, no?
-          RAVELOG_ERROR("Algorithm type doesn't support FoldedMultiGraspGraph yet");
+          RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) + "  doesn't support FoldedMultiGraspGraph yet");
       }
       if (sr.solved)
       {
@@ -243,7 +252,7 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
           break;
         }
         default:
-          RAVELOG_ERROR("Algorithm type doesn't support FoldedMultiGraspGraph yet");
+          RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) + " doesn't support FoldedMultiGraspGraph yet");
       }
       if (sr.solved)
       {
@@ -279,7 +288,8 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
           break;
         }
         default: {
-          RAVELOG_ERROR("Algorithm type doesn't support LazyWeightedMultiGraspGraph");
+          RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) +
+                        " doesn't support LazyWeightedMultiGraspGraph");
         }
       }
       if (sr.solved)

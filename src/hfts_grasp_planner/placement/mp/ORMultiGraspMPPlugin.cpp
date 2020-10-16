@@ -2,6 +2,7 @@
 #include <hfts_grasp_planner/placement/mp/ORGraphSearch.h>
 #include <hfts_grasp_planner/placement/mp/ORMultiGraspMPPlugin.h>
 #include <iostream>
+#include <algorithm>
 
 #define PARALLEL_BIRRT "parallelmgbirrt"
 #define SEQUENTIAL_BIRRT "sequentialmgbirrt"
@@ -82,17 +83,30 @@ void parseGraphSearchType(const std::string& name_to_parse, mgsearch::MGGraphSea
 {
   // try to split string by ';'
   auto split_index = name_to_parse.find(';');
-  if (split_index < std::string.npos)
+  if (split_index < name_to_parse.npos)
   {
     std::string algorithm_name = name_to_parse.substr(0, split_index);
-    std::string graph_name = name_to_parse.substr(split_index);
+    std::string graph_name = name_to_parse.substr(split_index + 1);
     params.algo_type = mgsearch::MGGraphSearchMP::getAlgorithmType(algorithm_name);
     params.graph_type = mgsearch::MGGraphSearchMP::getGraphType(graph_name);
+    // check whether this is a valid combination
+    std::pair<mgsearch::MGGraphSearchMP::AlgorithmType, mgsearch::MGGraphSearchMP::GraphType> algo_graph_pair = {
+        params.algo_type, params.graph_type};
+    auto iter = std::find(std::cbegin(mgsearch::MGGraphSearchMP::VALID_ALGORITHM_GRAPH_COMBINATIONS),
+                          std::cend(mgsearch::MGGraphSearchMP::VALID_ALGORITHM_GRAPH_COMBINATIONS), algo_graph_pair);
+    if (iter == std::cend(mgsearch::MGGraphSearchMP::VALID_ALGORITHM_GRAPH_COMBINATIONS))
+    {
+      std::string err_msg("Invalid algorithm/graph combination " + name_to_parse);
+      RAVELOG_ERROR(err_msg);
+      throw std::runtime_error(err_msg);
+    }
   }
   else
   {
-    RAVELOG_ERROR("Unknown algorithm type " + name_to_parse + ". Can not plan.");
-    throw std::logic_error("Unknown planning algorithm name " + name_to_parse);
+    std::string err_msg("Invalid algorithm encoding " + name_to_parse +
+                        ". Could not parse it. Required format is '<algorithm>;<graph_type>'.");
+    RAVELOG_ERROR(err_msg);
+    throw std::runtime_error(err_msg);
   }
 }
 
@@ -299,8 +313,13 @@ void GetPluginAttributesValidated(PLUGININFO& info)
   // std::cout << "GetPluginAttributedValidated" << std::endl;
   info.interfacenames[PT_Module].push_back(PARALLEL_BIRRT);
   info.interfacenames[PT_Module].push_back(SEQUENTIAL_BIRRT);
-  //   info.interfacenames[PT_Module].push_back(ASTAR);
-  // TODO iterate over valid combinations of graphs and algorithms encoded in a ;-separated string
+  for (auto algo_graph_pair : mgsearch::MGGraphSearchMP::VALID_ALGORITHM_GRAPH_COMBINATIONS)
+  {
+    std::stringstream ss;
+    ss << mgsearch::MGGraphSearchMP::getName(algo_graph_pair.first) << ';'
+       << mgsearch::MGGraphSearchMP::getName(algo_graph_pair.second);
+    info.interfacenames[PT_Module].push_back(ss.str());
+  }
 }
 
 void DestroyPlugin()

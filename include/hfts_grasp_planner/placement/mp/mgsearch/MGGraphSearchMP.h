@@ -20,7 +20,7 @@ public:
     SingleGraspGraph = 0,
     MultiGraspGraph = 1,
     FoldedMultiGraspGraphStationary = 2,  // naive, stationary heuristic
-    FoldedMultiGraspGraphDynamic = 3,     // non-stationary heuristic, TODO: currently only compatible with LPAStar
+    FoldedMultiGraspGraphDynamic = 3,     // non-stationary heuristic, TODO: currently only compatible with LWAStar
     LazyWeightedMultiGraspGraph = 4,      // evalutes costs only for the robot without grasps unless explicity asked
   };
   static const unsigned int NUM_GRAPH_TYPES = 5;
@@ -49,6 +49,28 @@ public:
     Parameters() : algo_type(AlgorithmType::Astar), graph_type(GraphType::SingleGraspGraph), lambda(1.0)
     {
     }
+  };
+
+  constexpr static std::pair<AlgorithmType, GraphType> VALID_ALGORITHM_GRAPH_COMBINATIONS[] = {
+      // SingleGrapGraph
+      {AlgorithmType::Astar, GraphType::SingleGraspGraph},
+      {AlgorithmType::LWAstar, GraphType::SingleGraspGraph},
+      {AlgorithmType::LPAstar, GraphType::SingleGraspGraph},
+      {AlgorithmType::LWLPAstar, GraphType::SingleGraspGraph},
+      {AlgorithmType::LazySP_LLPAstar, GraphType::SingleGraspGraph},
+      // MultiGraspGraph
+      {AlgorithmType::Astar, GraphType::MultiGraspGraph},
+      {AlgorithmType::LWAstar, GraphType::MultiGraspGraph},
+      {AlgorithmType::LPAstar, GraphType::MultiGraspGraph},
+      {AlgorithmType::LWLPAstar, GraphType::MultiGraspGraph},
+      {AlgorithmType::LazySP_LLPAstar, GraphType::MultiGraspGraph},
+      // FoldedMultiGraspGraph
+      {AlgorithmType::LWAstar, GraphType::FoldedMultiGraspGraphStationary},
+      {AlgorithmType::LWAstar, GraphType::FoldedMultiGraspGraphDynamic},
+      // LazyWeightedMultiGraspGraph
+      {AlgorithmType::LazySP_LLPAstar, GraphType::LazyWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LWLPAstar, GraphType::LazyWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LPAstar, GraphType::LazyWeightedMultiGraspGraph},
   };
 
   /**
