@@ -179,13 +179,12 @@ protected:
       // 1. The top element is our best known goal node and we would make it locally consistent with finite value
       // (_result.solved) in this iteration.
       // 2. There are no more inconsistent nodes to work on (to capture infeasible queries)
-      return (_pq.top().v == _result.goal_node and _result.solved) or _pq.empty();
+      return _pq.empty() or (_pq.top().v == _result.goal_node and _result.solved);
     }
     else
     {  // Terminate on the same conditions as above, but make sure we actually know the true edge cost to the goal node.
-      return (_pq.top().v == _result.goal_node and _result.solved and
-              _graph.trueEdgeCostKnown(getVertexData(_pq.top().v).p, _pq.top().v)) or
-             _pq.empty();
+      return _pq.empty() or (_pq.top().v == _result.goal_node and _result.solved and
+                             _graph.trueEdgeCostKnown(getVertexData(_pq.top().v).p, _pq.top().v));
     }
   }
 
