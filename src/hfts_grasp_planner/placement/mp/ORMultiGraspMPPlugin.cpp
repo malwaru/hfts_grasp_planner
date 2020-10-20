@@ -291,18 +291,9 @@ bool ORMultiGraspMPPlugin::removeGoals(std::ostream& sout, std::istream& sinput)
 InterfaceBasePtr CreateInterfaceValidated(InterfaceType type, const std::string& interfacename, std::istream& sinput,
                                           EnvironmentBasePtr penv)
 {
-  // std::cout << "CreateInterfaceValidated" << std::endl;
-  // std::cout << interfacename << PARALLEL_BIRRT << (interfacename == PARALLEL_BIRRT) << std::endl;
-  if (type == PT_Module && interfacename == PARALLEL_BIRRT)
+  if (type == PT_Module)
   {
-    return InterfaceBasePtr(new ORMultiGraspMPPlugin(penv, PARALLEL_BIRRT));
-  }
-  else if (type == PT_Module && interfacename == SEQUENTIAL_BIRRT)
-  {
-    return InterfaceBasePtr(new ORMultiGraspMPPlugin(penv, SEQUENTIAL_BIRRT));
-  }
-  else if (type == PT_Module)
-  {
+    // TODO check if interfacename is valid and if not return InterfaceBasePtr()
     return InterfaceBasePtr(new ORMultiGraspMPPlugin(penv, interfacename));
   }
   return InterfaceBasePtr();

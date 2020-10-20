@@ -183,8 +183,11 @@ protected:
     }
     else
     {  // Terminate on the same conditions as above, but make sure we actually know the true edge cost to the goal node.
-      return _pq.empty() or (_pq.top().v == _result.goal_node and _result.solved and
-                             _graph.trueEdgeCostKnown(getVertexData(_pq.top().v).p, _pq.top().v));
+      if (_pq.empty())
+        return true;
+      auto v_data = getVertexData(_pq.top().v);
+      return (v_data.v == _result.goal_node and _result.solved and
+              v_data.rhs == getVertexData(v_data.p).rhs + _graph.getEdgeCost(v_data.p, v_data.v, false));
     }
   }
 
@@ -226,16 +229,23 @@ protected:
       updateVertexKey(u_data);
     }
     else
-    {
-      if (u_data.v != u_data.p and not _graph.trueEdgeCostKnown(u_data.p, u_data.v))
+    {  // check whether we have the true g value for u when coming from p (i.e. edge weight is correct)
+      if (u_data.v != u_data.p)
       {
-        _graph.getEdgeCost(u_data.p, u_data.v, false);
         VertexData& p_data = getVertexData(u_data.p);
-        handleCostIncrease(p_data, u_data);
+        double true_rhs = p_data.g + _graph.getEdgeCost(u_data.p, u_data.v, false);
+        if (true_rhs > u_data.rhs)
+        {
+          handleCostIncrease(p_data, u_data);
+        }
+        else
+        {
+          // edge cost was correct, proceed as usual
+          resolveInconsistency(u_data);
+        }
       }
       else
       {
-        // edge cost was correct, proceed as usual
         resolveInconsistency(u_data);
       }
     }
@@ -275,7 +285,7 @@ protected:
 
   /**
    * Handle a cost increase from u to v.
-   * This may either be due to an increased edge cost (u, v) or due to u itself being more expensively to reach.
+   * This may either be due to an increased edge cost (u, v) or due to u itself being more expensive to reach.
    * Updates v_data accordingly.
    */
   void handleCostIncrease(VertexData& u_data, VertexData& v_data)
@@ -350,6 +360,7 @@ protected:
       // v is no longer inconsistent, so remove it from _pq
       (*v_data.pq_handle).key = Key(0.0, 0.0);
       _pq.increase(v_data.pq_handle);
+      assert(_pq.top().v == v_data.v);
       _pq.pop();
       v_data.in_pq = false;
     }
