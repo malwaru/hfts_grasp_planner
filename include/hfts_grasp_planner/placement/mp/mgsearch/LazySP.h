@@ -77,6 +77,23 @@ std::pair<double, double> getEdgeCost(G& graph, unsigned int v1, unsigned int v2
 }
 
 /**
+ * Check the true cost of the edge from v1 and v2 and add it to edge_changes if there is a change.
+ * @param graph: the graph
+ * @param v1: first vertex
+ * @param v2: second vertex
+ * @param edge_changes: vector to store edge changes in
+ */
+template <typename G>
+void checkEdge(G& graph, unsigned int v1, unsigned int v2, std::vector<EdgeChange>& edge_changes)
+{
+  auto [old_cost, new_cost] = getEdgeCost(graph, v1, v2);
+  if (old_cost != new_cost)
+  {
+    edge_changes.emplace_back(EdgeChange(v1, v2, old_cost < new_cost));
+  }
+}
+
+/**
  * Check whether the true edge cost from u to v is known.
  * This is the default implementation.
  * @param graph: the graph
@@ -133,11 +150,7 @@ void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_sel
         for (auto& edge_iter : edges_to_evaluate)
         {
           // evaluate the given edge
-          auto [old_cost, new_cost] = getEdgeCost(graph, edge_iter->first, edge_iter->second);
-          if (old_cost != new_cost)
-          {
-            edge_changes.emplace_back(EdgeChange(edge_iter->first, edge_iter->second, old_cost));
-          }
+          checkEdge(graph, edge_iter->first, edge_iter->second, edge_changes);
           unknown_edges.erase(edge_iter);
         }
       }

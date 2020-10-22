@@ -113,6 +113,10 @@ public:
 
   /**
    * Update algorithm state to reflect edge weight changes.
+   * Supports also the invalidation of vertices. If a vertex u became invalid,
+   * the user should pass changes for all edges (u, v) (cost_increased) to this function. This is required since graphs
+   * may not return former successors of u after u was evaluated as invalid and we have no (efficient) way to determine
+   * what vertices have u as parent.
    * @param edge_changes: the edge changes
    */
   void updateEdges(const std::vector<EdgeChange>& edge_changes)
@@ -122,13 +126,18 @@ public:
     {
       VertexData& u_data = getVertexData(ec.u);
       VertexData& v_data = getVertexData(ec.v);
-      double new_cost = _graph.getEdgeCost(ec.u, ec.v, ee_type != Explicit);
-      if (ec.old_cost > new_cost)  // did edge get cheaper?
+      if (not ec.cost_increased)  // did edge get cheaper?
       {
         handleCostDecrease(u_data, v_data);
       }
       else if (ec.v != _v_start and v_data.p == ec.u)
       {
+        if (!_graph.checkValidity(u_data.v))
+        {  // capture the case that u became invalid
+          u_data.g = std::numeric_limits<double>::infinity();
+          u_data.rhs = std::numeric_limits<double>::infinity();
+          updateVertexKey(u_data);
+        }
         handleCostIncrease(u_data, v_data);
       }
     }

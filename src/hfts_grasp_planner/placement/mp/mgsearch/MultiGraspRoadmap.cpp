@@ -299,6 +299,18 @@ void Roadmap::updateAdjacency(NodePtr node)
         auto new_edge = std::make_shared<Edge>(node, neigh, bc);
         node->edges.insert(std::make_pair(neigh->uid, new_edge));
         neigh->edges.insert(std::make_pair(node->uid, new_edge));
+        // set conditional validity based on node's validity
+        for (auto [gid, valid] : node->conditional_validity)
+        {
+          if (!valid)
+            new_edge->conditional_costs[gid] = std::numeric_limits<double>::infinity();
+        }
+        // set conditional validity based on neigh's validity
+        for (auto [gid, valid] : neigh->conditional_validity)
+        {
+          if (!valid)
+            new_edge->conditional_costs[gid] = std::numeric_limits<double>::infinity();
+        }
       }
     }
     node->densification_gen = _densification_gen;
@@ -360,6 +372,13 @@ bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
     {
       bool valid = _state_space->isValid(node->config, grasp_id, true);
       node->conditional_validity[grasp_id] = valid;
+      if (not valid)
+      {  // also update edges
+        for (auto edge_pair : node->edges)
+        {
+          edge_pair.second->conditional_costs[grasp_id] = std::numeric_limits<double>::infinity();
+        }
+      }
       _logger.nodeValidityChecked(node, grasp_id, valid);
       return valid;
     }

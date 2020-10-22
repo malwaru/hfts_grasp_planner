@@ -167,6 +167,18 @@ public:
       return std::make_pair(edges.cbegin(), edges.cend());
     }
 
+    bool getConditionalValidity(unsigned int gid, bool& validity)
+    {
+      auto iter = conditional_validity.find(gid);
+      if (iter != conditional_validity.end())
+      {
+        validity = iter->second;
+        return true;
+      }
+      validity = false;
+      return false;
+    }
+
   protected:
     friend class Roadmap;
     bool initialized;  // initialized = collision-free
@@ -196,7 +208,7 @@ public:
     Edge(NodePtr a, NodePtr b, double bc);
     // Convenience function returning the node that isn't n
     NodePtr getNeighbor(NodePtr n) const;
-    // convenience function to return the best known approximate this edge's cost for the given grasp
+    // convenience function to return the best known approximate cost of this edge for the given grasp
     double getBestKnownCost(unsigned int gid) const;
   };
 

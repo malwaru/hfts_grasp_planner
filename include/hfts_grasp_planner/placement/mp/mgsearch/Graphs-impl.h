@@ -1,8 +1,8 @@
 #pragma once
 /************************************* MultiGraspRoadmapGraph::NeighborIterator ********************************/
-template <bool lazy_grasp_check>
-MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::NeighborIterator(
-    unsigned int v, bool lazy, MultiGraspRoadmapGraph<lazy_grasp_check> const* parent)
+template <CostCheckingType cost_checking_type>
+MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::NeighborIterator(
+    unsigned int v, bool lazy, MultiGraspRoadmapGraph<cost_checking_type> const* parent)
   : _v(v), _lazy(lazy), _graph(parent), _edge_to_0_returned(false)
 {
   if (_v == 0)
@@ -27,9 +27,9 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::NeighborIterator(
   }
 }
 
-template <bool lazy_grasp_check>
-typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator&
-MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::operator++()
+template <CostCheckingType cost_checking_type>
+typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator&
+MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::operator++()
 {
   if (_v == 0)
   {  // increase iterator for special case v == 0
@@ -51,9 +51,9 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::operator++()
   return (*this);
 }
 
-template <bool lazy_grasp_check>
-bool MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::operator==(
-    const typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator& other) const
+template <CostCheckingType cost_checking_type>
+bool MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::operator==(
+    const typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator& other) const
 {
   // TODO take lazy into account?
   if (other._v != _v)
@@ -67,15 +67,15 @@ bool MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::operator==(
   return other._iter == _iter and other._edge_to_0_returned == _edge_to_0_returned;
 }
 
-template <bool lazy_grasp_check>
-bool MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::operator!=(
-    const MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator& other) const
+template <CostCheckingType cost_checking_type>
+bool MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::operator!=(
+    const MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator& other) const
 {
   return not operator==(other);
 }
 
-template <bool lazy_grasp_check>
-unsigned int MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::operator*()
+template <CostCheckingType cost_checking_type>
+unsigned int MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::operator*()
 {
   if (_v == 0)
   {
@@ -92,8 +92,8 @@ unsigned int MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::operato
   return _graph->toGraphKey(_grasp_id, rid);
 }
 
-template <bool lazy_grasp_check>
-void MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::forwardToNextValid()
+template <CostCheckingType cost_checking_type>
+void MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::forwardToNextValid()
 {
   assert(_edge_to_0_returned);
   assert(_v != 0);
@@ -107,12 +107,12 @@ void MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::forwardToNextVa
     }
     else
     {
-      if constexpr (lazy_grasp_check)
+      if constexpr (cost_checking_type != WithGrasp)
       {
         if (_graph->_roadmap->isValid(_iter->first))
         {
           _graph->_roadmap->computeCost(_iter->second);
-          valid = not std::isinf(_iter->second->getBestKnownCost(_grasp_id));  // in case we know a btter cost estimate
+          valid = not std::isinf(_iter->second->getBestKnownCost(_grasp_id));  // in case we know a better cost estimate
         }
       }
       else
@@ -131,10 +131,10 @@ void MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::forwardToNextVa
   }
 }
 
-template <bool lazy_grasp_check>
-typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator
-MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::begin(unsigned int v, bool lazy,
-                                                                  MultiGraspRoadmapGraph<lazy_grasp_check> const* graph)
+template <CostCheckingType cost_checking_type>
+typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator
+MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::begin(
+    unsigned int v, bool lazy, MultiGraspRoadmapGraph<cost_checking_type> const* graph)
 {
   if (v != 0)
   {
@@ -146,10 +146,10 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::begin(unsigned int v
   return NeighborIterator(v, lazy, graph);
 }
 
-template <bool lazy_grasp_check>
-typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator
-MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::end(unsigned int v,
-                                                                MultiGraspRoadmapGraph<lazy_grasp_check> const* graph)
+template <CostCheckingType cost_checking_type>
+typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator
+MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::end(
+    unsigned int v, MultiGraspRoadmapGraph<cost_checking_type> const* graph)
 {
   NeighborIterator end_iter(v, true, graph);
   end_iter._grasp_iter = graph->_grasp_ids.end();  // covers end condition for v = 0
@@ -159,8 +159,8 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator::end(unsigned int v,
 }
 
 /************************************* MultiGraspRoadmapGraph ********************************/
-template <bool lazy_grasp_check>
-MultiGraspRoadmapGraph<lazy_grasp_check>::MultiGraspRoadmapGraph(
+template <CostCheckingType cost_checking_type>
+MultiGraspRoadmapGraph<cost_checking_type>::MultiGraspRoadmapGraph(
     RoadmapPtr roadmap, MultiGraspGoalSetPtr goal_set,
     const ::placement::mp::mgsearch::GoalPathCostParameters& cost_params, const std::set<unsigned int>& grasp_ids,
     unsigned int start_id)
@@ -183,11 +183,11 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::MultiGraspRoadmapGraph(
   }
 }
 
-template <bool lazy_grasp_check>
-MultiGraspRoadmapGraph<lazy_grasp_check>::~MultiGraspRoadmapGraph() = default;
+template <CostCheckingType cost_checking_type>
+MultiGraspRoadmapGraph<cost_checking_type>::~MultiGraspRoadmapGraph() = default;
 
-template <bool lazy_grasp_check>
-bool MultiGraspRoadmapGraph<lazy_grasp_check>::checkValidity(unsigned int v)
+template <CostCheckingType cost_checking_type>
+bool MultiGraspRoadmapGraph<cost_checking_type>::checkValidity(unsigned int v)
 {
   if (v == 0)
   {
@@ -198,22 +198,34 @@ bool MultiGraspRoadmapGraph<lazy_grasp_check>::checkValidity(unsigned int v)
   auto node = _roadmap->getNode(roadmap_id);
   if (!node)
     return false;
-  return _roadmap->isValid(node, grasp_id);
+  if constexpr (cost_checking_type == VertexEdgeWithoutGrasp)
+  {
+    bool grasp_validity;
+    if (node->getConditionalValidity(grasp_id, grasp_validity))
+    {
+      return grasp_validity;
+    }
+    return _roadmap->isValid(node);
+  }
+  else
+  {
+    return _roadmap->isValid(node, grasp_id);
+  }
 }
 
-template <bool lazy_grasp_check>
-void MultiGraspRoadmapGraph<lazy_grasp_check>::getSuccessors(unsigned int v, std::vector<unsigned int>& successors,
-                                                             bool lazy)
+template <CostCheckingType cost_checking_type>
+void MultiGraspRoadmapGraph<cost_checking_type>::getSuccessors(unsigned int v, std::vector<unsigned int>& successors,
+                                                               bool lazy)
 {
   successors.clear();
   auto [begin, end] = getSuccessors(v, lazy);
   successors.insert(successors.begin(), begin, end);
 }
 
-template <bool lazy_grasp_check>
-std::pair<typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator,
-          typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator>
-MultiGraspRoadmapGraph<lazy_grasp_check>::getSuccessors(unsigned int v, bool lazy)
+template <CostCheckingType cost_checking_type>
+std::pair<typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator,
+          typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator>
+MultiGraspRoadmapGraph<cost_checking_type>::getSuccessors(unsigned int v, bool lazy)
 {
 #ifdef ENABLE_GRAPH_LOGGING
   if (v == 0)
@@ -229,24 +241,24 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::getSuccessors(unsigned int v, bool laz
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
 
-template <bool lazy_grasp_check>
-void MultiGraspRoadmapGraph<lazy_grasp_check>::getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors,
-                                                               bool lazy)
+template <CostCheckingType cost_checking_type>
+void MultiGraspRoadmapGraph<cost_checking_type>::getPredecessors(unsigned int v,
+                                                                 std::vector<unsigned int>& predecessors, bool lazy)
 {
   // undirected graph
   getSuccessors(v, predecessors, lazy);
 }
 
-template <bool lazy_grasp_check>
-std::pair<typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator,
-          typename MultiGraspRoadmapGraph<lazy_grasp_check>::NeighborIterator>
-MultiGraspRoadmapGraph<lazy_grasp_check>::getPredecessors(unsigned int v, bool lazy)
+template <CostCheckingType cost_checking_type>
+std::pair<typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator,
+          typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator>
+MultiGraspRoadmapGraph<cost_checking_type>::getPredecessors(unsigned int v, bool lazy)
 {
   return getSuccessors(v, lazy);
 }
 
-template <bool lazy_grasp_check>
-double MultiGraspRoadmapGraph<lazy_grasp_check>::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy)
+template <CostCheckingType cost_checking_type>
+double MultiGraspRoadmapGraph<cost_checking_type>::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy)
 {
   // catch special case of start node
   if (v1 == 0 || v2 == 0)
@@ -271,7 +283,7 @@ double MultiGraspRoadmapGraph<lazy_grasp_check>::getEdgeCost(unsigned int v1, un
     return INFINITY;
   if (!checkValidity(v2))
     return INFINITY;
-  if constexpr (lazy_grasp_check)
+  if constexpr (cost_checking_type != WithGrasp)
   {
     _roadmap->computeCost(edge);
     return edge->getBestKnownCost(grasp_1);  // we might actually know a better cost estimate then the base
@@ -282,8 +294,8 @@ double MultiGraspRoadmapGraph<lazy_grasp_check>::getEdgeCost(unsigned int v1, un
   }
 }
 
-template <bool lazy_grasp_check>
-bool MultiGraspRoadmapGraph<lazy_grasp_check>::trueEdgeCostKnown(unsigned int v1, unsigned int v2) const
+template <CostCheckingType cost_checking_type>
+bool MultiGraspRoadmapGraph<cost_checking_type>::trueEdgeCostKnown(unsigned int v1, unsigned int v2) const
 {
   // catch special case of start node
   if (v1 == 0 || v2 == 0)
@@ -302,7 +314,7 @@ bool MultiGraspRoadmapGraph<lazy_grasp_check>::trueEdgeCostKnown(unsigned int v1
   auto edge = node_v1->getEdge(rnid_2);
   if (!edge)
     return true;
-  if constexpr (lazy_grasp_check)
+  if constexpr (cost_checking_type != WithGrasp)
   {
     return edge->base_evaluated;
   }
@@ -312,14 +324,14 @@ bool MultiGraspRoadmapGraph<lazy_grasp_check>::trueEdgeCostKnown(unsigned int v1
   }
 }
 
-template <bool lazy_grasp_check>
-unsigned int MultiGraspRoadmapGraph<lazy_grasp_check>::getStartNode() const
+template <CostCheckingType cost_checking_type>
+unsigned int MultiGraspRoadmapGraph<cost_checking_type>::getStartNode() const
 {
   return 0;
 }
 
-template <bool lazy_grasp_check>
-bool MultiGraspRoadmapGraph<lazy_grasp_check>::isGoal(unsigned int v) const
+template <CostCheckingType cost_checking_type>
+bool MultiGraspRoadmapGraph<cost_checking_type>::isGoal(unsigned int v) const
 {
   if (v == 0)
     return false;
@@ -327,8 +339,8 @@ bool MultiGraspRoadmapGraph<lazy_grasp_check>::isGoal(unsigned int v) const
   return _goal_set->isGoal(rnid, grasp_id);
 }
 
-template <bool lazy_grasp_check>
-double MultiGraspRoadmapGraph<lazy_grasp_check>::getGoalCost(unsigned int v) const
+template <CostCheckingType cost_checking_type>
+double MultiGraspRoadmapGraph<cost_checking_type>::getGoalCost(unsigned int v) const
 {
   if (v == 0)
   {  // can not be a goal
@@ -345,8 +357,8 @@ double MultiGraspRoadmapGraph<lazy_grasp_check>::getGoalCost(unsigned int v) con
   return _all_grasps_cost_to_go.qualityToGoalCost(_goal_set->getGoal(goal_id).quality);
 }
 
-template <bool lazy_grasp_check>
-double MultiGraspRoadmapGraph<lazy_grasp_check>::heuristic(unsigned int v) const
+template <CostCheckingType cost_checking_type>
+double MultiGraspRoadmapGraph<cost_checking_type>::heuristic(unsigned int v) const
 {
   if (v == 0)
   {
@@ -361,20 +373,24 @@ double MultiGraspRoadmapGraph<lazy_grasp_check>::heuristic(unsigned int v) const
   return _individual_cost_to_go.at(grasp_id)->costToGo(node->config);
 }
 
-template <bool lazy_grasp_check>
-void MultiGraspRoadmapGraph<lazy_grasp_check>::registerMinimalCost(unsigned int v, double cost)
+template <CostCheckingType cost_checking_type>
+void MultiGraspRoadmapGraph<cost_checking_type>::registerMinimalCost(unsigned int v, double cost)
 {
   // no-op
 }
 
-template <bool lazy_grasp_check>
-double MultiGraspRoadmapGraph<lazy_grasp_check>::getEdgeCostWithGrasp(unsigned int v1, unsigned int v2)
+template <CostCheckingType cost_checking_type>
+double MultiGraspRoadmapGraph<cost_checking_type>::getEdgeCostWithGrasp(unsigned int v1, unsigned int v2)
 {
-  if constexpr (lazy_grasp_check)
+  if constexpr (cost_checking_type != WithGrasp)
   {
     // catch special case of start node
     if (v1 == 0 || v2 == 0)
     {
+      unsigned int non_start = std::max(v1, v2);
+      auto [grasp_id, rnid] = toRoadmapKey(non_start);
+      if (!_roadmap->isValid(rnid, grasp_id))
+        return INFINITY;
       return 0.0;  // TODO could return here costs for obtaining a grasp
     }
     // default case, asking the roadmap
@@ -387,9 +403,9 @@ double MultiGraspRoadmapGraph<lazy_grasp_check>::getEdgeCostWithGrasp(unsigned i
     auto edge = node_v1->getEdge(rnid_2);
     if (!edge)
       return INFINITY;
-    if (!checkValidity(v1))
+    if (!_roadmap->isValid(rnid_1, grasp_1))
       return INFINITY;
-    if (!checkValidity(v2))
+    if (!_roadmap->isValid(rnid_2, grasp_1))
       return INFINITY;
     return _roadmap->computeCost(edge, grasp_1).second;
   }
@@ -399,15 +415,15 @@ double MultiGraspRoadmapGraph<lazy_grasp_check>::getEdgeCostWithGrasp(unsigned i
   }
 }
 
-template <bool lazy_grasp_check>
-bool MultiGraspRoadmapGraph<lazy_grasp_check>::trueEdgeCostWithGraspKnown(unsigned int v1, unsigned int v2) const
+template <CostCheckingType cost_checking_type>
+bool MultiGraspRoadmapGraph<cost_checking_type>::trueEdgeCostWithGraspKnown(unsigned int v1, unsigned int v2) const
 {
-  if constexpr (lazy_grasp_check)
+  if constexpr (cost_checking_type != WithGrasp)
   {
     // catch special case of start node
     if (v1 == 0 || v2 == 0)
-    {
-      return true;
+    {  // we know the edge cost if we know validity of both nodes (0 is always valid)
+      return trueValidityWithGraspKnown(std::max(v1, v2));
     }
     // default case, asking the roadmap
     auto [grasp_1, rnid_1] = toRoadmapKey(v1);
@@ -429,9 +445,23 @@ bool MultiGraspRoadmapGraph<lazy_grasp_check>::trueEdgeCostWithGraspKnown(unsign
   }
 }
 
-template <bool lazy_grasp_check>
+template <CostCheckingType cost_checking_type>
+bool MultiGraspRoadmapGraph<cost_checking_type>::trueValidityWithGraspKnown(unsigned int v) const
+{
+  if (v == 0)
+    return true;
+  // get roadmap graph
+  auto [grasp_id, rnid] = toRoadmapKey(v);
+  auto node = _roadmap->getNode(rnid);
+  if (!node)
+    return true;
+  bool validity;
+  return node->getConditionalValidity(grasp_id, validity);
+}
+
+template <CostCheckingType cost_checking_type>
 std::pair<unsigned int, unsigned int>
-MultiGraspRoadmapGraph<lazy_grasp_check>::getGraspRoadmapId(unsigned int vid) const
+MultiGraspRoadmapGraph<cost_checking_type>::getGraspRoadmapId(unsigned int vid) const
 {
   if (vid == 0)
   {
@@ -441,18 +471,18 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::getGraspRoadmapId(unsigned int vid) co
   return {rid, grasp_id};
 }
 
-template <bool lazy_grasp_check>
+template <CostCheckingType cost_checking_type>
 std::pair<unsigned int, unsigned int>
-MultiGraspRoadmapGraph<lazy_grasp_check>::toRoadmapKey(unsigned int graph_id) const
+MultiGraspRoadmapGraph<cost_checking_type>::toRoadmapKey(unsigned int graph_id) const
 {
   auto iter = _graph_key_to_roadmap.find(graph_id);
   assert(iter != _graph_key_to_roadmap.end());
   return iter->second;
 }
 
-template <bool lazy_grasp_check>
+template <CostCheckingType cost_checking_type>
 unsigned int
-MultiGraspRoadmapGraph<lazy_grasp_check>::toGraphKey(const std::pair<unsigned int, unsigned int>& roadmap_id) const
+MultiGraspRoadmapGraph<cost_checking_type>::toGraphKey(const std::pair<unsigned int, unsigned int>& roadmap_id) const
 {
   auto iter = _roadmap_key_to_graph.find(roadmap_id);
   if (iter == _roadmap_key_to_graph.end())
@@ -466,8 +496,8 @@ MultiGraspRoadmapGraph<lazy_grasp_check>::toGraphKey(const std::pair<unsigned in
   return iter->second;
 }
 
-template <bool lazy_grasp_check>
-unsigned int MultiGraspRoadmapGraph<lazy_grasp_check>::toGraphKey(unsigned int grasp_id, unsigned int node_id) const
+template <CostCheckingType cost_checking_type>
+unsigned int MultiGraspRoadmapGraph<cost_checking_type>::toGraphKey(unsigned int grasp_id, unsigned int node_id) const
 {
   return toGraphKey({grasp_id, node_id});
 }

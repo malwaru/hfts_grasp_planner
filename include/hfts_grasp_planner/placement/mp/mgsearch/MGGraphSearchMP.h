@@ -21,9 +21,11 @@ public:
     MultiGraspGraph = 1,
     FoldedMultiGraspGraphStationary = 2,  // naive, stationary heuristic
     FoldedMultiGraspGraphDynamic = 3,     // non-stationary heuristic, TODO: currently only compatible with LWAStar
-    LazyWeightedMultiGraspGraph = 4,      // evalutes costs only for the robot without grasps unless explicity asked
+    LazyWeightedMultiGraspGraph =
+        4,  // evaluates costs and validity only for the robot without grasps unless explicity asked
+    LazyEdgeWeightedMultiGraspGraph = 5,  // evaluates costs only for the robot without grasps unless explicitly asked
   };
-  static const unsigned int NUM_GRAPH_TYPES = 5;
+  static const unsigned int NUM_GRAPH_TYPES = 6;
   enum AlgorithmType
   {
     Astar = 0,
@@ -31,8 +33,10 @@ public:
     LPAstar = 2,           // life-long planning A*
     LWLPAstar = 3,         // lazy weighted life-long planning A*
     LazySP_LLPAstar = 4,   // Lazy SP using lazy LPAstar
-    LazySP_LWLPAstar = 5,  // Lazy SP using lazy-weighted LPAstar; only makes sense with LazyWeightedMultiGraspGraph
-    LazySP_LPAstar = 6,    // Lazy SP using non-lazy LPAstar; only makes sense with LazyWeightedMultiGraspGraph
+    LazySP_LWLPAstar = 5,  // Lazy SP using lazy-weighted LPAstar; only makes sense with LazyWeightedMultiGraspGraph and
+                           // LazyEdgeWeightedMultiGraspGraph
+    LazySP_LPAstar = 6,    // Lazy SP using non-lazy LPAstar; only makes sense with LazyWeightedMultiGraspGraph and
+                           // LazyEdgeWeightedMultiGraspGraph
   };
   static const unsigned int NUM_ALGORITHM_TYPES = 7;
   enum EdgeSelectorType
@@ -71,6 +75,10 @@ public:
       {AlgorithmType::LazySP_LLPAstar, GraphType::LazyWeightedMultiGraspGraph},
       {AlgorithmType::LazySP_LWLPAstar, GraphType::LazyWeightedMultiGraspGraph},
       {AlgorithmType::LazySP_LPAstar, GraphType::LazyWeightedMultiGraspGraph},
+      // LazyEdgeWeightedMultiGraspGraph
+      {AlgorithmType::LazySP_LLPAstar, GraphType::LazyEdgeWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LWLPAstar, GraphType::LazyEdgeWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LPAstar, GraphType::LazyEdgeWeightedMultiGraspGraph},
   };
 
   /**

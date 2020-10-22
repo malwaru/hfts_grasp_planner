@@ -28,10 +28,10 @@ struct SearchResult
 // Struct to communicate a cost change
 struct EdgeChange
 {
-  unsigned int u;  // edge goes from u to v
-  unsigned int v;
-  double old_cost;  // cost prior to the update
-  EdgeChange(unsigned int u_, unsigned int v_, double old_cost_) : u(u_), v(v_), old_cost(old_cost_)
+  const unsigned int u;  // edge goes from u to v
+  const unsigned int v;
+  const bool cost_increased;  // true = cost increased, false = cost decreased
+  EdgeChange(unsigned int u_, unsigned int v_, bool cost_increased_) : u(u_), v(v_), cost_increased(cost_increased_)
   {
   }
 };

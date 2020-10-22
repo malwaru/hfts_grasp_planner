@@ -193,23 +193,54 @@ private:
 };
 
 /**
- * The MultiGraspRoadmapGraph class implements a view on a MultiGraspRoadmap for multiple grasps, and
+ * Cost checking types for MultiGraspRoadmapGraph.
+ */
+enum CostCheckingType
+{
+  WithGrasp,
+  EdgeWithoutGrasp,
+  VertexEdgeWithoutGrasp,
+};
+/**
+ * The MultiGraspRoadmapGraph class implements a view on a MultiGraspRoadmap for multiple grasps and
  * implements the GraspAgnostic graph interface.
  * The start vertex of this graph is a special vertex that is not associated with any grasp yet.
  * It is adjacent with cost 0 to #grasps vertices associated with the start configuration - one for each grasp.
  *
- * The graph is template-parameterized by a bool flag lazy_grasp_check that, if true,
- * lets the graph perform cost evaluations only for the base (robot) without considering the actual grasp.
- * In this case, the cost of an edge for the actual grasp needs to be explicitly queried using:
+ * The graph is template-parameterized by an enum cost_checking_type that allows to control how edge costs and vertex
+ * validities are computed when using the grasp agnostic graph interface.
+ *
+ * If cost_checking_type == WithGrasp, all cost computations and vertex validity checks take the respective grasp into
+ * account.
+ *
+ * If cost_checking_type == EdgeWithoutGrasp, the graph performs edge cost evaluations only for the base (robot) without
+ * considering the actual grasp. In this case, the cost of an edge for the actual grasp needs to be explicitly queried
+ * using:
+ *
  *    double getEdgeCostWithGrasp(unsigned int v1, unsigned int v2);
+ *
  * Whether the edge cost for the actual grasp is known can then be queried via:
+ *
  *    bool trueEdgeCostWithGraspKnown(unsigned int v1, unsigned int v2) const;
  *
- * If the flag is false, the graph always takes the grasp into account in cost evaluations.
- * In this case the above functions simply return the same as getEdgeCost(v1, v2, lazy=false) and
- * trueEdgeCostKnown(v1, v2)
+ * In the case cost_checking_type == WithGrasp, the above functions simply return the same as getEdgeCost(v1, v2,
+ * lazy=false) and trueEdgeCostKnown(v1, v2)
+ *
+ * If cost_checking_type == VertexEdgeWithoutGrasp, in addition to edge cost computations, also vertex validity checks
+ * are only performed for the robot base without taking the grasp explicitly into account. In this case, the function
+ *
+ *  bool checkValidityWithGrasp(unsigned int v)
+ *
+ * needs to be called to explicitly check the validity with the grasp. In the cases cost_checking_type !=
+ * VertexEdgeWithoutGrasp, this function simply returns checkValidity(unsigned int v).
+ *
+ * In any case, all grasp-agnostic functions always return the best known result, i.e. the template argument only
+ * governs what is actively computed and not what is retrieved from the cache. For example, if the graph knows already
+ * the actual cost of an edge for a given grasp, it of course returns that cost even if cost_checking_type ==
+ * EdgeWithoutGrasp or VertexEdgeWithoutGrasp. This allows to lazily evaluate the costs for a specific grasp, while
+ * still using the graph in a grasp-agnostic algorithm.
  */
-template <bool lazy_grasp_check = false>
+template <CostCheckingType cost_checking_type = WithGrasp>
 class MultiGraspRoadmapGraph
 {
 public:
@@ -274,9 +305,11 @@ public:
   // no-op
   void registerMinimalCost(unsigned int v, double cost);
   typedef std::bool_constant<true> heuristic_stationary;
-  // additional functions to evaluate grasp-specific costs in case lazy_grasp_check is true
+  // additional functions to evaluate grasp-specific costs in case cost_checking_type is not WithGrasp
   double getEdgeCostWithGrasp(unsigned int v1, unsigned int v2);
   bool trueEdgeCostWithGraspKnown(unsigned int v1, unsigned int v2) const;
+  // bool checkValidityWithGrasp(unsigned int v);
+  bool trueValidityWithGraspKnown(unsigned int v1) const;
 
   // roadmap id, grasp id
   std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;
