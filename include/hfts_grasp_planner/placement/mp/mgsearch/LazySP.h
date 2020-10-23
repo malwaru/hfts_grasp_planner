@@ -121,7 +121,7 @@ bool trueEdgeCostKnown(G& graph, unsigned int u, unsigned int v)
 template <typename G, typename EdgeSelectorType, typename SearchAlgorithmType>
 void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_selector, SearchResult& result)
 {
-  std::list<Edge> unknown_edges;
+  bool all_path_edges_valid = false;
   // repeat as long as we have a path but do not know all of its edge costs
   do
   {
@@ -129,7 +129,7 @@ void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_sel
     if (result.solved)
     {
       // identify edges for which the true cost is not known yet
-      unknown_edges.clear();
+      std::list<Edge> unknown_edges;
       unsigned int u = result.path.front();
       for (size_t vidx = 1; vidx < result.path.size(); ++vidx)
       {
@@ -155,8 +155,9 @@ void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_sel
         }
       }
       algorithm.updateEdges(edge_changes);
+      all_path_edges_valid = edge_changes.empty() and unknown_edges.empty();
     }
-  } while (result.solved and not unknown_edges.empty());
+  } while (result.solved and not all_path_edges_valid);
 }
 
 /**
