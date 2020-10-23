@@ -50,6 +50,7 @@ typedef std::pair<unsigned int, unsigned int> Edge;
 template <typename VertexDataMap>
 void extractPath(unsigned int v_start, const VertexDataMap& vertex_data, SearchResult& result)
 {
+  result.path.clear();
   // extract path
   unsigned int v = result.goal_node;
   while (v != v_start)
