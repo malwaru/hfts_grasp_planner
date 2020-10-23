@@ -153,8 +153,11 @@ public:
     // main loop
     // differs depending on edge evaluation type ee_type
     std::integral_constant<EdgeCostEvaluationType, ee_type> inner_loop_type;
-    // keep repeating as long as termination criteria is not true
-    while (not terminationCriteria())
+    // We can keep repeating until either:
+    // 1. pq is empty
+    // 2. pq.top().v is a goal and its goal key (see its definition in computeGoalKey) is <= its PQ key
+    // 3. pq.top().v is a normal vertex and we encountered a reachable goal before with key <= _pq.top().key
+    while (not _pq.empty() and updateGoalKey(getVertexData(_pq.top().v)) > _pq.top().key)
     {
       assert(_pq.top().key <= _goal_key);
       PQElement current_el(_pq.top());
@@ -177,27 +180,64 @@ protected:
   PQ _pq;
   VertexDataMap _vertex_data;
   SearchResult _result;
-  Key _goal_key;
+  Key _goal_key;  // stores (path_cost + goal_cost, path_cost) for the best **reachable** goal
   G& _graph;
   unsigned int _v_start;
 
-  bool terminationCriteria()
+  /**
+   * Compute the goal key for the given vertex data.
+   * @param v_data: vertex data to compute goal key for
+   * @return the goal key:
+   *  (inf, inf) if:
+   *    1. v_data.v is not a goal
+   *    2. v_data.v is overconsistent (rhs > g)
+   *    3. v_data.v is currently unreachable (rhs = inf)
+   *    4. the cost of the incidary edge to v_data.v isn't reflected in rhs
+   *  (path_cost + goal_cost, path_cost) otherwise
+   */
+  Key computeGoalKey(const VertexData& v_data)
   {
-    if constexpr (ee_type != LazyWeighted)
-    {  // Terminate if
-      // 1. The top element is our best known goal node and we would make it locally consistent with finite value
-      // (_result.solved) in this iteration.
-      // 2. There are no more inconsistent nodes to work on (to capture infeasible queries)
-      return _pq.empty() or (_pq.top().v == _result.goal_node and _result.solved);
+    // v must be a goal, not underconsistent and reachable
+    if (not _graph.isGoal(v_data.v) or v_data.rhs > v_data.g or std::isinf(v_data.rhs))
+      return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+    if constexpr (ee_type == LazyWeighted)
+    {
+      if (v_data.rhs != getVertexData(v_data.p).rhs + _graph.getEdgeCost(v_data.p, v_data.v, false))
+      {
+        return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+      }
     }
-    else
-    {  // Terminate on the same conditions as above, but make sure we actually know the true edge cost to the goal node.
-      if (_pq.empty())
-        return true;
-      auto v_data = getVertexData(_pq.top().v);
-      return (v_data.v == _result.goal_node and _result.solved and
-              v_data.rhs == getVertexData(v_data.p).rhs + _graph.getEdgeCost(v_data.p, v_data.v, false));
+    double goal_cost = _graph.getGoalCost(v_data.v);
+    return {v_data.rhs + goal_cost, v_data.rhs};
+  }
+
+  /**
+   * Compute the goal key for the given vertex data and update _goal_key if
+   * it improves over our current _goal_key or if v_data.v was responsible for _goal_key (i.e. _result.goal_node =
+   * v_data.v)
+   * @param v_data: the vertex data to compute the goal key for
+   * @return _goal_key: the potentially updated goal key
+   */
+  Key updateGoalKey(const VertexData& v_data)
+  {
+    Key new_goal_key = computeGoalKey(v_data);
+    if (new_goal_key < _goal_key)
+    {
+      _goal_key = new_goal_key;
+      assert(new_goal_key.second == v_data.rhs and not std::isinf(v_data.rhs));
+      _result.goal_node = v_data.v;
+      _result.goal_cost = new_goal_key.first - new_goal_key.second;
+      _result.path_cost = new_goal_key.second;
+      _result.solved = v_data.rhs <= v_data.g;
     }
+    else if (_result.goal_node == v_data.v and new_goal_key > _goal_key)
+    {
+      _goal_key = new_goal_key;
+      _result.solved = false;
+      _result.goal_cost = std::numeric_limits<double>::infinity();
+      _result.path_cost = std::numeric_limits<double>::infinity();
+    }
+    return _goal_key;
   }
 
   // inner loop for when using explicit edge evaluation
@@ -339,7 +379,7 @@ protected:
 
   /**
    * Update the v's key in _pq and remove if needed.
-   * If v is a goal and a new solution, also update _goal_key.
+   * If v is a goal and responsible for _goal_key, also update _goal_key.
    */
   void updateVertexKey(VertexData& v_data)
   {
@@ -373,21 +413,10 @@ protected:
       _pq.pop();
       v_data.in_pq = false;
     }
-    // 2. if v is a goal, update goal key if better
-    if (_graph.isGoal(v_data.v))
+    // update goal key in case we just invalidated the goal resonsible for _goal_key
+    if (v_data.v == _result.goal_node)
     {
-      double goal_cost = _graph.getGoalCost(v_data.v);
-      Key v_goal_key = computeKey(v_data.g, goal_cost, v_data.rhs);
-      // update goal key when we have a better goal or the goal responsible for goal key changed its key
-      if (v_goal_key <= _goal_key || _result.goal_node == v_data.v)
-      {
-        _goal_key = v_goal_key;
-        _result.goal_node = v_data.v;
-        _result.goal_cost = goal_cost;
-        _result.path_cost = v_data.rhs;
-        // _result.solved = v_data.g == v_data.rhs;
-        _result.solved = not std::isinf(v_data.rhs);
-      }
+      updateGoalKey(v_data);
     }
   }
 
