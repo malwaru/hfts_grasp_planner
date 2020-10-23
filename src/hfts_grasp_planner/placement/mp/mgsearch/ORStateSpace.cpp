@@ -62,7 +62,7 @@ void ORStateSpace::removeGrasp(unsigned int gid)
 
 bool ORStateSpace::isValid(const pmp::Config& c) const
 {
-  // boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
+  boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
   _robot->ReleaseAllGrabbed();
@@ -78,7 +78,7 @@ bool ORStateSpace::isValid(const pmp::Config& c) const
 
 bool ORStateSpace::isValid(const pmp::Config& c, unsigned int grasp_id, bool only_obj) const
 {
-  // boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
+  boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
   setGrasp(grasp_id);
@@ -123,6 +123,7 @@ void ORStateSpace::setGrasp(unsigned int gid) const
 
 double ORStateSpace::cost(const pmp::Config& c) const
 {
+  boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
   _object->Enable(false);
   return computeCost(c);
@@ -130,7 +131,7 @@ double ORStateSpace::cost(const pmp::Config& c) const
 
 double ORStateSpace::cost(const pmp::Config& c, unsigned int grasp_id) const
 {
-  //   boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
+  boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
   setGrasp(grasp_id);
   _object->Enable(true);
@@ -179,7 +180,7 @@ void ORStateSpace::enableDistanceCheck(bool enable) const
 
 double ORStateSpace::computeCost(const Config& c) const
 {
-  //   boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
+  boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::RobotBase::RobotStateSaver rob_state_saver(_robot);
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
   _robot->SetActiveDOFValues(c);
