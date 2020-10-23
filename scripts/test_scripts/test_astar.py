@@ -29,7 +29,8 @@ def sample_arm_configs(manip, num):
             config = np.random.random(manip.GetArmDOF())
             config = config * joint_range + lower
             robot.SetActiveDOFValues(config)
-            if not env.CheckCollision(robot) and not robot.CheckSelfCollision():
+            if not env.CheckCollision(
+                    robot) and not robot.CheckSelfCollision():
                 samples.append(config)
     return samples
 
@@ -62,7 +63,8 @@ def show_traj(robot, traj):
 
 if __name__ == "__main__":
     base_path = os.path.dirname(__file__)
-    env_file = os.path.normpath(base_path + '/../../models/environments/placement_exp_0.xml')
+    env_file = os.path.normpath(
+        base_path + '/../../models/environments/placement_exp_0.xml')
     env = orpy.Environment()
     env.Load(env_file)
     orpy.RaveSetDebugLevel(orpy.DebugLevel.Debug)
@@ -73,12 +75,16 @@ if __name__ == "__main__":
     manip = robot.GetActiveManipulator()
     # set goal
     target_object = env.GetKinBody("crayola")
-    gpose = [-0.17763906, -0.00195599,  0.015208, 0.48656468,  0.50384748,  0.53856192,  0.46834132]
+    gpose = [
+        -0.17763906, -0.00195599, 0.015208, 0.48656468, 0.50384748, 0.53856192,
+        0.46834132
+    ]
     SimpleGoal.grasp_tf = orpy.matrixFromQuat(gpose[3:])
     SimpleGoal.grasp_tf[:3, 3] = gpose[:3]
     SimpleGoal.grasp_config = np.array([0.0184])
-    hfts_utils.set_grasp(manip, target_object, hfts_utils.inverse_transform(
-        SimpleGoal.grasp_tf), SimpleGoal.grasp_config)
+    hfts_utils.set_grasp(manip, target_object,
+                         hfts_utils.inverse_transform(SimpleGoal.grasp_tf),
+                         SimpleGoal.grasp_config)
 
     start_config = robot.GetDOFValues()
     # planner.addGoals([goal])
@@ -96,12 +102,23 @@ if __name__ == "__main__":
     #      [0.11127244, -0.65327576,  2.4378246, -1.93000283, -5.02064425, 2.10443872,  2.55133075],
     #      [-0.17231944, -1.05836212,  2.18901789, -0.24468057, -1.43317494, 0.83649861, -1.66937163]]
     # )
-    arm_configs = np.array([
-        [2.03163983e+00, -1.43301054e+00,  3.00463621e-08,  3.51604524e-01,
-         6.42155124e-08, -1.02065013e+00,  2.22185747e-01],
-        [2.9408798, -1.65156305, -0.38921859, -0.02757271,  0.34295812,
-         -0.78592355, -0.35071443]
-    ])
+    arm_configs = np.array(
+        [[
+            2.70336916e+00, -2.04023496e+00, -3.86651939e-02, 8.88009840e-01,
+            3.14050424e-08, -8.03649407e-01, -3.68416715e-01
+        ],
+         [
+             -2.94087981e+00, -1.90494670e+00, -5.25384227e-10,
+             -1.30288008e-01, -8.00311886e-01, -9.12691365e-02, 7.92558864e-08
+         ],
+         [
+             2.59854555e+00, -1.99433166e+00, -2.32199394e-01, 9.17191684e-01,
+             -1.01988192e-07, -9.92958815e-01, -3.94698039e-01
+         ],
+         [
+             2.27892757e+00, -1.94999996e+00, 5.21516392e-09, 2.44353127e-09,
+             -3.17857833e-08, -4.11101022e-09, -3.17857834e-08
+         ]])
     goals = []
     print "setting goals"
     env.SetViewer('qtcoin')
@@ -110,13 +127,16 @@ if __name__ == "__main__":
         goals[-1].arm_config = config
         goals[-1].key = idx
         goals[-1].grasp_id = idx % 2
-        robot.SetDOFValues(config, manip.GetArmIndices())
-        time.sleep(0.1)
+        # robot.SetDOFValues(config, manip.GetArmIndices())
+        # time.sleep(0.1)
     robot.SetDOFValues(start_config)
+    robot.SetActiveDOFs(manip.GetArmIndices())
     for i in range(1):
         print "Creating planner"
         # planner = MGMotionPlanner("SequentialMGBiRRT", manip)
-        planner = MGMotionPlanner("LWAStar;MultiGraspGraph", manip)
+        # planner = MGMotionPlanner("LWAstar;FoldedMultiGraspGraphDynamic",
+        #                           manip)
+        planner = MGMotionPlanner("LWAstar;MultiGraspGraph", manip)
         planner.setup(target_object)
         print "Adding goals"
         planner.addGoals(goals)

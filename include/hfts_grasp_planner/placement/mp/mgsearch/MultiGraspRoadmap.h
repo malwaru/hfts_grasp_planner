@@ -46,7 +46,7 @@ public:
    * If there is an underlying state cost, the returned value may be any value r in [0, infinity]
    */
   virtual double cost(const Config& c) const = 0;
-  virtual double conditional_cost(const Config& c, unsigned int grasp_id) const = 0;
+  virtual double cost(const Config& c, unsigned int grasp_id) const = 0;
 
   /**
    * Return the distance between the two given configurations.

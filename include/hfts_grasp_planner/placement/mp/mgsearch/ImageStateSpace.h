@@ -28,7 +28,7 @@ public:
   bool isValid(const Config& c, unsigned int grasp_id, bool only_obj = false) const override;
   // state cost
   double cost(const Config& a) const override;
-  double conditional_cost(const Config& a, unsigned int grasp_id) const override;
+  double cost(const Config& a, unsigned int grasp_id) const override;
   // distance
   double distance(const Config& a, const Config& b) const override;
   // space information

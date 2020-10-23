@@ -60,14 +60,14 @@ double IntegralEdgeCostComputer::lowerBound(const Config& a, const Config& b) co
 
 double IntegralEdgeCostComputer::cost(const Config& a, const Config& b) const
 {
-  auto fn = std::bind(&StateSpace::cost, _state_space, std::placeholders::_1);
-  return integrateCosts(a, b, fn);
+  // auto fn = std::bind(&StateSpace::cost, _state_space, std::placeholders::_1);
+  return integrateCosts(a, b, [this](const ::placement::mp::Config& c) { return this->_state_space->cost(c); });
 }
 
 double IntegralEdgeCostComputer::cost(const Config& a, const Config& b, unsigned int grasp_id) const
 {
-  auto fn = std::bind(&StateSpace::conditional_cost, _state_space, std::placeholders::_1, grasp_id);
-  return integrateCosts(a, b, fn);
+  return integrateCosts(
+      a, b, [this, grasp_id](const ::placement::mp::Config& c) { return this->_state_space->cost(c, grasp_id); });
 }
 
 // double distanceFn(const Roadmap::NodePtr& a, const Roadmap::NodePtr& b)
