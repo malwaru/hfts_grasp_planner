@@ -788,7 +788,7 @@ class AFRRobotBridge(placement_interfaces.PlacementGoalConstructor,
             env = robot.GetEnv()
             if cache_entry.solution.arm_config is not None:
                 with robot:
-                    with orpy.KinBodyStateSaver(self._target_obj):
+                    with self._target_obj.CreateKinBodyStateSaver():
                         inv_grasp_tf = utils.inverse_transform(cache_entry.solution.grasp_tf)
                         # grab object (sets active manipulator for us)
                         utils.set_grasp(manip, self._target_obj,

@@ -34,7 +34,7 @@ def construct_grid(links, cell_size):
     grids = []
     for link in links:
         with env:
-            with orpy.KinBodyStateSaver(link.GetParent()):
+            with link.GetParent().CreateKinBodyStateSaver():
                 link.SetTransform(np.eye(4))  # set link to origin frame
                 body_flags = []
                 for body in env.GetBodies():

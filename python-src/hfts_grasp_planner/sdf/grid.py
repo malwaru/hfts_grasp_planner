@@ -159,6 +159,9 @@ class VoxelGrid(object):
             Note that this function creates multiple files with different endings.
             @param file_name - filename
         """
+        dirname = os.path.dirname(file_name)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
         data_file_name = file_name + '.data.npy'
         add_data_file_name = file_name + '.adddata.npy'
         meta_file_name = file_name + '.meta.npy'
@@ -190,7 +193,7 @@ class VoxelGrid(object):
         grid._cells = np.empty(grid._num_cells + 2, dtype=interior_cells.dtype)
         grid._cells[1:-1, 1:-1, 1:-1] = interior_cells
         grid._fill_border_cells()
-        meta_data = np.load(meta_file_name)
+        meta_data = np.load(meta_file_name, allow_pickle=True)
         grid._base_pos = meta_data[0]
         grid._cell_size = meta_data[1]
         grid._aabb = meta_data[2]
