@@ -158,20 +158,22 @@ if __name__ == "__main__":
     env = orpy.Environment()
     orpy.RaveSetDebugLevel(orpy.DebugLevel.Debug)
     # load scene and target
-    env.Load(args.env_file)
-    if not env.Load(args.target_obj_file):
-        raise ValueError("Could not load target object. Aborting")
-    # ensure the object has a useful name
-    target_obj_name = "target_object"
-    target_object = env.GetBodies()[-1]  # object that was loaded last
-    target_object.SetName(target_obj_name)
-    robot = env.GetRobots()[0]
-    # load goals
-    goals = load_goals(robot, target_object, args.goal_file)
-    # goals = [goal for goal in goals if goal.objective_value > 0.7]
-    manip = goals[0].manip
-    robot.SetActiveDOFs(manip.GetArmIndices())
-    start_config = robot.GetDOFValues()
+    with env:
+        env.StopSimulation()
+        env.Load(args.env_file)
+        if not env.Load(args.target_obj_file):
+            raise ValueError("Could not load target object. Aborting")
+        # ensure the object has a useful name
+        target_obj_name = "target_object"
+        target_object = env.GetBodies()[-1]  # object that was loaded last
+        target_object.SetName(target_obj_name)
+        robot = env.GetRobots()[0]
+        # load goals
+        goals = load_goals(robot, target_object, args.goal_file)
+        # goals = [goal for goal in goals if goal.objective_value > 0.7]
+        manip = goals[0].manip
+        robot.SetActiveDOFs(manip.GetArmIndices())
+        start_config = robot.GetDOFValues()
     # create planner
     planner = MGMotionPlanner("%s;%s" % (args.algorithm_name, args.graph_name),
                               manip)
@@ -180,5 +182,6 @@ if __name__ == "__main__":
     # plan
     trajectories, reached_goals = planner.plan(10.0)
     trajectories = [time_traj(robot, traj) for traj in trajectories]
+    # print "Found %d trajectories" % len(trajectories)
     env.SetViewer('qtcoin')
     IPython.embed()
