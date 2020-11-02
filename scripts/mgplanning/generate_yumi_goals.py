@@ -353,6 +353,6 @@ if __name__ == "__main__":
                 num_solutions, args.num_goals)
         store_placements(solutions[manip.GetName()], grasp_set,
                          args.output_path)
-        IPython.embed()
+        # IPython.embed()
     finally:
         orpy.RaveDestroy()

@@ -146,6 +146,10 @@ if __name__ == "__main__":
     parser.add_argument('graph_name',
                         help="Name of the graph to use",
                         type=str)
+    parser.add_argument('--lmbda',
+                        help="Lambda, the tradeoff between path and goal cost",
+                        type=float,
+                        default=1.0)
     args = parser.parse_args()
 
     # base_path = os.path.dirname(__file__)
@@ -171,7 +175,7 @@ if __name__ == "__main__":
     # create planner
     planner = MGMotionPlanner("%s;%s" % (args.algorithm_name, args.graph_name),
                               manip)
-    planner.setup(target_object)
+    planner.setup(target_object, lmbda=args.lmbda)
     planner.addGoals(goals)
     # plan
     trajectories, reached_goals = planner.plan(10.0)

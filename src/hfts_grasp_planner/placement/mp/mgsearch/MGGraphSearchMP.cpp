@@ -101,6 +101,7 @@ MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Conf
   _goal_set = std::make_shared<MultiGraspGoalSet>(_roadmap);
   // add start node
   _start_node = _roadmap->addNode(start_config);
+  RAVELOG_DEBUG("Created MGGraphSearch with parameters: " + params.toString());
 }
 
 MGGraphSearchMP::~MGGraphSearchMP() = default;

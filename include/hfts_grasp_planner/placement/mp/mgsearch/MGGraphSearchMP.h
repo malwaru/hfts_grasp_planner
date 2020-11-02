@@ -53,6 +53,14 @@ public:
     Parameters() : algo_type(AlgorithmType::Astar), graph_type(GraphType::SingleGraspGraph), lambda(1.0)
     {
     }
+
+    std::string toString() const
+    {
+      std::stringstream ss;
+      ss << "AlgorithmType=" << getName(algo_type) << " GraphType=" << getName(graph_type)
+         << " EdgeSelectorType=" << edge_selector_type << " lambda=" << lambda;
+      return ss.str();
+    }
   };
 
   constexpr static std::pair<AlgorithmType, GraphType> VALID_ALGORITHM_GRAPH_COMBINATIONS[] = {

@@ -40,7 +40,8 @@ namespace mp {
             {
                 std::stringstream ss;
                 ss << "id=" << id << " "
-                   << "grasp_id=" << grasp_id;
+                   << "grasp_id=" << grasp_id << " "
+                   << "quality=" << quality;
                 ss << " q=[";
                 for (const double& v : config) {
                     ss << v << ", ";

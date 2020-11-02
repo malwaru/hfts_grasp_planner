@@ -21,10 +21,12 @@ public:
    * Initialize planner for a new problem given the current state of the environment.
    * Resets all previously stored information, i.e. all grasps, goals and all motion planning data.
    * You need to add goals using the addGoal function. In addition, you need to add at least one grasp.
-   * Input format: robot_name obj_name
+   * Input format: robot_name obj_name param_name_1=value_1 ... param_name_n=value_n
    * where
    *  robot_id, int - environment id of the robot to plan for (planning for its active manipulator)
    *  obj_name, int - environment id of the kinbody that is going to be grasped
+   *  param_name_i - name of algorithm-specific parameter (without whitespaces)
+   *  param_value_i - value of that parameter (either a string representation of an int, float or a string itself)
    */
   bool initPlan(std::ostream& sout, std::istream& sinput);
 
@@ -65,7 +67,15 @@ public:
    */
   bool getPath(std::ostream& sout, std::istream& sinput);
 
-  // TODO optionally set parameters for the algorithms
+  /**
+   * Set additional parameters for the algorithm.
+   * Input format: <param_name_1>=<param_value_1>
+   *               ...
+   *               <param_name_n>=<param_value_n>
+   * where
+   *  <param_name_i> is a string without whitespaces representing the parameter name
+   *  <param_value_i> is a string representation of an integer, float or simply a string
+   */
   // bool setParameters(std::ostream& sout, std::istream& sinput);
 
   /**
@@ -81,10 +91,11 @@ public:
 
   /**
    * Add a new goal.
-   * Input format: id gid q0 ... qn
+   * Input format: id gid quality q0 ... qn
    * where
    *  id, int - unique identifier for this goal
    *  gid, int - grasp id for which this goal is defined
+   *  quality, double - quality of the goal
    *  q0, ..., qn, double - goal arm configuration
    */
   bool addGoal(std::ostream& sout, std::istream& sinput);

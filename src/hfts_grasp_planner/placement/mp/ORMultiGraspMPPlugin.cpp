@@ -17,10 +17,12 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
                   "Initialize planner for a new problem given the current state of the environment.\n"
                   "Resets all previously stored information, i.e. all grasps, goals and all motion planning data.\n"
                   "You need to add goals using the addGoal function. In addition, you need to add at least one grasp.\n"
-                  "Input format: robot_name obj_name\n"
+                  "Input format: <robot_name> <obj_name> lambda=<val> sdf_file=<file_name>\n"
                   "where \n"
-                  " robot_name, string - name of the robot to plan for (planning for its active manipulator)\n"
-                  " obj_name, string - name of the kinbody that is going to be grasped\n");
+                  " <robot_name>, string - name of the robot to plan for (planning for its active manipulator)\n"
+                  " <obj_name>, string - name of the kinbody that is going to be grasped\n"
+                  " <val>, double - value for lambda, the tradeoff between path cost and goal cost\n"
+                  " <file_name>, string - optionally, the path to a sdf file to maximize clearance\n");
   RegisterCommand("plan", boost::bind(&ORMultiGraspMPPlugin::plan, this, _1, _2),
                   "Plan (start or continue) until either a timeout is reached or some new solutions were found.\n"
                   "Input format: max_time\n"
@@ -63,6 +65,7 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
                   "where\n"
                   " id, int - unique identifier for this goal\n"
                   " gid, int - grasp id for which this goal is defined\n"
+                  " quality, double - the quality/objective value of the goal\n"
                   " q0, ..., qn, double - goal arm configuration");
   RegisterCommand("removeGoals", boost::bind(&ORMultiGraspMPPlugin::removeGoals, this, _1, _2),
                   "Inform the motion planner to stop planning towards the given goals. \n"
@@ -110,6 +113,66 @@ void parseGraphSearchType(const std::string& name_to_parse, mgsearch::MGGraphSea
   }
 }
 
+std::pair<std::string, std::string> parseParameterNameValue(const std::string& input_string)
+{
+  auto separator_pos = input_string.find('=');
+  if (separator_pos == std::string::npos)
+  {
+    std::string error_msg("Could not parse parameter name and value from input string \"" + input_string +
+                          "\". Could not find '='.");
+    RAVELOG_ERROR(error_msg);
+    throw std::invalid_argument(error_msg);
+  }
+  return {input_string.substr(0, separator_pos), input_string.substr(separator_pos + 1)};
+}
+
+std::istream& removePreceedingSymbol(std::istream& sinput, char symbol)
+{
+  while (sinput.good() and sinput.peek() == symbol)
+  {
+    sinput.ignore(1);
+  };
+  return sinput;
+}
+
+/**
+ * Read parameters (name=value) from sinput and store in params.
+ * May invalid_argument, out_of_range
+ */
+void parseParameters(std::istream& sinput, mgsearch::MGGraphSearchMP::Parameters& params)
+{
+  const char delim = ' ';
+  while (removePreceedingSymbol(sinput, delim).good())
+  {
+    std::stringstream ss;
+    // read next substring until ' ' into ss
+    sinput.get(*ss.rdbuf(), delim);
+    // RAVELOG_DEBUG("READ STRING: " + ss.str() + std::string(" Fail flag is: ") + std::to_string(sinput.fail()));
+    if (!sinput.fail())
+    {  // in case we read something
+      // try to get name and value as strings (throws invalid_argument if that does not work)
+      auto [param_name, param_value] = parseParameterNameValue(ss.str());
+      RAVELOG_DEBUG("Received parameter " + param_name + " with value " + param_value);
+      if (param_name == "lambda")
+      {
+        params.lambda = std::stod(param_value);
+      }
+      else if (param_name == "sdf_file")
+      {
+        // TODO
+      }
+      else
+      {
+        throw std::invalid_argument("Unknown parameter name " + param_name);
+      }
+    }
+    else
+    {
+      RAVELOG_ERROR("Failed to read parameter-name-value-tuple from input stream. Read so far " + ss.str());
+    }
+  }
+}
+
 bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
 {
   unsigned int robot_id;
@@ -152,8 +215,7 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
   {  // split algorithm name in algorithm + graph name for graph-based planner
     mgsearch::MGGraphSearchMP::Parameters params;
     parseGraphSearchType(_algorithm_name, params);
-    // TODO make parameters settable
-    params.lambda = 1.0;
+    parseParameters(sinput, params);
     _planner = std::make_shared<ORGraphSearch>(query_env, robot_id, obj_id, params);
   }
   return true;
@@ -220,6 +282,10 @@ bool ORMultiGraspMPPlugin::getPath(std::ostream& sout, std::istream& sinput)
   return true;
 }
 
+// bool ORMultiGraspMPPlugin::setParameters(std::ostream& sout, std::istream& sinput)
+// {
+// }
+
 bool ORMultiGraspMPPlugin::addGrasp(std::ostream& sout, std::istream& sinput)
 {
   if (!_planner)
@@ -255,6 +321,8 @@ bool ORMultiGraspMPPlugin::addGoal(std::ostream& sout, std::istream& sinput)
   sinput >> goal.id;
   // next read grasp id
   sinput >> goal.grasp_id;
+  // next read goal quality
+  sinput >> goal.quality;
   // finally read configuration
   while (sinput.good())
   {

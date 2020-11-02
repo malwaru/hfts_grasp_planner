@@ -37,7 +37,7 @@ class MGMotionPlanner(object):
         self._vel_factor = vel_factor
         self._goals = {}
 
-    def setup(self, grasped_obj, start_config=None):
+    def setup(self, grasped_obj, start_config=None, lmbda=1.0, sdf_file=None):
         """
             Reset motion planner to plan from the current or given start configuration.
             ---------
@@ -47,6 +47,10 @@ class MGMotionPlanner(object):
             start_config(optional), numpy array of shape (n,) with n = #dofs of manipulator
                 If provided, planner plans starting from this configuration, else from the current
                 configuration of the manipulator.
+            lmbda(optional), double - parameter to balance between goal quality and path cost
+                This parameters is only used by optimal planning algorithms.
+            sdf_file(optional), string - path to a signed distance field of the environment to
+                optionally maximize clearance (optimal planners only).
         """
         with self._robot:
             self._robot.SetActiveManipulator(self._manip.GetName())
@@ -54,9 +58,10 @@ class MGMotionPlanner(object):
             if start_config is not None:
                 self._robot.SetActiveDOFValues(start_config)
             self._grasped_obj = grasped_obj
-            self._planner_interface.SendCommand(
-                "initPlan %i %i" % (self._robot.GetEnvironmentId(),
-                                    self._grasped_obj.GetEnvironmentId()))
+            command_str = "initPlan %i %i lambda=%f" % (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId(), lmbda)
+            if sdf_file is not None:
+                command_str += " sdf_file=" + sdf_file
+            self._planner_interface.SendCommand(command_str)
             self._known_grasps = set()
             self._goals = {}
             self._dof = self._robot.GetActiveDOF()
@@ -74,7 +79,7 @@ class MGMotionPlanner(object):
             -------
             Returns
             -------
-            trajs, list of OpenRAVE trajectory - list of newly computed trajectories 
+            trajs, list of OpenRAVE trajectory - list of newly computed trajectories
                 (storing only paths, no velocities) 
             goals, list of PlacementGoals - list of goals that the trajectories lead to
         """
@@ -125,7 +130,8 @@ class MGMotionPlanner(object):
                 self._planner_interface.SendCommand(command_str)
                 self._known_grasps.add(g.grasp_id)
             # next add goal
-            command_str = "addGoal %i %i" % (g.key, g.grasp_id)
+            command_str = "addGoal %i %i %f" % (g.key, g.grasp_id,
+                                                g.objective_value)
             for v in g.arm_config:
                 command_str += " %f" % v
             self._planner_interface.SendCommand(command_str)
