@@ -15,7 +15,7 @@ class ORGraphSearch : public MultiGraspMP
 {
 public:
   ORGraphSearch(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id,
-                const mgsearch::MGGraphSearchMP::Parameters& params);
+                const mgsearch::MGGraphSearchMP::Parameters& params, const std::string& sdf_file);
   ~ORGraphSearch();
 
   void plan(std::vector<Solution>& new_paths, double time_limit) override;

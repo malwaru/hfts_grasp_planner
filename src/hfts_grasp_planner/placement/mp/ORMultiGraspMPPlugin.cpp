@@ -72,6 +72,11 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
                   "Input format: id0 id1 id2 ... idN \n"
                   "where\n"
                   " idX, int - goal identifiers");
+  RegisterCommand("saveStats", boost::bind(&ORMultiGraspMPPlugin::saveStats, this, _1, _2),
+                  "Save planning statistics since the last time initPlanner was called to file. \n"
+                  "Input format: <filename> \n"
+                  "where\n"
+                  " <filename>, str - name of a file in which to store the statistics");
   _algorithm_name = algorithm;
   _original_env = penv;
   RAVELOG_DEBUG("Constructed ORMultiGraspMPPlugin");
@@ -135,11 +140,7 @@ std::istream& removePreceedingSymbol(std::istream& sinput, char symbol)
   return sinput;
 }
 
-/**
- * Read parameters (name=value) from sinput and store in params.
- * May invalid_argument, out_of_range
- */
-void parseParameters(std::istream& sinput, mgsearch::MGGraphSearchMP::Parameters& params)
+void ORMultiGraspMPPlugin::parseParameters(std::istream& sinput, mgsearch::MGGraphSearchMP::Parameters& params)
 {
   const char delim = ' ';
   while (removePreceedingSymbol(sinput, delim).good())
@@ -159,7 +160,16 @@ void parseParameters(std::istream& sinput, mgsearch::MGGraphSearchMP::Parameters
       }
       else if (param_name == "sdf_file")
       {
-        // TODO
+        _sdf_filename = param_value;
+      }
+      else if (param_name == "batchsize")
+      {
+        params.batchsize = std::stoul(param_value);
+      }
+      else if (param_name == "log_file")
+      {
+        params.roadmap_log_path = param_value + "_roadmap";
+        params.logfile_path = param_value + "_evaluation";
       }
       else
       {
@@ -216,7 +226,7 @@ bool ORMultiGraspMPPlugin::initPlan(std::ostream& sout, std::istream& sinput)
     mgsearch::MGGraphSearchMP::Parameters params;
     parseGraphSearchType(_algorithm_name, params);
     parseParameters(sinput, params);
-    _planner = std::make_shared<ORGraphSearch>(query_env, robot_id, obj_id, params);
+    _planner = std::make_shared<ORGraphSearch>(query_env, robot_id, obj_id, params, _sdf_filename);
   }
   return true;
 }
@@ -235,6 +245,7 @@ bool ORMultiGraspMPPlugin::plan(std::ostream& sout, std::istream& sinput)
   sinput >> timeout;
   std::vector<MultiGraspMP::Solution> new_paths;
   _planner->plan(new_paths, timeout);
+  // TODO save stats to file or move this into plan(..)
   if (!new_paths.empty())
   {
     for (unsigned int i = 0; i < new_paths.size(); ++i)
@@ -354,6 +365,15 @@ bool ORMultiGraspMPPlugin::removeGoals(std::ostream& sout, std::istream& sinput)
   RAVELOG_DEBUG("Removing goals: " + debug_ss.str());
   _planner->removeGoals(goals_to_remove);
   return false;  // TODO what to return?
+}
+
+bool ORMultiGraspMPPlugin::saveStats(std::ostream& sout, std::istream& sinput)
+{
+  removePreceedingSymbol(sinput, ' ');
+  std::stringstream ss;
+  sinput.get(*ss.rdbuf());
+  _planner->savePlanningStats(ss.str());
+  return false;
 }
 
 InterfaceBasePtr CreateInterfaceValidated(InterfaceType type, const std::string& interfacename, std::istream& sinput,

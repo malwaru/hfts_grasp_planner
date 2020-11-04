@@ -37,7 +37,13 @@ class MGMotionPlanner(object):
         self._vel_factor = vel_factor
         self._goals = {}
 
-    def setup(self, grasped_obj, start_config=None, lmbda=1.0, sdf_file=None):
+    def setup(self,
+              grasped_obj,
+              start_config=None,
+              lmbda=1.0,
+              sdf_file=None,
+              log_file=None,
+              batchsize=1000):
         """
             Reset motion planner to plan from the current or given start configuration.
             ---------
@@ -51,6 +57,10 @@ class MGMotionPlanner(object):
                 This parameters is only used by optimal planning algorithms.
             sdf_file(optional), string - path to a signed distance field of the environment to
                 optionally maximize clearance (optimal planners only).
+            log_file(optional), string - If provided, log planning progress to log_file
+                (The planner may log to multiple files by appending suffixes)
+            batchsize(optional), int - If a roadmap-based planner is used, this specifies the batchsize
+                for sampling.
         """
         with self._robot:
             self._robot.SetActiveManipulator(self._manip.GetName())
@@ -58,9 +68,15 @@ class MGMotionPlanner(object):
             if start_config is not None:
                 self._robot.SetActiveDOFValues(start_config)
             self._grasped_obj = grasped_obj
-            command_str = "initPlan %i %i lambda=%f" % (self._robot.GetEnvironmentId(), self._grasped_obj.GetEnvironmentId(), lmbda)
-            if sdf_file is not None:
+            command_str = "initPlan %i %i lambda=%f" % (
+                self._robot.GetEnvironmentId(),
+                self._grasped_obj.GetEnvironmentId(), lmbda)
+            if sdf_file is not None and type(sdf_file) == str:
                 command_str += " sdf_file=" + sdf_file
+            if log_file is not None and type(log_file) == str:
+                command_str += " log_file=" + log_file
+            if batchsize is not None and type(batchsize) == int:
+                command_str += " batchsize=" + str(batchsize)
             self._planner_interface.SendCommand(command_str)
             self._known_grasps = set()
             self._goals = {}
@@ -179,6 +195,14 @@ class MGMotionPlanner(object):
             Returns the total number of known grasps.
         """
         return len(self._known_grasps)
+
+    def save_stats(self, stats_file_name):
+        """Save planner statistics since the last call of setup to file.
+
+        Args:
+            stats_file_name (str): Name of the file to write stats to.
+        """
+        self._planner_interface.SendCommand("saveStats %s" % stats_file_name)
 
 
 class PathSimplifier(object):

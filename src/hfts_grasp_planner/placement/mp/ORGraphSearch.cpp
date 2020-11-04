@@ -7,10 +7,11 @@ namespace mg = ::placement::mp::mgsearch;
 using namespace ::placement::mp;
 
 ORGraphSearch::ORGraphSearch(OpenRAVE::EnvironmentBasePtr penv, unsigned int robot_id, unsigned int obj_id,
-                             const mg::MGGraphSearchMP::Parameters& iparams)
+                             const mg::MGGraphSearchMP::Parameters& iparams, const std::string& sdf_file)
   : _env(penv)  //, _robot_id(robot_id), _obj_id(obj_id)
 {
   RAVELOG_DEBUG("ORGraphSearch constructor!");
+  // TODO pass sdf file to scene_interface
   _scene_interface = std::make_shared<mg::ORStateSpace>(penv, robot_id, obj_id);
   _robot = penv->GetRobot(penv->GetBodyFromEnvironmentId(robot_id)->GetName());
   // get start config

@@ -50,7 +50,15 @@ public:
     GraphType graph_type;
     EdgeSelectorType edge_selector_type;  // only for LazySP
     double lambda;                        // weight between path and goal cost
-    Parameters() : algo_type(AlgorithmType::Astar), graph_type(GraphType::SingleGraspGraph), lambda(1.0)
+    unsigned int batchsize;               // roadmap batch size
+    std::string roadmap_log_path;         // file to log roadmap to
+    std::string logfile_path;             // file to log roadmap cost evaluations to
+    Parameters()
+      : algo_type(AlgorithmType::Astar)
+      , graph_type(GraphType::SingleGraspGraph)
+      , edge_selector_type(EdgeSelectorType::FirstUnknown)
+      , lambda(1.0)
+      , batchsize(10000)
     {
     }
 
@@ -58,7 +66,9 @@ public:
     {
       std::stringstream ss;
       ss << "AlgorithmType=" << getName(algo_type) << " GraphType=" << getName(graph_type)
-         << " EdgeSelectorType=" << edge_selector_type << " lambda=" << lambda;
+         << " EdgeSelectorType=" << edge_selector_type << " lambda=" << lambda << " batchsize=" << batchsize
+         << " roadmap_log_path" << roadmap_log_path << " logfile_path" << logfile_path;
+
       return ss.str();
     }
   };

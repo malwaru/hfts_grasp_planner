@@ -40,7 +40,7 @@ openrave_plugin(ormultigraspmp
 )
 
 set_target_properties(ormultigraspmp PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS} -Wall" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")
-target_link_libraries(ormultigraspmp ${OpenRAVE_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES})
+target_link_libraries(ormultigraspmp stdc++fs ${OpenRAVE_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES} ${Boost_LIBRARIES})
 
 # add_executable(test_graph_search_algorithm
 #   utils/Profiling.cpp
@@ -63,7 +63,7 @@ add_executable(test_image_space_algorithm
   ../../external/halton/halton.cpp
 )
 
-add_definitions(-DENABLE_GRAPH_LOGGING)
+add_definitions(-DENABLE_GRAPH_LOGGING -DENABLE_GRAPH_PROFILING -DENABLE_ROADMAP_PROFILING)
 
 set_target_properties(test_image_space_algorithm PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS} -Wall" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")
 target_link_libraries(test_image_space_algorithm cnpy stdc++fs ${OpenRAVE_LIBRARIES} ${Boost_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES})

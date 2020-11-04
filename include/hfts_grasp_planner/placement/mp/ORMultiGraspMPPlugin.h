@@ -108,11 +108,25 @@ public:
    */
   bool removeGoals(std::ostream& sout, std::istream& sinput);
 
+  /**
+   * Save planning statistics since the last time initPlanner was called to file.
+   * Input format: <filename>
+   * where
+   *  <filename>, string - name of a file in which to store the statistics
+   */
+  bool saveStats(std::ostream& sout, std::istream& sinput);
+
 private:
   std::string _algorithm_name;
+  std::string _sdf_filename;
   MultiGraspMPPtr _planner;
   std::unordered_map<unsigned int, MultiGraspMP::Solution> _solutions;
   OpenRAVE::EnvironmentBasePtr _original_env;
+  /**
+   * Read parameters (name=value) from sinput and store in params or in member variables.
+   * Throws invalid_argument, out_of_range
+   */
+  void parseParameters(std::istream& sinput, mgsearch::MGGraphSearchMP::Parameters& params);
 };
 OpenRAVE::InterfaceBasePtr CreateInterfaceValidated(OpenRAVE::InterfaceType type, const std::string& interfacename,
                                                     std::istream& sinput, OpenRAVE::EnvironmentBasePtr penv);

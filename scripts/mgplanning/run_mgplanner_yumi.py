@@ -58,7 +58,9 @@ def show_traj(robot, target_object, traj, goal):
                          hfts_utils.inverse_transform(goal.grasp_tf),
                          goal.grasp_config)
     robot.GetController().SetPath(traj)
+    robot.GetEnv().StartSimulation(0.025, True)
     robot.WaitForController(0)
+    robot.GetEnv().StopSimulation()
 
 
 def yaml_dict_to_tf_matrix(adict):
@@ -150,6 +152,20 @@ if __name__ == "__main__":
                         help="Lambda, the tradeoff between path and goal cost",
                         type=float,
                         default=1.0)
+    parser.add_argument(
+        '--stats_file',
+        help=
+        "Filename to log calling stats (runtime, number of function calls) to.",
+        type=str,
+        default=None)
+    parser.add_argument(
+        '--planner_log',
+        help="Basename to log planning logs (roadmap, evaluation) to.",
+        type=str,
+        default=None)
+    parser.add_argument('--show_viewer',
+                        help="Show viewer at the end of planning.",
+                        action='store_true')
     args = parser.parse_args()
 
     # base_path = os.path.dirname(__file__)
@@ -177,11 +193,17 @@ if __name__ == "__main__":
     # create planner
     planner = MGMotionPlanner("%s;%s" % (args.algorithm_name, args.graph_name),
                               manip)
-    planner.setup(target_object, lmbda=args.lmbda)
+    planner.setup(target_object,
+                  lmbda=args.lmbda,
+                  log_file=args.planner_log,
+                  batchsize=3000)
     planner.addGoals(goals)
     # plan
     trajectories, reached_goals = planner.plan(10.0)
     trajectories = [time_traj(robot, traj) for traj in trajectories]
+    if args.stats_file:
+        planner.save_stats(args.stats_file)
     # print "Found %d trajectories" % len(trajectories)
-    env.SetViewer('qtcoin')
-    IPython.embed()
+    if args.show_viewer:
+        env.SetViewer('qtcoin')
+        IPython.embed()

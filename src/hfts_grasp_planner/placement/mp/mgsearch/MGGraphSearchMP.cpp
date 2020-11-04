@@ -96,8 +96,8 @@ MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Conf
   : _params(params), _state_space(state_space)
 {
   auto edge_computer = std::make_shared<IntegralEdgeCostComputer>(_state_space);
-  _roadmap = std::make_shared<Roadmap>(_state_space, edge_computer, 1000, "/tmp/roadmap", "/tmp/validation_log");
-  // _roadmap->setLogging("/tmp/roadmap", "/tmp/validation_log");
+  _roadmap = std::make_shared<Roadmap>(_state_space, edge_computer, params.batchsize, params.roadmap_log_path,
+                                       params.logfile_path);
   _goal_set = std::make_shared<MultiGraspGoalSet>(_roadmap);
   // add start node
   _start_node = _roadmap->addNode(start_config);
