@@ -4,6 +4,7 @@
 #include <map>
 #include <numeric>
 #include <string>
+#include <time.h>  // only correct on linux
 #include <vector>
 
 namespace placement
@@ -26,11 +27,29 @@ public:
   {
     std::string function_name;
     unsigned int num_calls;
-    std::vector<double> runtimes;
+    double runtimes_sum;
+    double clocktimes_sum;
 
     FunctionProfile();
+    /**
+     * Return the average wall clock time.
+     */
     double avgRuntime() const;
+
+    /**
+     * Return the total wall clock time.
+     */
     double totalRuntime() const;
+
+    /**
+     * Return the average CPU time.
+     */
+    double avgClockTime() const;
+
+    /**
+     * Return the total CPU time.
+     */
+    double totalClockTime() const;
   };
   /**
    * Creates a new instance of a profiler. This will start recording the duration
@@ -59,11 +78,18 @@ public:
    */
   static void printProfiles(std::ostream& os, bool summary = true);
 
+  /**
+   * Dump all profiles in a csv file.
+   * @param os - output stream.
+   */
+  static void dumpProfiles(std::ostream& os);
+
 private:
   const std::string _function_name;
   const bool _aggregate;
   static std::map<std::string, FunctionProfile> profile_data;
-  std::chrono::high_resolution_clock::time_point _start;
+  std::chrono::steady_clock::time_point _start;
+  clock_t _start_t;
 };
 }  // namespace utils
 }  // namespace mp

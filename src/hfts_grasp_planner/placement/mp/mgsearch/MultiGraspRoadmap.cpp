@@ -1,9 +1,10 @@
 #include <Eigen/Core>
 #include <hfts_grasp_planner/external/halton/halton.hpp>
 #include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
+#include <hfts_grasp_planner/placement/mp/utils/Profiling.h>
 
 #ifdef NDEBUG
-#define FLUSH_END "/n"
+#define FLUSH_END "\n"
 #else
 #define FLUSH_END std::endl
 #endif
@@ -55,6 +56,9 @@ double IntegralEdgeCostComputer::integrateCosts(const Config& a, const Config& b
 
 double IntegralEdgeCostComputer::lowerBound(const Config& a, const Config& b) const
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("IntegralEdgeCostComputer::lowerBound");
+#endif
   return _state_space->distance(a, b);
 }
 
@@ -86,8 +90,10 @@ Roadmap::NodePtr Roadmap::Edge::getNeighbor(NodePtr n) const
   if (a != nullptr and a->uid != n->uid)
     return a;
   auto b = node_b.lock();
-  assert(b == nullptr or b->uid != n->uid);
-  return b;
+  // assert(b == nullptr or b->uid != n->uid);
+  if (b != nullptr and b->uid != n->uid)
+    return b;
+  return nullptr;
 }
 
 double Roadmap::Edge::getBestKnownCost(unsigned int gid) const
@@ -229,6 +235,9 @@ void Roadmap::densify()
 
 void Roadmap::densify(unsigned int batch_size)
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("Roadmap::densify");
+#endif
   assert(batch_size > 0);
   double* new_samples = halton::halton_sequence(_halton_seq_id, _halton_seq_id + batch_size - 1, _si.dimension);
   _halton_seq_id += batch_size;
@@ -282,9 +291,15 @@ Roadmap::NodeWeakPtr Roadmap::addNode(const Config& config)
 
 void Roadmap::updateAdjacency(NodePtr node)
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("Roadmap::updateAdjacency");
+#endif
   // update the node's adjacency
   if (node->densification_gen != _densification_gen)
   {
+#ifdef ENABLE_ROADMAP_PROFILING
+    utils::ScopedProfiler prof2("Roadmap::updateAdjacency::addNeighbors");
+#endif
     std::vector<NodePtr> neighbors;
     _nn.nearestR(node, _adjacency_radius, neighbors);
     // add new edges, keep old ones
@@ -316,23 +331,18 @@ void Roadmap::updateAdjacency(NodePtr node)
     node->densification_gen = _densification_gen;
   }
   // clean up edges that are no longer needed because they are invalid
-  for (auto edge_iter = node->edges.begin(); edge_iter != node->edges.end();)
+  for (unsigned int uid : node->edges_to_delete)
   {
-    auto edge = edge_iter->second;
-    if (edge->base_evaluated && std::isinf(edge->base_cost))
-    {
-      // edge is invalid, so let's remove it
-      edge_iter = node->edges.erase(edge_iter);
-    }
-    else
-    {
-      ++edge_iter;
-    }
+    node->edges.erase(uid);
   }
+  node->edges_to_delete.clear();
 }
 
 bool Roadmap::isValid(NodeWeakPtr inode)
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("Roadmap::isValid");
+#endif
   if (inode.expired())
     return false;
   auto node = inode.lock();
@@ -363,6 +373,9 @@ bool Roadmap::isValid(unsigned int node_id)
 bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
 {
   bool base_valid = isValid(wnode);
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("Roadmap::isValidWithGrasp");
+#endif
   if (base_valid)
   {
     // check validity for the given grasp
@@ -400,6 +413,9 @@ bool Roadmap::isValid(unsigned int node_id, unsigned int grasp_id)
 
 std::pair<bool, double> Roadmap::computeCost(EdgePtr edge)
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("Roadmap::computeCost");
+#endif
   if (edge->base_evaluated)
   {
     return {!std::isinf(edge->base_cost), edge->base_cost};
@@ -411,8 +427,14 @@ std::pair<bool, double> Roadmap::computeCost(EdgePtr edge)
   assert(node_b);
   edge->base_cost = _cost_computer->cost(node_a->config, node_b->config);
   edge->base_evaluated = true;
+  bool invalid = std::isinf(edge->base_cost);
+  if (invalid)
+  {
+    node_a->edges_to_delete.push_back(node_b->uid);
+    node_b->edges_to_delete.push_back(node_a->uid);
+  }
   _logger.edgeCostChecked(node_a, node_b, edge->base_cost);
-  return {!std::isinf(edge->base_cost), edge->base_cost};
+  return {!invalid, edge->base_cost};
 }
 
 std::pair<bool, double> Roadmap::computeCost(EdgeWeakPtr weak_edge)
@@ -425,6 +447,9 @@ std::pair<bool, double> Roadmap::computeCost(EdgeWeakPtr weak_edge)
 
 std::pair<bool, double> Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id)
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("Roadmap::computeCostWithGrasp");
+#endif
   if (edge->base_evaluated and std::isinf(edge->base_cost))
   {
     return {false, edge->base_cost};
@@ -471,6 +496,10 @@ void Roadmap::deleteNode(NodePtr node)
     EdgePtr edge = iter->second;
     edge->base_evaluated = true;
     edge->base_cost = std::numeric_limits<double>::infinity();
+    // inform other node that it should delete this edge in updateAdjacency
+    auto other_node = edge->getNeighbor(node);
+    if (other_node)
+      other_node->edges_to_delete.push_back(node->uid);
   }
   node.reset();
 }

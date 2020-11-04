@@ -127,7 +127,7 @@ void flushWaitingList(G& graph, PQ& pq, WaitingListsMap& waiting_lists, unsigned
 template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost::heap::compare<PQElementCompare>>>
 void lwaStarSearch(G& graph, SearchResult& result)
 {
-  utils::ScopedProfiler("lwaStarSearch");
+  utils::ScopedProfiler profiler("lwaStarSearch");
   unsigned int v_start = graph.getStartNode();
   // initialize result structure
   result.solved = false;

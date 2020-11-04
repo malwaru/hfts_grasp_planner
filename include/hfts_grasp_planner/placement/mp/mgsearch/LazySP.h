@@ -121,6 +121,7 @@ bool trueEdgeCostKnown(G& graph, unsigned int u, unsigned int v)
 template <typename G, typename EdgeSelectorType, typename SearchAlgorithmType>
 void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_selector, SearchResult& result)
 {
+  utils::ScopedProfiler profiler("lazySP");
   bool all_path_edges_valid = false;
   // repeat as long as we have a path but do not know all of its edge costs
   do

@@ -121,7 +121,7 @@ public:
    */
   void updateEdges(const std::vector<EdgeChange>& edge_changes)
   {
-    utils::ScopedProfiler("LPAStarAlgorithm::updateEdges");
+    utils::ScopedProfiler profiler("LPAStarAlgorithm::updateEdges");
     for (const EdgeChange& ec : edge_changes)
     {
       VertexData& u_data = getVertexData(ec.u);
@@ -149,7 +149,7 @@ public:
    */
   void computeShortestPath(SearchResult& result)
   {
-    utils::ScopedProfiler("LPAStarAlgorithm::computeShortestPath");
+    utils::ScopedProfiler profiler("LPAStarAlgorithm::computeShortestPath");
     // main loop
     // differs depending on edge evaluation type ee_type
     std::integral_constant<EdgeCostEvaluationType, ee_type> inner_loop_type;
@@ -443,7 +443,7 @@ protected:
 template <typename G, EdgeCostEvaluationType ee_type>
 void lpaStarSearch(G& graph, SearchResult& result)
 {
-  utils::ScopedProfiler("lpaStarSearch");
+  utils::ScopedProfiler profiler("lpaStarSearch");
   LPAStarAlgorithm<G, ee_type> algorithm(graph);
   algorithm.computeShortestPath(result);
 }

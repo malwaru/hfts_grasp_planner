@@ -184,8 +184,10 @@ public:
     bool initialized;  // initialized = collision-free
     // 0 = edges not initialized, >= 1 - last densification generation edges have been updated
     unsigned int densification_gen;
-    // map node id to edge
+    // map node id to edge (maps target node id to edge)
     EdgeMap edges;
+    // stores keys of edges in edges that can be deleted
+    std::vector<unsigned int> edges_to_delete;
     // stores validity in dependence on grasp id
     std::unordered_map<unsigned int, bool> conditional_validity;
     // Constructor

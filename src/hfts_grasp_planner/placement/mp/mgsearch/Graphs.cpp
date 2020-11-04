@@ -116,6 +116,9 @@ SingleGraspRoadmapGraph::~SingleGraspRoadmapGraph() = default;
 
 bool SingleGraspRoadmapGraph::checkValidity(unsigned int v)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("SingleGraspRoadmapGraph::checkValidity");
+#endif
   auto node = _roadmap->getNode(v);
   if (!node)
     return false;
@@ -135,6 +138,9 @@ SingleGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy)
 #ifdef ENABLE_GRAPH_LOGGING
   _logger.logExpansion(v, _grasp_id);
 #endif
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("SingleGraspRoadmapGraph::getSuccessors");
+#endif
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
 
@@ -152,6 +158,9 @@ SingleGraspRoadmapGraph::getPredecessors(unsigned int v, bool lazy)
 
 double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("SingleGraspRoadmapGraph::getEdgeCost");
+#endif
   auto node_v1 = _roadmap->getNode(v1);
   // ensure v1's edges are up-to-date
   _roadmap->updateAdjacency(node_v1);
@@ -172,6 +181,9 @@ double SingleGraspRoadmapGraph::getEdgeCost(unsigned int v1, unsigned int v2, bo
 
 bool SingleGraspRoadmapGraph::trueEdgeCostKnown(unsigned int v1, unsigned int v2) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("SingleGraspRoadmapGraph::trueEdgeCostKnown");
+#endif
   auto node_v1 = _roadmap->getNode(v1);
   if (!node_v1)
     return true;                       // node must have got deleted -> infinite cost is known now
@@ -189,6 +201,9 @@ unsigned int SingleGraspRoadmapGraph::getStartNode() const
 
 bool SingleGraspRoadmapGraph::isGoal(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("SingleGraspRoadmapGraph::isGoal");
+#endif
   auto node = _roadmap->getNode(v);
   if (!node)
     return false;
@@ -197,6 +212,9 @@ bool SingleGraspRoadmapGraph::isGoal(unsigned int v) const
 
 double SingleGraspRoadmapGraph::getGoalCost(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("SingleGraspRoadmapGraph::getGoalCost");
+#endif
   auto node = _roadmap->getNode(v);
   assert(node);
   auto [goal_id, is_goal] = _goal_set->getGoalId(node->uid, _grasp_id);
@@ -209,6 +227,9 @@ double SingleGraspRoadmapGraph::getGoalCost(unsigned int v) const
 
 double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("SingleGraspRoadmapGraph::heuristic");
+#endif
   auto node = _roadmap->getNode(v);
   if (!node)
     return INFINITY;

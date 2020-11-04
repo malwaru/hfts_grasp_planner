@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <boost/shared_ptr.hpp>
 #include <hfts_grasp_planner/placement/mp/mgsearch/ORStateSpace.h>
+#include <hfts_grasp_planner/placement/mp/utils/Profiling.h>
 
 #define SAFE_DISTANCE 0.05
 
@@ -62,6 +63,7 @@ void ORStateSpace::removeGrasp(unsigned int gid)
 
 bool ORStateSpace::isValid(const pmp::Config& c) const
 {
+  pmp::utils::ScopedProfiler profiler("StateSpace::isValid");
   boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
@@ -78,6 +80,7 @@ bool ORStateSpace::isValid(const pmp::Config& c) const
 
 bool ORStateSpace::isValid(const pmp::Config& c, unsigned int grasp_id, bool only_obj) const
 {
+  pmp::utils::ScopedProfiler profiler("StateSpace::isValidWithGrasp");
   boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::RobotBase::RobotStateSaver state_saver(_robot);
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
@@ -123,6 +126,7 @@ void ORStateSpace::setGrasp(unsigned int gid) const
 
 double ORStateSpace::cost(const pmp::Config& c) const
 {
+  pmp::utils::ScopedProfiler profiler("StateSpace::cost");
   boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
   _object->Enable(false);
@@ -131,6 +135,7 @@ double ORStateSpace::cost(const pmp::Config& c) const
 
 double ORStateSpace::cost(const pmp::Config& c, unsigned int grasp_id) const
 {
+  pmp::utils::ScopedProfiler profiler("StateSpace::costWithGrasp");
   boost::lock_guard<OpenRAVE::EnvironmentMutex> lock(_penv->GetMutex());
   OpenRAVE::KinBody::KinBodyStateSaver obj_state_saver(_object);
   setGrasp(grasp_id);

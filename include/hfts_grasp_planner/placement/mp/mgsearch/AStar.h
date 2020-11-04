@@ -69,7 +69,7 @@ template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost
 void aStarSearch(G& graph, SearchResult& result)
 {
   static_assert(G::heuristic_stationary::value);
-  utils::ScopedProfiler("aStarSearch");
+  utils::ScopedProfiler profiler("aStarSearch");
   // get start node
   unsigned int v_start = graph.getStartNode();
   // initialize result structure

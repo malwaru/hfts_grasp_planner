@@ -2,6 +2,7 @@
 
 #include <boost/functional/hash.hpp>
 #include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
+#include <hfts_grasp_planner/placement/mp/utils/Profiling.h>
 #include <vector>
 #include <set>
 

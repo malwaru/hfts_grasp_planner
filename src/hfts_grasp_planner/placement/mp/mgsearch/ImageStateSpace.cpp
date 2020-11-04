@@ -1,6 +1,7 @@
 #include "cnpy.h"
 #include <cmath>
 #include <hfts_grasp_planner/placement/mp/mgsearch/ImageStateSpace.h>
+#include <hfts_grasp_planner/placement/mp/utils/Profiling.h>
 
 using namespace placement::mp::mgsearch;
 
@@ -90,6 +91,7 @@ unsigned int ImageStateSpace::getNumGrasps() const
 
 bool ImageStateSpace::isValid(const Config& c) const
 {
+  utils::ScopedProfiler profiler("StateSpace::isValid");
   assert(c.size() == 2);
   unsigned int i = (unsigned int)std::round(c[0]);
   unsigned int j = (unsigned int)std::round(c[1]);
@@ -98,6 +100,7 @@ bool ImageStateSpace::isValid(const Config& c) const
 
 bool ImageStateSpace::isValid(const Config& c, unsigned int grasp_id, bool only_obj) const
 {
+  utils::ScopedProfiler profiler("StateSpace::isValidWithGrasp");
   assert(c.size() == 2);
   unsigned int i = (unsigned int)std::round(c[0]);
   unsigned int j = (unsigned int)std::round(c[1]);
@@ -107,6 +110,7 @@ bool ImageStateSpace::isValid(const Config& c, unsigned int grasp_id, bool only_
 // state cost
 double ImageStateSpace::cost(const Config& a) const
 {
+  utils::ScopedProfiler profiler("StateSpace::cost");
   assert(a.size() == 2);
   unsigned int i = (unsigned int)std::round(a[0]);
   unsigned int j = (unsigned int)std::round(a[1]);
@@ -122,6 +126,7 @@ double ImageStateSpace::cost(const Config& a) const
 
 double ImageStateSpace::cost(const Config& a, unsigned int grasp_id) const
 {
+  utils::ScopedProfiler profiler("StateSpace::costWithGrasp");
   assert(a.size() == 2);
   unsigned int i = (unsigned int)std::round(a[0]);
   unsigned int j = (unsigned int)std::round(a[1]);

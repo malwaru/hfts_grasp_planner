@@ -189,6 +189,9 @@ MultiGraspRoadmapGraph<cost_checking_type>::~MultiGraspRoadmapGraph() = default;
 template <CostCheckingType cost_checking_type>
 bool MultiGraspRoadmapGraph<cost_checking_type>::checkValidity(unsigned int v)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::checkValidity");
+#endif
   if (v == 0)
   {
     // special case for start node which is not associated with any grasp
@@ -238,6 +241,9 @@ MultiGraspRoadmapGraph<cost_checking_type>::getSuccessors(unsigned int v, bool l
     _logger.logExpansion(rid, gid);
   }
 #endif
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::getSuccessors");
+#endif
   return {NeighborIterator::begin(v, lazy, this), NeighborIterator::end(v, this)};
 }
 
@@ -260,6 +266,9 @@ MultiGraspRoadmapGraph<cost_checking_type>::getPredecessors(unsigned int v, bool
 template <CostCheckingType cost_checking_type>
 double MultiGraspRoadmapGraph<cost_checking_type>::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::getEdgeCost");
+#endif
   // catch special case of start node
   if (v1 == 0 || v2 == 0)
   {
@@ -297,6 +306,9 @@ double MultiGraspRoadmapGraph<cost_checking_type>::getEdgeCost(unsigned int v1, 
 template <CostCheckingType cost_checking_type>
 bool MultiGraspRoadmapGraph<cost_checking_type>::trueEdgeCostKnown(unsigned int v1, unsigned int v2) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::trueEdgeCostKnown");
+#endif
   // catch special case of start node
   if (v1 == 0 || v2 == 0)
   {
@@ -333,6 +345,9 @@ unsigned int MultiGraspRoadmapGraph<cost_checking_type>::getStartNode() const
 template <CostCheckingType cost_checking_type>
 bool MultiGraspRoadmapGraph<cost_checking_type>::isGoal(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::isGoal");
+#endif
   if (v == 0)
     return false;
   auto [grasp_id, rnid] = toRoadmapKey(v);
@@ -342,6 +357,9 @@ bool MultiGraspRoadmapGraph<cost_checking_type>::isGoal(unsigned int v) const
 template <CostCheckingType cost_checking_type>
 double MultiGraspRoadmapGraph<cost_checking_type>::getGoalCost(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::getGoalCost");
+#endif
   if (v == 0)
   {  // can not be a goal
     return std::numeric_limits<double>::infinity();
@@ -360,6 +378,9 @@ double MultiGraspRoadmapGraph<cost_checking_type>::getGoalCost(unsigned int v) c
 template <CostCheckingType cost_checking_type>
 double MultiGraspRoadmapGraph<cost_checking_type>::heuristic(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::heuristic");
+#endif
   if (v == 0)
   {
     auto node = _roadmap->getNode(_roadmap_start_id);
@@ -382,6 +403,9 @@ void MultiGraspRoadmapGraph<cost_checking_type>::registerMinimalCost(unsigned in
 template <CostCheckingType cost_checking_type>
 double MultiGraspRoadmapGraph<cost_checking_type>::getEdgeCostWithGrasp(unsigned int v1, unsigned int v2)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::getEdgeCostWithGrasp");
+#endif
   if constexpr (cost_checking_type != WithGrasp)
   {
     // catch special case of start node
@@ -418,6 +442,9 @@ double MultiGraspRoadmapGraph<cost_checking_type>::getEdgeCostWithGrasp(unsigned
 template <CostCheckingType cost_checking_type>
 bool MultiGraspRoadmapGraph<cost_checking_type>::trueEdgeCostWithGraspKnown(unsigned int v1, unsigned int v2) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::trueEdgeCostWithGraspKnown");
+#endif
   if constexpr (cost_checking_type != WithGrasp)
   {
     // catch special case of start node
@@ -448,6 +475,9 @@ bool MultiGraspRoadmapGraph<cost_checking_type>::trueEdgeCostWithGraspKnown(unsi
 template <CostCheckingType cost_checking_type>
 bool MultiGraspRoadmapGraph<cost_checking_type>::trueValidityWithGraspKnown(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("MultiGraspRoadmapGraph::trueValidityWithGraspKnown");
+#endif
   if (v == 0)
     return true;
   // get roadmap graph
@@ -650,6 +680,9 @@ FoldedMultiGraspRoadmapGraph<htype>::FoldedMultiGraspRoadmapGraph(
 template <BackwardsHeuristicType htype>
 bool FoldedMultiGraspRoadmapGraph<htype>::checkValidity(unsigned int v)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("FoldedMultiGraspRoadmapGraph::checkValidity");
+#endif
   auto node = _roadmap->getNode(_vertex_info.at(v).roadmap_id);
   if (!node)
     return false;
@@ -686,6 +719,9 @@ FoldedMultiGraspRoadmapGraph<htype>::getSuccessors(unsigned int v, bool lazy)
     _logger.logExpansion(rid_gid_pair.first);
   }
 #endif
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("FoldedMultiGraspRoadmapGraph::getSuccessors");
+#endif
   auto begin = FoldedMultiGraspRoadmapGraph::NeighborIterator::begin(v, true, lazy, this);
   auto end = FoldedMultiGraspRoadmapGraph::NeighborIterator::end(v, true, lazy, this);
   return {std::move(begin), std::move(end)};
@@ -716,6 +752,9 @@ FoldedMultiGraspRoadmapGraph<htype>::getPredecessors(unsigned int v, bool lazy)
     _logger.logExpansion(rid_gid_pair.first);
   }
 #endif
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("FoldedMultiGraspRoadmapGraph::getPredecessors");
+#endif
   auto begin = FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator::begin(v, false, lazy, this);
   auto end = FoldedMultiGraspRoadmapGraph<htype>::NeighborIterator::end(v, false, lazy, this);
   return {std::move(begin), std::move(end)};
@@ -724,6 +763,9 @@ FoldedMultiGraspRoadmapGraph<htype>::getPredecessors(unsigned int v, bool lazy)
 template <BackwardsHeuristicType htype>
 double FoldedMultiGraspRoadmapGraph<htype>::getEdgeCost(unsigned int v1, unsigned int v2, bool lazy)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("FoldedMultiGraspRoadmapGraph::getEdgeCost");
+#endif
   if (_vertex_info.at(v1).layer_id == _vertex_info.at(v2).layer_id)
   {  // we are within the same layer -> default adjacency
     auto node = _roadmap->getNode(_vertex_info.at(v1).roadmap_id);
@@ -763,6 +805,9 @@ double FoldedMultiGraspRoadmapGraph<htype>::getEdgeCost(unsigned int v1, unsigne
 template <BackwardsHeuristicType htype>
 bool FoldedMultiGraspRoadmapGraph<htype>::trueEdgeCostKnown(unsigned int v1, unsigned int v2) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("FoldedMultiGraspRoadmapGraph::trueEdgeCostKnown");
+#endif
   if (_vertex_info.at(v1).layer_id == _vertex_info.at(v2).layer_id)
   {
     auto node = _roadmap->getNode(_vertex_info.at(v1).roadmap_id);
@@ -797,6 +842,9 @@ unsigned int FoldedMultiGraspRoadmapGraph<htype>::getStartNode() const
 template <BackwardsHeuristicType htype>
 bool FoldedMultiGraspRoadmapGraph<htype>::isGoal(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("FoldedMultiGraspRoadmapGraph::IsGoal");
+#endif
   return _vertex_info.at(v).roadmap_id == _start_rid and _vertex_info.at(v).layer_id > 0;
 }
 
@@ -809,6 +857,9 @@ double FoldedMultiGraspRoadmapGraph<htype>::getGoalCost(unsigned int v) const
 template <BackwardsHeuristicType htype>
 double FoldedMultiGraspRoadmapGraph<htype>::heuristic(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("FoldedMultiGraspRoadmapGraph::heuristic");
+#endif
   std::integral_constant<BackwardsHeuristicType, htype> htype_flag;
   if (_vertex_info.at(v).layer_id)
   {
