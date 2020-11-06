@@ -164,6 +164,11 @@ void ORStateSpace::getValidGraspIds(std::vector<unsigned int>& grasp_ids) const
   }
 }
 
+unsigned int ORStateSpace::getNumGrasps() const
+{
+  return _grasps.size();
+}
+
 double ORStateSpace::distance(const Config& a, const Config& b) const
 {
   return cSpaceDistance(a, b);

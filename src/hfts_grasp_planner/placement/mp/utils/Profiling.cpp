@@ -107,15 +107,15 @@ void ScopedProfiler::printProfiles(std::ostream& ost, bool summary)
   }
 }
 
-void ScopedProfiler::dumpProfiles(std::ostream& os)
+void ScopedProfiler::dumpProfiles(std::ostream& os, bool dump_header)
 {
-  // dump headers first
-  os << "function_name, num_calls, total_runtime, avg_runtime, total_cpu_time, avg_cpu_time\n";
+  if (dump_header)
+    os << "function_name,num_calls,total_runtime,avg_runtime,total_cpu_time,avg_cpu_time\n";
   // dump aggregated profiles
   for (auto& profile : profile_data)
   {
-    os << profile.first << ", " << profile.second.num_calls << ", " << profile.second.totalRuntime() << ", "
-       << profile.second.avgRuntime() << ", " << profile.second.totalClockTime() << ", "
-       << profile.second.avgClockTime() << "\n";
+    os << profile.first << "," << profile.second.num_calls << "," << profile.second.totalRuntime() << ","
+       << profile.second.avgRuntime() << "," << profile.second.totalClockTime() << "," << profile.second.avgClockTime()
+       << "\n";
   }
 }

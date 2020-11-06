@@ -126,10 +126,22 @@ void Roadmap::Logger::setLogPath(const std::string& roadmap_file, const std::str
   }
   if (!roadmap_file.empty())
   {
+    std::experimental::filesystem::path roadmap_path(roadmap_file);
+    roadmap_path.remove_filename();
+    if (!std::experimental::filesystem::exists(roadmap_path))
+    {
+      std::experimental::filesystem::create_directories(roadmap_path);
+    }
     _roadmap_fs.open(roadmap_file, std::ios::out);
   }
   if (!log_file.empty())
   {
+    std::experimental::filesystem::path log_path(log_file);
+    log_path.remove_filename();
+    if (!std::experimental::filesystem::exists(log_path))
+    {
+      std::experimental::filesystem::create_directories(log_path);
+    }
     _log_fs.open(log_file, std::ios::out);
   }
 }

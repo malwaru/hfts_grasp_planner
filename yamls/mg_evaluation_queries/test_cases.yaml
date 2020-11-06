@@ -1,0 +1,13 @@
+- name: Standard2DScene
+  domain: 2d
+  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/2d/cspaces/arrays/
+  num_grasps: 2
+  lambda: 0.2
+  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/2d_scene_5_goals.yaml
+- name: YumiTestScene
+  domain: placing
+  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/environments/cabinet_high_clutter.xml
+  object_xml: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/objects/expo/expo.kinbody.xml
+  num_grasps: 6
+  lambda: 1.0
+  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/rpl_shelf_100_goals.yaml

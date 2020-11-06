@@ -7,7 +7,13 @@ MultiGraspMP::~MultiGraspMP() = default;
 
 void MultiGraspMP::savePlanningStats(const std::experimental::filesystem::path& statsfile_path) const
 {
-  std::ofstream fstream(statsfile_path.c_str());
-  utils::ScopedProfiler::dumpProfiles(fstream);
+  bool file_exists = std::experimental::filesystem::exists(statsfile_path);
+  if (not file_exists)
+  {
+    // ensure all parent folders exist
+    std::experimental::filesystem::create_directories(statsfile_path.parent_path());
+  }
+  std::ofstream fstream(statsfile_path.c_str(), std::ios_base::app);
+  utils::ScopedProfiler::dumpProfiles(fstream, not file_exists);
   fstream.close();
 }

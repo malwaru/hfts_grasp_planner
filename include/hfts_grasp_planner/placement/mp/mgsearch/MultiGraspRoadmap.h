@@ -59,6 +59,10 @@ public:
   virtual unsigned int getDimension() const = 0;
   virtual void getBounds(Config& lower, Config& upper) const = 0;
   virtual void getValidGraspIds(std::vector<unsigned int>& grasp_ids) const = 0;
+  /**
+   * Return the number of valid grasps.
+   */
+  virtual unsigned int getNumGrasps() const = 0;
 
   SpaceInformation getSpaceInformation() const
   {

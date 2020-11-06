@@ -196,7 +196,7 @@ if __name__ == "__main__":
     planner.setup(target_object,
                   lmbda=args.lmbda,
                   log_file=args.planner_log,
-                  batchsize=3000)
+                  batchsize=1000)
     planner.addGoals(goals)
     # plan
     trajectories, reached_goals = planner.plan(10.0)

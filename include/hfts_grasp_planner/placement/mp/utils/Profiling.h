@@ -81,8 +81,9 @@ public:
   /**
    * Dump all profiles in a csv file.
    * @param os - output stream.
+   * @param dump_header - if true, first dump a line with header names, else dump data only
    */
-  static void dumpProfiles(std::ostream& os);
+  static void dumpProfiles(std::ostream& os, bool dump_header = true);
 
 private:
   const std::string _function_name;

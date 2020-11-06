@@ -2,6 +2,7 @@ find_package(OpenRAVE REQUIRED)
 find_package(Eigen REQUIRED)
 find_package(Boost REQUIRED COMPONENTS thread program_options)
 find_package(ompl)
+find_package(yaml-cpp)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_COMPILER clang++)
 
@@ -40,7 +41,7 @@ openrave_plugin(ormultigraspmp
 )
 
 set_target_properties(ormultigraspmp PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS} -Wall" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")
-target_link_libraries(ormultigraspmp stdc++fs ${OpenRAVE_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(ormultigraspmp stdc++fs ${OpenRAVE_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES} yaml-cpp ${Boost_LIBRARIES})
 
 # add_executable(test_graph_search_algorithm
 #   utils/Profiling.cpp
@@ -66,4 +67,4 @@ add_executable(test_image_space_algorithm
 add_definitions(-DENABLE_GRAPH_LOGGING -DENABLE_GRAPH_PROFILING -DENABLE_ROADMAP_PROFILING)
 
 set_target_properties(test_image_space_algorithm PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS} -Wall" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")
-target_link_libraries(test_image_space_algorithm cnpy stdc++fs ${OpenRAVE_LIBRARIES} ${Boost_LIBRARIES} ${OMPL_LIBRARIES} ${catkin_LIBRARIES})
+target_link_libraries(test_image_space_algorithm cnpy stdc++fs ${OpenRAVE_LIBRARIES} ${Boost_LIBRARIES} ${OMPL_LIBRARIES} yaml-cpp ${catkin_LIBRARIES})

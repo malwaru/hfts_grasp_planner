@@ -4,6 +4,7 @@
 #include <hfts_grasp_planner/placement/mp/ImgGraphSearch.h>
 #include <hfts_grasp_planner/placement/mp/utils/Profiling.h>
 #include <iostream>
+#include <yaml-cpp/yaml.h>
 #include <string>
 
 namespace po = boost::program_options;
@@ -30,10 +31,11 @@ int main(int argc, char** argv)
         ("help", "produce help message")
         ("image_path", po::value<std::string>()->required(), "image file")
         ("start_config", po::value<std::vector<double>>()->multitoken(), "start configuration (2d)")
-        ("goal_configs", po::value<std::vector<double>>()->multitoken()->required(), "end configurations (list of quadrets (grasp_id, x, y, quality))")
+        ("goal_configs", po::value<std::vector<double>>()->multitoken(), "end configurations (list of quadrets (grasp_id, x, y, quality))")
+        ("configs_file", po::value<std::string>()->default_value(""), "Optionally path to configuration file containing start and goal configurations")
         ("lambda", po::value<double>()->default_value(1.0), "Scaling factor between path and goal cost.")
-        ("algorithm_type", po::value<unsigned int>()->default_value(0), "Algorithm type: 0 = A*, 1 = LWA*, ...")
-        ("graph_type", po::value<unsigned int>()->default_value(0), "Graph type: 0 = SingleGraspGraph, 1 = MultiGraspGraph")
+        ("algorithm_type", po::value<std::string>(), "Algorithm name")
+        ("graph_type", po::value<std::string>(), "Graph name")
         ("roadmap_log_file", po::value<std::string>()->default_value("/tmp/roadmap"), "Filename to log roadmap to")
         ("evaluation_log_file", po::value<std::string>()->default_value("/tmp/evaluation_log"), "Filename to log roadmap evaluations to")
         ("stats_file", po::value<std::string>()->default_value("/tmp/stats_log"), "Filename to log statistics to")
@@ -55,55 +57,98 @@ int main(int argc, char** argv)
     printHelp(desc, boost::diagnostic_information(err));
     return -1;
   }
+  // load start and goal either from configuration file or from command line arguments
   pmp::Config start;
-  if (!vm.count("start_config"))
-  {
-    start.push_back(0.0);
-    start.push_back(0.0);
-    std::cout << "No start configuration provided. Will use (0.0f, 0.0f)" << std::endl;
-  }
-  else
-  {
-    start = vm.at("start_config").as<std::vector<double>>();
-    if (start.size() != 2)
+  std::vector<pmp::MultiGraspMP::Goal> goals;
+  if (vm.count("configs_file"))
+  {  // read start and goals from yaml
+    YAML::Node config_file = YAML::LoadFile(vm.at("configs_file").as<std::string>());
+    if (!config_file["start_config"] or not config_file["start_config"].IsSequence() or
+        config_file["start_config"].size() != 2)
     {
-      printHelp(desc, "Start configuration has an invalid dimension.");
+      printHelp(desc, "The configuration file has no or an invalid entry 'start_config'");
       return 0;
     }
-    std::cout << "Using (" << start.at(0) << ", " << start.at(1) << ") as start." << std::endl;
+    for (auto sub_entry : config_file["start_config"])
+    {
+      start.push_back(sub_entry.as<double>());
+    }
+    if (not config_file["goal_configs"] or not config_file["goal_configs"].IsSequence())
+    {
+      printHelp(desc, "The configuration file has no or an invalid entry 'goal_configs");
+      return 0;
+    }
+    unsigned int goal_id = 0;
+    for (auto goal_node : config_file["goal_configs"])
+    {
+      if (goal_node.size() != 4)
+      {
+        printHelp(desc, "There is an invalid goal configuration in the configuration file. Make sure each goal is a "
+                        "quadret (grasp_id, x, y, quality)");
+        return 0;
+      }
+      pmp::MultiGraspMP::Goal goal;
+      auto goal_data = goal_node.as<std::vector<double>>();
+      goal.id = goal_id++;
+      goal.grasp_id = static_cast<unsigned int>(goal_data.at(0));
+      goal.config.push_back(goal_data.at(1));
+      goal.config.push_back(goal_data.at(2));
+      goal.quality = goal_data.at(3);
+      goals.push_back(goal);
+    }
   }
-  // parse goals
-  std::vector<pmp::MultiGraspMP::Goal> goals;
-  std::vector<double> goal_values = vm.at("goal_configs").as<std::vector<double>>();
-  if (goal_values.size() % 4 != 0)
-  {
-    printHelp(desc, "Goal configurations must be a list of quadrets");
-    return -1;
+  else
+  {  // read from command line
+    if (!vm.count("start_config"))
+    {
+      start.push_back(0.0);
+      start.push_back(0.0);
+      std::cout << "No start configuration provided. Will use (0.0f, 0.0f)" << std::endl;
+    }
+    else
+    {
+      start = vm.at("start_config").as<std::vector<double>>();
+      if (start.size() != 2)
+      {
+        printHelp(desc, "Start configuration has an invalid dimension.");
+        return 0;
+      }
+      std::cout << "Using (" << start.at(0) << ", " << start.at(1) << ") as start." << std::endl;
+    }
+    // parse goals
+    std::vector<double> goal_values = vm.at("goal_configs").as<std::vector<double>>();
+    if (goal_values.size() % 4 != 0)
+    {
+      printHelp(desc, "Goal configurations must be a list of quadrets");
+      return -1;
+    }
+    for (unsigned gid = 0; gid < goal_values.size() / 4; ++gid)
+    {
+      pmp::MultiGraspMP::Goal goal;
+      goal.id = gid;
+      goal.grasp_id = (unsigned int)goal_values.at(gid * 4);
+      goal.config.push_back(goal_values.at(gid * 4 + 1));
+      goal.config.push_back(goal_values.at(gid * 4 + 2));
+      goal.quality = goal_values.at(gid * 4 + 3);
+      goals.push_back(goal);
+    }
   }
-  for (unsigned gid = 0; gid < goal_values.size() / 4; ++gid)
-  {
-    pmp::MultiGraspMP::Goal goal;
-    goal.id = gid;
-    goal.grasp_id = (unsigned int)goal_values.at(gid * 4);
-    goal.config.push_back(goal_values.at(gid * 4 + 1));
-    goal.config.push_back(goal_values.at(gid * 4 + 2));
-    goal.quality = goal_values.at(gid * 4 + 3);
-    goals.push_back(goal);
-  }
+  // parse remaining inputs
   fs::path image_file_path(vm["image_path"].as<std::string>());
   std::cout << "Received input path: " << image_file_path << std::endl;
   pmp::mgsearch::MGGraphSearchMP::Parameters params;
-  params.algo_type =
-      static_cast<pmp::mgsearch::MGGraphSearchMP::AlgorithmType>(vm["algorithm_type"].as<unsigned int>());
-  params.graph_type = static_cast<pmp::mgsearch::MGGraphSearchMP::GraphType>(vm["graph_type"].as<unsigned int>());
+  params.algo_type = pmp::mgsearch::MGGraphSearchMP::getAlgorithmType(vm["algorithm_type"].as<std::string>());
+  params.graph_type = pmp::mgsearch::MGGraphSearchMP::getGraphType(vm["graph_type"].as<std::string>());
   params.lambda = vm["lambda"].as<double>();
   params.roadmap_log_path = vm["roadmap_log_file"].as<std::string>();
   params.logfile_path = vm["evaluation_log_file"].as<std::string>();
+  // create search and add goals
   pmp::ImgGraphSearch imgs(image_file_path, start, params);
   for (auto& goal : goals)
   {
     imgs.addGoal(goal);
   }
+  // plan
   std::vector<pmp::MultiGraspMP::Solution> sols;
   imgs.plan(sols, 0.0);
   if (sols.empty())
@@ -121,21 +166,5 @@ int main(int argc, char** argv)
     pmp::utils::ScopedProfiler::printProfiles(std::cout, true);
   }
   imgs.savePlanningStats(vm["stats_file"].as<std::string>());
-  // mgs::ImageStateSpace state_space(image_file_path);
-  // std::cout << "Read in " << state_space.getNumGrasps() << " grasps" << std::endl;
-  // pmp::Config lower;
-  // pmp::Config upper;
-  // state_space.getBounds(lower, upper);
-  // std::cout << "Image dimensions are [" << lower[0] << ", " << lower[1] << "], [ "
-  //           << upper[0] << ", " << upper[1] << "]" << std::endl;
-  // // print images
-  // std::cout << " Printing read in images " << std::endl;
-  // for (float x = lower[0]; x < upper[0]; x += 1.0){
-  //     for (float y = lower[1]; y < upper[1]; y += 1.0) {
-  //         std::cout << state_space.conditional_cost({x, y}, 1) << ", ";
-  //     }
-  //     std::cout << std::endl;
-  // }
-
   return 0;
 }
