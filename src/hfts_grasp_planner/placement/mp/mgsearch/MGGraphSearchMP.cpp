@@ -59,6 +59,19 @@ std::string MGGraphSearchMP::getName(AlgorithmType atype)
   }
 }
 
+std::string MGGraphSearchMP::getName(EdgeSelectorType etype)
+{
+  switch (etype)
+  {
+    case EdgeSelectorType::FirstUnknown:
+      return "FirstUnknown";
+    case EdgeSelectorType::LastUnknown:
+      return "LastUnknown";
+    default:
+      throw std::logic_error("Unknown edge selector type");
+  }
+}
+
 std::string strToLower(std::string s)
 {
   std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });

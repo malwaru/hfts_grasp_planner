@@ -21,8 +21,6 @@ public:
    */
   ImageStateSpace(const std::experimental::filesystem::path& root_path);
   ~ImageStateSpace();
-  // grasp query
-  unsigned int getNumGrasps() const;
   // State validity
   bool isValid(const Config& c) const override;
   bool isValid(const Config& c, unsigned int grasp_id, bool only_obj = false) const override;
@@ -34,7 +32,9 @@ public:
   // space information
   unsigned int getDimension() const override;
   void getBounds(Config& lower, Config& upper) const override;
+  // grasp query
   void getValidGraspIds(std::vector<unsigned int>& grasp_ids) const override;
+  unsigned int getNumGrasps() const override;
 
 protected:
   struct Image

@@ -15,7 +15,7 @@ namespace mgsearch
 class MGGraphSearchMP
 {
 public:
-  enum GraphType
+  enum class GraphType
   {
     SingleGraspGraph = 0,
     MultiGraspGraph = 1,
@@ -26,7 +26,7 @@ public:
     LazyEdgeWeightedMultiGraspGraph = 5,  // evaluates costs only for the robot without grasps unless explicitly asked
   };
   static const unsigned int NUM_GRAPH_TYPES = 6;
-  enum AlgorithmType
+  enum class AlgorithmType
   {
     Astar = 0,
     LWAstar = 1,           // lazy weighted A*
@@ -39,7 +39,7 @@ public:
                            // LazyEdgeWeightedMultiGraspGraph
   };
   static const unsigned int NUM_ALGORITHM_TYPES = 7;
-  enum EdgeSelectorType
+  enum class EdgeSelectorType
   {
     FirstUnknown = 0,
     LastUnknown = 1
@@ -66,7 +66,7 @@ public:
     {
       std::stringstream ss;
       ss << "AlgorithmType=" << getName(algo_type) << " GraphType=" << getName(graph_type)
-         << " EdgeSelectorType=" << edge_selector_type << " lambda=" << lambda << " batchsize=" << batchsize
+         << " EdgeSelectorType=" << getName(edge_selector_type) << " lambda=" << lambda << " batchsize=" << batchsize
          << " roadmap_log_path" << roadmap_log_path << " logfile_path" << logfile_path;
 
       return ss.str();
@@ -108,6 +108,11 @@ public:
    * Return a string-representation of the given algorithm type.
    */
   static std::string getName(AlgorithmType atype);
+
+  /**
+   * Return a string-representation of the given edge evaluation type.
+   */
+  static std::string getName(EdgeSelectorType etype);
 
   /**
    * Return the type of the algorithm given a string representation.
