@@ -204,6 +204,15 @@ class MGMotionPlanner(object):
         """
         self._planner_interface.SendCommand("saveStats %s" % stats_file_name)
 
+    def save_solutions(self, results_file_name):
+        """Save planner solutions since the last call of setup to file.
+
+        Args:
+            results_file_name (str): Name of the file to write stats to.
+        """
+        self._planner_interface.SendCommand("saveSolutions %s" %
+                                            results_file_name)
+
 
 class PathSimplifier(object):
     """

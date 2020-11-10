@@ -1,14 +1,21 @@
 #pragma once
 /************************************* MultiGraspRoadmapGraph::NeighborIterator ********************************/
 template <CostCheckingType cost_checking_type>
+MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::NeighborIterator()
+  : _v(0), _is_end(true), _edge_to_0_returned(true)
+{
+}
+
+template <CostCheckingType cost_checking_type>
 MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::NeighborIterator(
     unsigned int v, bool lazy, MultiGraspRoadmapGraph<cost_checking_type> const* parent)
-  : _v(v), _lazy(lazy), _graph(parent), _edge_to_0_returned(false)
+  : _v(v), _is_end(false), _lazy(lazy), _graph(parent), _edge_to_0_returned(false)
 {
   if (_v == 0)
   {  // initialization for special case v == 0
     // neighbors are vertices that share the same roadmap node but with different grasp
     _grasp_iter = _graph->_grasp_ids.begin();
+    _edge_to_0_returned = true;
   }
   else
   {  // initialization for the standard case v != 0
@@ -31,9 +38,11 @@ template <CostCheckingType cost_checking_type>
 typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator&
 MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::operator++()
 {
+  assert(!_is_end);
   if (_v == 0)
   {  // increase iterator for special case v == 0
     ++_grasp_iter;
+    _is_end = _grasp_iter == _graph->_grasp_ids.end();
   }
   else
   {  // increase iterator for default case
@@ -55,16 +64,11 @@ template <CostCheckingType cost_checking_type>
 bool MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::operator==(
     const typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator& other) const
 {
-  // TODO take lazy into account?
-  if (other._v != _v)
-  {
-    return false;
-  }
-  if (_v == 0)
-  {
-    return other._grasp_iter == _grasp_iter;
-  }
-  return other._iter == _iter and other._edge_to_0_returned == _edge_to_0_returned;
+  if (_is_end and other._is_end)  // always equal if both are end pointers
+    return true;
+  // otherwise equal if nodes are the same and state is the same
+  return _v == other._v and other._grasp_iter == _grasp_iter and _edge_to_0_returned == other._edge_to_0_returned and
+         other._iter == _iter;
 }
 
 template <CostCheckingType cost_checking_type>
@@ -129,6 +133,7 @@ void MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::forwardToNext
       ++_iter;
     }
   }
+  _is_end = _iter == _end;
 }
 
 template <CostCheckingType cost_checking_type>
@@ -141,6 +146,8 @@ MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::begin(
     // update roadmap
     auto [gid, rid] = graph->toRoadmapKey(v);
     auto node = graph->_roadmap->getNode(rid);
+    if (!node)
+      return NeighborIterator();
     graph->_roadmap->updateAdjacency(node);
   }
   return NeighborIterator(v, lazy, graph);
@@ -151,11 +158,12 @@ typename MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator
 MultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::end(
     unsigned int v, MultiGraspRoadmapGraph<cost_checking_type> const* graph)
 {
-  NeighborIterator end_iter(v, true, graph);
-  end_iter._grasp_iter = graph->_grasp_ids.end();  // covers end condition for v = 0
-  end_iter._iter = end_iter._end;                  // covers end condition for v != 0
-  end_iter._edge_to_0_returned = true;             // covers end condition for v != 0
-  return end_iter;
+  // NeighborIterator end_iter(v, true, graph);
+  // end_iter._grasp_iter = graph->_grasp_ids.end();  // covers end condition for v = 0
+  // end_iter._iter = end_iter._end;                  // covers end condition for v != 0
+  // end_iter._edge_to_0_returned = true;             // covers end condition for v != 0
+  // return end_iter;
+  return NeighborIterator();
 }
 
 /************************************* MultiGraspRoadmapGraph ********************************/

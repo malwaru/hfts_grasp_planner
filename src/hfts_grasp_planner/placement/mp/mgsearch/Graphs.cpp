@@ -23,13 +23,18 @@ void VertexExpansionLogger::logExpansion(unsigned int rid, unsigned int gid)
 SingleGraspRoadmapGraph::NeighborIterator::NeighborIterator(Roadmap::Node::EdgeIterator eiter,
                                                             Roadmap::Node::EdgeIterator end, bool lazy,
                                                             SingleGraspRoadmapGraph const* parent)
-  : _iter(eiter), _end(end), _lazy(lazy), _graph(parent)
+  : _iter(eiter), _end(end), _lazy(lazy), _is_end(false), _graph(parent)
 {
   forwardToNextValid();
 }
 
+SingleGraspRoadmapGraph::NeighborIterator::NeighborIterator() : _lazy(false), _is_end(true)
+{
+}
+
 SingleGraspRoadmapGraph::NeighborIterator& SingleGraspRoadmapGraph::NeighborIterator::operator++()
 {
+  assert(!_is_end);
   ++_iter;
   forwardToNextValid();
   return (*this);
@@ -37,7 +42,7 @@ SingleGraspRoadmapGraph::NeighborIterator& SingleGraspRoadmapGraph::NeighborIter
 
 bool SingleGraspRoadmapGraph::NeighborIterator::operator==(const SingleGraspRoadmapGraph::NeighborIterator& other) const
 {
-  return other._iter == _iter;
+  return other._iter == _iter or (_is_end and other._is_end);
 }
 
 bool SingleGraspRoadmapGraph::NeighborIterator::operator!=(const SingleGraspRoadmapGraph::NeighborIterator& other) const
@@ -47,11 +52,13 @@ bool SingleGraspRoadmapGraph::NeighborIterator::operator!=(const SingleGraspRoad
 
 unsigned int SingleGraspRoadmapGraph::NeighborIterator::operator*()
 {
+  assert(!_is_end);
   return _iter->first;
 }
 
 void SingleGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
 {
+  assert(!_is_end);
   bool valid = false;
   while (!valid and _iter != _end)
   {
@@ -73,6 +80,7 @@ void SingleGraspRoadmapGraph::NeighborIterator::forwardToNextValid()
       ++_iter;
     }
   }
+  _is_end = _iter == _end;
 }
 
 SingleGraspRoadmapGraph::NeighborIterator
@@ -80,8 +88,9 @@ SingleGraspRoadmapGraph::NeighborIterator::begin(unsigned int v, bool lazy, Sing
 {
   auto node = parent->_roadmap->getNode(v);
   if (!node)
-  {
-    throw std::logic_error("Invalid vertex node");
+  {  // return end iterator
+    return NeighborIterator();
+    // throw std::logic_error("Invalid vertex node");
   }
   parent->_roadmap->updateAdjacency(node);
   auto [begin, end] = node->getEdgesIterators();
@@ -91,13 +100,7 @@ SingleGraspRoadmapGraph::NeighborIterator::begin(unsigned int v, bool lazy, Sing
 SingleGraspRoadmapGraph::NeighborIterator
 SingleGraspRoadmapGraph::NeighborIterator::end(unsigned int v, SingleGraspRoadmapGraph const* parent)
 {
-  auto node = parent->_roadmap->getNode(v);
-  if (!node)
-  {
-    throw std::logic_error("Invalid vertex node");
-  }
-  auto [begin, end] = node->getEdgesIterators();
-  return NeighborIterator(end, end, true, parent);
+  return NeighborIterator();
 }
 
 SingleGraspRoadmapGraph::SingleGraspRoadmapGraph(RoadmapPtr roadmap, MultiGraspGoalSetPtr goal_set,

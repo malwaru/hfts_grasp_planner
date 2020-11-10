@@ -29,11 +29,13 @@ def preprocess_grasps(grasp_images):
     origins = {}
     for grasp_id, rgb_image in grasp_images.iteritems():
         rgb_image = np.flip(rgb_image, axis=(0, 1))
-        xs, ys = np.where(np.logical_and.reduce(rgb_image == (255, 0, 0, 255), axis=2))
+        xs, ys = np.where(
+            np.logical_and.reduce(rgb_image == (255, 0, 0, 255), axis=2))
         if len(xs) != 1 or len(ys) != 1:
             print "Error: There is not only a single red pixel in the image for grasp ", grasp_id
             sys.exit(1)
-        origins[grasp_id] = np.array([xs[0], ys[0]], dtype=int) - (np.array(rgb_image.shape[:2], dtype=int) / 2)
+        origins[grasp_id] = np.array([xs[0], ys[0]], dtype=int) - (
+            np.array(rgb_image.shape[:2], dtype=int) / 2)
         # origins[grasp_id] = np.array([0, 0], dtype=int)
         grasp_masks[grasp_id] = make_binary(rgb_image)
     return grasp_masks, origins
@@ -57,8 +59,12 @@ def compute_collision_spaces(world_image, grasp_masks, origins):
     binary_world_image = make_binary(world_image)
     collision_spaces = {}
     for grasp_id, grasp_image in grasp_masks.iteritems():
-        collision_spaces[grasp_id] = make_binary(convolve(binary_world_image, grasp_image,
-                                                          mode='constant', cval=1.0, origin=origins[grasp_id]))
+        collision_spaces[grasp_id] = make_binary(
+            convolve(binary_world_image,
+                     grasp_image,
+                     mode='constant',
+                     cval=1.0,
+                     origin=origins[grasp_id]))
     return collision_spaces
 
 
@@ -90,7 +96,8 @@ def make_binary(image, dtype=float):
     """
     if len(image.shape) == 3:  # we have a color image
         bg_color = (0, 0, 0, 255) if image.shape[2] == 4 else (0, 0, 0)
-        binary_image = np.logical_not(np.logical_and.reduce(image == bg_color, axis=2)).astype(float)
+        binary_image = np.logical_not(
+            np.logical_and.reduce(image == bg_color, axis=2)).astype(float)
     else:
         # grayscale
         binary_image = (image > 0).astype(float)
@@ -100,17 +107,28 @@ def make_binary(image, dtype=float):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        'grasp_images', help='Path to a folder containing pictures of the robot with the grasped object.' +
-                             'The files in the folder should be named <id>.png, where <id> is an integer.' +
-                             'The image 0.png should just show the robot. In all picture there should be ' +
-                             'a single red pixel (255, 0, 0) indicating the refernce position of the robot.',
-                             type=str)
+        'grasp_images',
+        help=
+        'Path to a folder containing pictures of the robot with the grasped object.'
+        +
+        'The files in the folder should be named <id>.png, where <id> is an integer.'
+        +
+        'The image 0.png should just show the robot. In all picture there should be '
+        +
+        'a single red pixel (255, 0, 0) indicating the refernce position of the robot.',
+        type=str)
+    parser.add_argument('world_image',
+                        help='Path to a single image of the world.',
+                        type=str)
     parser.add_argument(
-        'world_image', help='Path to a single image of the world.', type=str)
+        'output_path',
+        help='Path to a folder of where to store the generated cost spaces.',
+        type=str)
     parser.add_argument(
-        'output_path', help='Path to a folder of where to store the generated cost spaces.', type=str)
-    parser.add_argument(
-        '--render_output_path', help='Path to a folder of where to store the images of the generated cost spaces.', type=str)
+        '--render_output_path',
+        help=
+        'Path to a folder of where to store the images of the generated cost spaces.',
+        type=str)
     args = parser.parse_args()
     # load grasp images
     if not os.path.isdir(args.grasp_images):
@@ -121,7 +139,8 @@ if __name__ == "__main__":
         grasp_id_str = os.path.basename(filename).split('.')[0]
         try:
             grasp_id = int(grasp_id_str)
-            grasp_images[grasp_id] = misc.imread(args.grasp_images + '/' + filename)
+            grasp_images[grasp_id] = misc.imread(args.grasp_images + '/' +
+                                                 filename)
         except ValueError as e:
             print "Could not parse grasp id from: ", filename
             continue
@@ -130,16 +149,24 @@ if __name__ == "__main__":
     # extract origins and make binary masks
     grasp_masks, origins = preprocess_grasps(grasp_images)
     # compute collision spaces through convolution
-    collision_spaces = compute_collision_spaces(world_image, grasp_masks, origins)
+    collision_spaces = compute_collision_spaces(world_image, grasp_masks,
+                                                origins)
     # compute cost spaces
     cost_spaces = compute_cost_spaces(collision_spaces)
     # save cost spaces
     for grasp_id, space_image in cost_spaces.iteritems():
+        if not os.path.exists(args.output_path):
+            os.makedirs(args.output_path)
         np.save(args.output_path + '/' + str(grasp_id) + '.npy', space_image)
         space_image -= np.min(space_image)
         space_image /= np.max(space_image) - np.min(space_image)
         if args.render_output_path:
-            misc.imsave(args.render_output_path + '/' + str(grasp_id) + '.bmp', space_image.astype(float))
-            misc.imsave(args.render_output_path + '/' + str(grasp_id) + '_col.bmp', collision_spaces[grasp_id])
+            if not os.path.exists(args.render_output_path):
+                os.makedirs(args.render_output_path)
+            misc.imsave(args.render_output_path + '/' + str(grasp_id) + '.bmp',
+                        space_image.astype(float))
+            misc.imsave(
+                args.render_output_path + '/' + str(grasp_id) + '_col.bmp',
+                collision_spaces[grasp_id])
     print "Done"
     sys.exit(0)

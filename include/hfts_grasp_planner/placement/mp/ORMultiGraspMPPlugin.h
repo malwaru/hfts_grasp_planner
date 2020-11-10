@@ -116,6 +116,14 @@ public:
    */
   bool saveStats(std::ostream& sout, std::istream& sinput);
 
+  /**
+   * Save all solutions that have been computed since the last time initPlanner was called to file.
+   * Input format: <filename>
+   * where
+   *  <filename>, string - name of a file to store solutions in (as csv)
+   */
+  bool saveSolutions(std::ostream& sout, std::istream& sinput);
+
 private:
   std::string _algorithm_name;
   std::string _sdf_filename;

@@ -38,7 +38,8 @@ int main(int argc, char** argv)
         ("graph_type", po::value<std::string>(), "Graph name")
         ("roadmap_log_file", po::value<std::string>()->default_value("/tmp/roadmap"), "Filename to log roadmap to")
         ("evaluation_log_file", po::value<std::string>()->default_value("/tmp/evaluation_log"), "Filename to log roadmap evaluations to")
-        ("stats_file", po::value<std::string>()->default_value("/tmp/stats_log"), "Filename to log statistics to")
+        ("stats_file", po::value<std::string>()->default_value("/tmp/stats_log"), "Filename to log runtime statistics to")
+        ("results_file", po::value<std::string>()->default_value("/tmp/results_log"), "Filename to log planning results to")
         ("print_profile", po::bool_switch(&print_profile), "If set, print profiling information");
   // clang-format on
   po::variables_map vm;
@@ -166,5 +167,10 @@ int main(int argc, char** argv)
     pmp::utils::ScopedProfiler::printProfiles(std::cout, true);
   }
   imgs.savePlanningStats(vm["stats_file"].as<std::string>());
+  if (not sols.empty())
+  {  // log planning results
+    auto results_file_path = vm["results_file"].as<std::string>();
+    imgs.saveSolutions(sols, std::experimental::filesystem::path(results_file_path));
+  }
   return 0;
 }

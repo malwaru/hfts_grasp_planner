@@ -114,6 +114,11 @@ public:
    * Save planning statistics to the given file.
    */
   virtual void savePlanningStats(const std::experimental::filesystem::path& statsfile_path) const;
+
+  /**
+   * Save the given solutions to the given file.
+   */
+  static void saveSolutions(std::vector<Solution>& sols, const std::experimental::filesystem::path& file_path);
 };
 typedef std::shared_ptr<MultiGraspMP> MultiGraspMPPtr;
 typedef std::shared_ptr<const MultiGraspMP> MultiGraspMPConstPtr;

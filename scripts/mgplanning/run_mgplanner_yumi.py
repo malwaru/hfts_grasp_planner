@@ -159,6 +159,11 @@ if __name__ == "__main__":
         type=str,
         default=None)
     parser.add_argument(
+        '--results_file',
+        help="Filename to log results (solution costs, ...) to.",
+        type=str,
+        default=None)
+    parser.add_argument(
         '--planner_log',
         help="Basename to log planning logs (roadmap, evaluation) to.",
         type=str,
@@ -203,6 +208,8 @@ if __name__ == "__main__":
     trajectories = [time_traj(robot, traj) for traj in trajectories]
     if args.stats_file:
         planner.save_stats(args.stats_file)
+    if args.results_file:
+        planner.save_solutions(args.results_file)
     # print "Found %d trajectories" % len(trajectories)
     if args.show_viewer:
         env.SetViewer('qtcoin')

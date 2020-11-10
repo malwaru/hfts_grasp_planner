@@ -77,6 +77,11 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
                   "Input format: <filename> \n"
                   "where\n"
                   " <filename>, str - name of a file in which to store the statistics");
+  RegisterCommand("saveSolutions", boost::bind(&ORMultiGraspMPPlugin::saveSolutions, this, _1, _2),
+                  "Save found solutions since the last time initPlanner was called to file. \n"
+                  "Input format: <filename> \n"
+                  "where\n"
+                  " <filename>, str - name of a file in which to store the statistics");
   _algorithm_name = algorithm;
   _original_env = penv;
   RAVELOG_DEBUG("Constructed ORMultiGraspMPPlugin");
@@ -373,6 +378,22 @@ bool ORMultiGraspMPPlugin::saveStats(std::ostream& sout, std::istream& sinput)
   std::stringstream ss;
   sinput.get(*ss.rdbuf());
   _planner->savePlanningStats(ss.str());
+  return false;
+}
+
+bool ORMultiGraspMPPlugin::saveSolutions(std::ostream& sout, std::istream& sinput)
+{
+  removePreceedingSymbol(sinput, ' ');
+  std::stringstream ss;
+  sinput.get(*ss.rdbuf());
+  // TODO there is probably a more elegant way to solve this
+  std::vector<MultiGraspMP::Solution> sols;
+  sols.reserve(_solutions.size());
+  for (auto pair_elem : _solutions)
+  {
+    sols.push_back(pair_elem.second);
+  }
+  _planner->saveSolutions(sols, ss.str());
   return false;
 }
 

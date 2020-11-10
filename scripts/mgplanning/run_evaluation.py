@@ -62,7 +62,8 @@ def call_planner(algorithm, graph, log_path, test_case_info):
                 test_case_info['scene_file'], test_case_info['object_xml'],
                 test_case_info['configs'], algorithm, graph, '--lmbda',
                 test_case_info['lambda'], '--stats_file',
-                log_folder_name + '/run_stats', '--planner_log',
+                log_folder_name + '/run_stats', '--results_file',
+                log_folder_name + '/results', '--planner_log',
                 log_folder_name + '/log'
             ]
         elif test_case_info['domain'] == 'picking':
@@ -75,7 +76,8 @@ def call_planner(algorithm, graph, log_path, test_case_info):
                 test_case_info['configs'], '--lambda',
                 test_case_info['lambda'], '--algorithm_type', algorithm,
                 '--graph_type', graph, '--stats_file',
-                log_folder_name + '/run_stats', '--roadmap_log_file',
+                log_folder_name + '/run_stats', '--results_file',
+                log_folder_name + '/results', '--roadmap_log_file',
                 log_folder_name + '/log_roadmap', '--evaluation_log_file',
                 log_folder_name + '/log_evaluation'
             ]
@@ -92,7 +94,9 @@ def run_tests(testfile,
               log_path,
               num_runs,
               algorithm_whitelist=None,
-              graph_whitelist=None):
+              graph_whitelist=None,
+              algorithm_blacklist=None,
+              graph_blacklist=None):
     """Run the test cases specified in the yaml file <testfile>.
 
     Args:
@@ -101,15 +105,21 @@ def run_tests(testfile,
         num_runs (int): The number of executions of each algorithm to get runtime averages.
         algorithm_whitelist (list of str), optional: A subset of algorithms to test only.
         graph_whitelist (list of str), optional: A subset of graphs to test only
+        algorithm_blacklist (list of str), optional: A subset of algorithms to not test.
+        graph_blacklist (list of str), optional: A subset of graphs to not test.
     """
     # read testfile
     with open(testfile, 'r') as yaml_file:
         test_cases = yaml.load(yaml_file)
     for algo_name, graph_name in algorithm_graph_combinations:
-        # skip combinations that aren't in the whitelist
+        # skip combinations that aren't in the whitelist or those that are in the blacklist
         if algorithm_whitelist and algo_name not in algorithm_whitelist:
             continue
         if graph_whitelist and graph_name not in graph_whitelist:
+            continue
+        if algorithm_blacklist and algo_name in algorithm_blacklist:
+            continue
+        if graph_blacklist and graph_name in graph_blacklist:
             continue
         for tid, test_case in enumerate(test_cases):
             # TODO can we parallize this?
@@ -147,6 +157,15 @@ if __name__ == "__main__":
         help="Optionally limit the evaluation to the given list of graphs",
         nargs="*",
         type=str)
+    parser.add_argument("--exclude_algorithms",
+                        help="Optionally exclude the given list of algorithms",
+                        nargs="*",
+                        type=str)
+    parser.add_argument("--exclude_graphs",
+                        help="Optionally exclude the given list of graphs",
+                        nargs="*",
+                        type=str)
     args = parser.parse_args()
     run_tests(args.tests_file, args.log_path, args.num_runs,
-              args.limit_algorithms, args.limit_graphs)
+              args.limit_algorithms, args.limit_graphs,
+              args.exclude_algorithms, args.exclude_algorithms)

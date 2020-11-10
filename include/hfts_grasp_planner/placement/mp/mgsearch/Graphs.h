@@ -142,11 +142,13 @@ public:
     static NeighborIterator end(unsigned int v, SingleGraspRoadmapGraph const* parent);
 
   private:
+    NeighborIterator();  // end constructor
     NeighborIterator(Roadmap::Node::EdgeIterator eiter, Roadmap::Node::EdgeIterator end, bool lazy,
                      SingleGraspRoadmapGraph const* parent);
     Roadmap::Node::EdgeIterator _iter;
     Roadmap::Node::EdgeIterator _end;
     const bool _lazy;
+    bool _is_end;
     SingleGraspRoadmapGraph const* _graph;
     void forwardToNextValid();
   };
@@ -263,6 +265,7 @@ public:
     static NeighborIterator end(unsigned int v, MultiGraspRoadmapGraph const* graph);
 
   private:
+    NeighborIterator();
     NeighborIterator(unsigned int v, bool lazy, MultiGraspRoadmapGraph const* parent);
     unsigned int _v;
     // information about grasps
@@ -272,6 +275,7 @@ public:
     // iterators for roadmap edges
     Roadmap::Node::EdgeIterator _iter;
     Roadmap::Node::EdgeIterator _end;
+    bool _is_end;  // flag to indicate the iterator is at the end
     bool _lazy;
     MultiGraspRoadmapGraph const* _graph;
     // flag for special case edge back to node 0
