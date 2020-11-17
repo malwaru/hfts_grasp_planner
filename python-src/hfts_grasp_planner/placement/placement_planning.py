@@ -1470,8 +1470,9 @@ class SE3Hierarchy(object):
             """
                 Return a generator that allows to iterate over all children.
             """
-            local_keys = self._hierarchy.get_white_list()
-            for lkey in local_keys:
+            if self._white_list is None:
+                self._white_list = self._hierarchy.generate_white_list(self._depth)
+            for lkey in self._white_list:
                 child = self.get_child_node(lkey)
                 yield child
 

@@ -111,6 +111,10 @@ public:
   virtual void removeGoals(const std::vector<unsigned int>& goal_ids) = 0;
   // virtual void getReachedGoals(const std::vector<unsigned int>& goals, bool new_only) const = 0;
   /**
+   * Add a collection of waypoint configurations that could be benificial for planning.
+   */
+  virtual void addWaypoints(const std::vector<Config>& configs) = 0;
+  /**
    * Save planning statistics to the given file.
    */
   virtual void savePlanningStats(const std::experimental::filesystem::path& statsfile_path) const;

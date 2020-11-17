@@ -154,6 +154,19 @@ class MGMotionPlanner(object):
             # finally add it to the set of known goals
             self._goals[g.key] = g
 
+    def addWaypoints(self, waypoints):
+        """Add a set of configurations that could serve as waypoints and may benefit planning.
+
+        Args:
+            waypoints (list of np.array): List of configurations that might benefit planning.
+        """
+        if waypoints:
+            command_str = 'addWaypoints '
+            for wp in waypoints:
+                wp_str = reduce(lambda x, y: str(x) + ' ' + str(y), wp)
+                command_str += wp_str + '\n'
+            self._planner_interface.SendCommand(command_str)
+
     def removeGoals(self, goals):
         """
             Remove the given list of goals.

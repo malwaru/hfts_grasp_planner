@@ -158,6 +158,8 @@ void SequentialMGBiRRT::removeGoals(const std::vector<unsigned int>& goal_ids)
     }
 }
 
+void SequentialMGBiRRT::addWaypoints(const std::vector<Config>& wps) {}
+
 /********************************* ParallelMGBiRRT::AsynchPlanner **************************************/
 ParallelMGBiRRT::AsynchPlanner::AsynchPlanner(ompl::ORRedirectableBiRRTPtr planner)
     :_terminate(false), _paused(false), _planner(planner)
@@ -389,3 +391,5 @@ void ParallelMGBiRRT::removeGoals(const std::vector<unsigned int>& goal_ids)
         _goals.erase(goal.id);
     }
 }
+
+void ParallelMGBiRRT::addWaypoints(const std::vector<Config>& wps) {}

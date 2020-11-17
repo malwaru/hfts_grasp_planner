@@ -87,7 +87,8 @@ def load_goals(robot, target_object, filename):
         target_object (OpenRAVE KinBody): the target object
         filename (str): Filename to load goals from
     Returns:
-        list of PlacementGoals
+        list of PlacementGoals: placement goals
+        list of np.array: waypoint configurations
     """
     with open(filename, 'r') as goal_file:
         goal_data = yaml.load(goal_file)
@@ -126,7 +127,9 @@ def load_goals(robot, target_object, filename):
                 grasp_tf=grasp_info['oTe'],
                 grasp_config=grasp_info['config'],
                 grasp_id=gid))
-    return goals
+    if 'waypoints' not in goal_data:
+        goal_data['waypoints'] = []
+    return goals, map(np.array, goal_data['waypoints'])
 
 
 if __name__ == "__main__":
@@ -190,7 +193,7 @@ if __name__ == "__main__":
         target_object.SetName(target_obj_name)
         robot = env.GetRobots()[0]
         # load goals
-        goals = load_goals(robot, target_object, args.goal_file)
+        goals, waypoints = load_goals(robot, target_object, args.goal_file)
         # goals = [goal for goal in goals if goal.objective_value > 0.7]
         manip = goals[0].manip
         robot.SetActiveDOFs(manip.GetArmIndices())
@@ -203,6 +206,7 @@ if __name__ == "__main__":
                   log_file=args.planner_log,
                   batchsize=1000)
     planner.addGoals(goals)
+    planner.addWaypoints(waypoints)
     # plan
     trajectories, reached_goals = planner.plan(10.0)
     trajectories = [time_traj(robot, traj) for traj in trajectories]

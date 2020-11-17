@@ -35,8 +35,8 @@ namespace mp {
         void addGrasp(const Grasp& grasp) override;
         void addGoal(const Goal& goal) override;
         void removeGoals(const std::vector<unsigned int>& goal_ids) override;
-
-        // protected:
+        // no-op
+        void addWaypoints(const std::vector<Config>& configs) override;
 
     private:
         OpenRAVE::EnvironmentBasePtr _base_env;
@@ -114,6 +114,8 @@ namespace mp {
         // TODO it would be better to add goals as a batch
         void addGoal(const Goal& goal) override;
         void removeGoals(const std::vector<unsigned int>& goal_ids) override;
+        // noop
+        void addWaypoints(const std::vector<Config>& configs) override;
 
     private:
         OpenRAVE::EnvironmentBasePtr _base_env;

@@ -53,3 +53,8 @@ void ORGraphSearch::removeGoals(const std::vector<unsigned int>& goal_ids)
 {
   _planner->removeGoals(goal_ids);
 }
+
+void ORGraphSearch::addWaypoints(const std::vector<Config>& configs)
+{
+  _planner->addWaypoints(configs);
+}

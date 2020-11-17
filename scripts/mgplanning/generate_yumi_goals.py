@@ -6,6 +6,8 @@ import yaml
 import rospy
 import time
 import argparse
+import random
+import itertools
 import numpy as np
 import cProfile
 import openravepy as orpy
@@ -13,7 +15,7 @@ import openravepy as orpy
 from hfts_grasp_planner.utils import (is_dynamic_body, inverse_transform,
                                       get_manipulator_links, set_grasp,
                                       set_body_color, set_body_alpha,
-                                      get_tf_interpolation)
+                                      get_tf_interpolation, vec_angle_diff)
 import hfts_grasp_planner.sdf.grid as grid_module
 import hfts_grasp_planner.ik_solver as ik_module
 import hfts_grasp_planner.sdf.core as sdf_module
@@ -29,6 +31,8 @@ import hfts_grasp_planner.placement.goal_sampler.simple_mcts_sampler as simple_m
 import hfts_grasp_planner.placement.anytime_planner as anytime_planner_mod
 import hfts_grasp_planner.placement.clearance as clearance_mod
 import hfts_grasp_planner.placement.objectives as objectives_mod
+import hfts_grasp_planner.placement.so3hierarchy as so3hierarchy
+from hfts_grasp_planner.placement.placement_planning import SE3Hierarchy
 from hfts_grasp_planner.sdf.visualization import visualize_occupancy_grid
 
 
@@ -145,12 +149,13 @@ def goal_to_yaml_dict(goal):
     }
 
 
-def store_placements(placements, grasp_set, filename):
+def store_placements(placements, grasp_set, waypoints, filename):
     """Store the given placements in a file.
 
     Args:
         placements (list of PlacementGoal): The placement goals to store.
         grasp_set (DMGGraspSet): The superset of grasps.
+        waypoints (list of np.array): A set of additional waypoints to store.
         filename (str): Filename to store placements in.
     """
     if placements:
@@ -163,8 +168,95 @@ def store_placements(placements, grasp_set, filename):
         output_dict['manipulator'] = str(placements[0].manip.GetName())
         output_dict['grasps'] = [grasp_to_yaml_dict(grasp) for grasp in grasps]
         output_dict['goals'] = [goal_to_yaml_dict(goal) for goal in placements]
+        output_dict['waypoints'] = [map(float, list(wp)) for wp in waypoints]
         with open(filename, 'w') as output_file:
             yaml.dump(output_dict, output_file)
+
+
+def compute_orientations(num_samples, orientation_cone):
+    """Compute orientations that are within the given orientation cone using rejection sampling.
+
+    Args:
+        num_samples (int): THe number of candidate samples to draw.
+        orientation_cone (tuple (np.array, float)): Orientation cone in the form (axis, angle) that
+            limits the permitted orientations of the z-axis in world frame.
+    Returns:
+        list of numpy.array: A list of quatnerions representing different orientations within
+            the orientation cone.
+    """
+    orientations = []
+    for key in so3hierarchy.get_key_generator(
+            so3hierarchy.get_min_depth(num_samples)):
+        quat = so3hierarchy.get_quaternion(key)
+        mat = orpy.matrixFromQuat(quat)
+        delta_angle = abs(vec_angle_diff(mat[:3, 2], orientation_cone[0]))
+        if delta_angle < orientation_cone[1]:
+            orientations.append(quat)
+    if len(orientations) > num_samples:
+        return random.sample(orientations, num_samples)
+    return orientations
+
+
+def sample_waypoints(manip,
+                     ik_solver,
+                     volume,
+                     orientation_cone,
+                     num_waypoints,
+                     pos_delta=0.1,
+                     num_rot_samples=200):
+    """Sample a collection of arm configurations such that the end-effector is located
+    in a given volume. None of the configurations are checked for collisions.
+
+    Args:
+        manip (orpy.Manipulator): Manipulator to sample waypoint configurations for.
+        ik_solver (IkSolver): IkSolver for the given manipulator.
+        volume (tuple of np.array): (min, max), where min and max are points in 3D spanning
+            a volume to sample poses in.
+        orientation_cone (tuple (np.array, float)): (axis, angle), where axis is the desired
+            orientation of the eef's z axis in world frame and angle the maximal permitted angle between
+            this axis and the eef's z axis at a sampled waypoint
+        num_waypoints (int): The total number of waypoints to sample.
+        pos_delta (float): The distance between position samples along each axis.
+        num_rot_samples (int): The number of eef-orientations to sample.
+    Returns:
+        list of np arrays: Arm configurations with that place the end-effector within the given volume.
+    """
+    waypoints = []
+    # compute valid orientations
+    orientations = compute_orientations(num_rot_samples, orientation_cone)
+    print "Found %i valid orientations" % len(orientations)
+    if len(orientations) == 0:
+        raise ValueError(
+            "Failed to find any orientations within the given orientation cone "
+            + str(orientation_cone))
+    # compute a grid of positions
+    xs = np.arange(volume[0][0], volume[1][0], pos_delta)
+    ys = np.arange(volume[0][1], volume[1][1], pos_delta)
+    zs = np.arange(volume[0][2], volume[1][2], pos_delta)
+    positions = itertools.product(xs, ys, zs)
+    # print "Sampled %i valid positions" % len(positions)
+    # run over poses and compute ik
+    poses = itertools.product(positions, orientations)
+    reachable_poses = []
+    for pose in poses:
+        m = orpy.matrixFromQuat(pose[1])
+        m[:3, 3] = pose[0]
+        sol = ik_solver.compute_ik(m)
+        if sol is not None:
+            waypoints.append(sol)
+            reachable_poses.append(pose)
+    # if this hasn't given us enough waypoints yet, compute new ik solutions for the reachable poses
+    while len(waypoints) < num_waypoints:
+        print "Found %i reachable poses, but have only %i/%i configurations, keep computing new ones" % (
+            len(reachable_poses), len(waypoints), num_waypoints)
+        for pose in reachable_poses:
+            m = orpy.matrixFromQuat(pose[1])
+            m[:3, 3] = pose[0]
+            sol = ik_solver.compute_ik(m)
+            if sol is not None:
+                waypoints.append(sol)
+    print "Found %i waypoints" % len(waypoints)
+    return random.sample(waypoints, num_waypoints)
 
 
 if __name__ == "__main__":
@@ -181,6 +273,11 @@ if __name__ == "__main__":
     parser.add_argument('output_path',
                         help="Filename in which to store generated goals.",
                         type=str)
+    parser.add_argument(
+        '--sample_waypoints',
+        help="Sample n waypoint configurations and store them with the goals.",
+        type=int,
+        default=0)
     args = parser.parse_args()
     with open(args.problem_desc, 'r') as f:
         problem_desc = yaml.load(f)
@@ -346,12 +443,20 @@ if __name__ == "__main__":
             afr_bridge, [manip.GetName()],
             debug_visualizer=None,
             parameters=problem_desc["parameters"])
-
+        # sample goals
         solutions, num_solutions = goal_sampler.sample(args.num_goals, 1000000)
         if num_solutions < args.num_goals:
             print "Sorry, only found %i solutions (%i queried)" % (
                 num_solutions, args.num_goals)
-        store_placements(solutions[manip.GetName()], grasp_set,
+        # sample waypoints
+        waypoints = []
+        if args.sample_waypoints:
+            print "Sampling %i waypoints" % args.sample_waypoints
+            # TODO use different volume? Maybe enlarged? Bounding box of goals?
+            waypoints = sample_waypoints(manip, ik_solver, placement_volume,
+                                         (np.array([0, 1, 0]), 1.0),
+                                         args.sample_waypoints)
+        store_placements(solutions[manip.GetName()], grasp_set, waypoints,
                          args.output_path)
         # IPython.embed()
     finally:

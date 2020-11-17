@@ -22,6 +22,7 @@ public:
   void addGrasp(const Grasp& grasp) override;
   void addGoal(const Goal& goal) override;
   void removeGoals(const std::vector<unsigned int>& goal_ids) override;
+  void addWaypoints(const std::vector<Config>& configs) override;
 
 private:
   mgsearch::MGGraphSearchMPPtr _planner;

@@ -216,6 +216,24 @@ def get_key_generator(depth):
     return product(s2_key_gen, s1_key_gen)
 
 
+def get_children(key):
+    """Return a generator that produces all child keys for the given key.
+       ----------
+       Arguments:
+       ----------
+       key (tuple): A key identifying a node as described in get_quaternion(...)
+       ----------
+       Returns:
+       ----------
+       generator: A generator that produces tuples, where each tuple is the key of a child.
+    """
+    s2_key, s1_key = key
+    s2_b, s1_b = get_branching_factors(len(s2_key))
+    local_key_gen = product(range(s2_b), range(s1_b))
+    for lkey in local_key_gen:
+        yield (tuple(list(s2_key) + [lkey[0]]), tuple(list(s1_key) + [lkey[1]]))
+
+
 def quat_distance(q1, q2):
     """
         Distance function between two quaternions representing rotations.
@@ -272,6 +290,39 @@ def get_grid_distance(depth):
     quat_b = get_quaternion(nkey)
     return quat_distance(quat_a, quat_b)
 
+
+def get_num_orientations(depth):
+    """Return the number of orientations the grid covers at a given depth.
+
+    Args:
+        depth (int): The requested depth.
+    Returns:
+        num_orientations (int): The number of orientations at this depth
+    """
+    num_orientations = 1
+    for d in range(depth + 1):
+        b1, b2 = get_branching_factors(d)
+        num_orientations *= b1 * b2
+    return num_orientations
+
+
+def get_min_depth(num_orientations):
+    """Return the minimal depth so that the grid covers at least num_orientations.
+
+    Args:
+        num_orientations (int): The minimal number of covered orientations.
+    Returns:
+        int: the minimal depth such that get_num_orientations(depth) >= num_orientations
+    """
+    # BUG: this returns invalid values for num_orientations >= 150994944
+    # we have different branch factor on base level
+    b1, b2 = get_branching_factors(0)
+    if num_orientations <= b1 * b2:
+        return 0
+    num_orientations = float(num_orientations) / (b1 * b2)
+    # we have the same branching factor below
+    b1, b2 = get_branching_factors(1)
+    return int(np.ceil(np.log(num_orientations) / np.log(b1 * b2)))
 
 # def _compute_ks(s2_key, nside):
 #     """

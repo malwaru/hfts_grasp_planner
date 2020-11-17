@@ -101,6 +101,18 @@ public:
   bool addGoal(std::ostream& sout, std::istream& sinput);
 
   /**
+   * Add sample configurations that are not a goal but may be useful for the planner to use.
+   * The configurations may be in collision.
+   * Input format: q0_0 ... qn_0\n
+   *               q0_1 ... qn_1\n
+   *               ...
+   *               q0_k ... qn_k\n
+   * where
+   *  qi_j, double - the ith value of the jth configuration
+   */
+  bool addWaypoints(std::ostream& sout, std::istream& sinput);
+
+  /**
    * Inform the motion planner to stop planning towards the given goals.
    * Input format: id0 id1 id2 ... idn
    * where

@@ -67,6 +67,14 @@ ORMultiGraspMPPlugin::ORMultiGraspMPPlugin(EnvironmentBasePtr penv, const std::s
                   " gid, int - grasp id for which this goal is defined\n"
                   " quality, double - the quality/objective value of the goal\n"
                   " q0, ..., qn, double - goal arm configuration");
+  RegisterCommand("addWaypoints", boost::bind(&ORMultiGraspMPPlugin::addWaypoints, this, _1, _2),
+                  "Add sample configurations that are not goals but may be beneficial for the planner to use. The "
+                  "configurations may be in collision."
+                  "Input format: q0_0 ... qn_0\\n\n"
+                  "              ...\n"
+                  "              q0_k ... qn_k\\n\n"
+                  "where\n"
+                  " q0_i, ..., qn_i, double - arm configuration i");
   RegisterCommand("removeGoals", boost::bind(&ORMultiGraspMPPlugin::removeGoals, this, _1, _2),
                   "Inform the motion planner to stop planning towards the given goals. \n"
                   "Input format: id0 id1 id2 ... idN \n"
@@ -350,6 +358,32 @@ bool ORMultiGraspMPPlugin::addGoal(std::ostream& sout, std::istream& sinput)
   _planner->addGoal(goal);
   // TODO no clue what the return value is supposed to mean
   // TODO In Python, the only difference appears to be whether sout is returned to the caller
+  return false;
+}
+
+bool ORMultiGraspMPPlugin::addWaypoints(std::ostream& sout, std::istream& sinput)
+{
+  if (!_planner)
+    return false;
+  std::vector<Config> configs;
+  Config next;
+  while (sinput.good())
+  {
+    if (sinput.peek() != '\n')
+    {
+      double q;
+      sinput >> q;
+      next.push_back(q);
+    }
+    else
+    {
+      sinput.ignore();
+      configs.push_back(next);
+      next.clear();
+    }
+  }
+  RAVELOG_DEBUG("Adding " + std::to_string(configs.size()) + " new waypoints");
+  _planner->addWaypoints(configs);
   return false;
 }
 

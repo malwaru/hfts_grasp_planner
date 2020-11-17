@@ -382,3 +382,11 @@ void MGGraphSearchMP::removeGoals(const std::vector<unsigned int>& goal_ids)
 {
   _goal_set->removeGoals(goal_ids);
 }
+
+void MGGraphSearchMP::addWaypoints(const std::vector<Config>& waypoints)
+{
+  for (auto& config : waypoints)
+  {
+    _roadmap->addNode(config);
+  }
+}

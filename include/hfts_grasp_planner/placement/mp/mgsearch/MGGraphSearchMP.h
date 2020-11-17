@@ -132,6 +132,7 @@ public:
   bool plan(MultiGraspMP::Solution& sol);
   void addGoal(const MultiGraspMP::Goal& goal);
   void removeGoals(const std::vector<unsigned int>& goal_ids);
+  void addWaypoints(const std::vector<Config>& waypoints);
   Parameters _params;
 
 private:
