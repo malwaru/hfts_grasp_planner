@@ -28,7 +28,7 @@ algorithm_graph_combinations = [
     ("LazySP_LPAstar", "LazyWeightedMultiGraspGraph"),
     # LazyWedgeWeightedMultiGraspGraph
     ("LazySP_LLPAstar", "LazyEdgeWeightedMultiGraspGraph"),
-    ("LazySP_LWPAstar", "LazyEdgeWeightedMultiGraspGraph"),
+    ("LazySP_LWLPAstar", "LazyEdgeWeightedMultiGraspGraph"),
     ("LazySP_LPAstar", "LazyEdgeWeightedMultiGraspGraph"),
 ]
 
