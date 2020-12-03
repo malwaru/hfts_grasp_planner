@@ -58,7 +58,7 @@ public:
       , graph_type(GraphType::SingleGraspGraph)
       , edge_selector_type(EdgeSelectorType::FirstUnknown)
       , lambda(1.0)
-      , batchsize(10000)
+      , batchsize(1000)
     {
     }
 

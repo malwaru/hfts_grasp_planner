@@ -138,7 +138,15 @@ public:
           u_data.rhs = std::numeric_limits<double>::infinity();
           updateVertexKey(u_data);
         }
-        handleCostIncrease(u_data, v_data);
+        // TODO handleLazyCostIncrease
+        if constexpr (ee_type == LazyWeighted)
+        {
+          handleLazyCostIncrease(u_data, v_data);
+        }
+        else
+        {
+          handleCostIncrease(u_data, v_data);
+        }
       }
     }
   }
@@ -192,7 +200,8 @@ protected:
    *    1. v_data.v is not a goal
    *    2. v_data.v is overconsistent (rhs > g)
    *    3. v_data.v is currently unreachable (rhs = inf)
-   *    4. the cost of the incidary edge to v_data.v isn't reflected in rhs
+   *    4. v_data.p is not consistent or unreachable
+   *    5. the cost of the incidary edge to v_data.v isn't reflected in rhs
    *  (path_cost + goal_cost, path_cost) otherwise
    */
   Key computeGoalKey(const VertexData& v_data)
@@ -200,9 +209,13 @@ protected:
     // v must be a goal, not underconsistent and reachable
     if (not _graph.isGoal(v_data.v) or v_data.rhs > v_data.g or std::isinf(v_data.rhs))
       return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+    auto parent_data = getVertexData(v_data.p);
+    if (parent_data.g != parent_data.rhs || std::isinf(parent_data.g))
+      return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
     if constexpr (ee_type == LazyWeighted)
     {
-      if (v_data.rhs != getVertexData(v_data.p).rhs + _graph.getEdgeCost(v_data.p, v_data.v, false))
+      if (v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, true) or
+          v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, false))
       {
         return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
       }
@@ -269,6 +282,13 @@ protected:
   void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, LazyWeighted>& type,
                                VertexData& u_data)
   {
+    bool not_start_state = u_data.v != u_data.p;
+    VertexData& p_data = getVertexData(u_data.p);
+    if (not_start_state and p_data.g + _graph.getEdgeCost(u_data.p, u_data.v, true) > u_data.rhs)
+    {  // capture lazy cost increase
+      handleCostIncrease(p_data, u_data);
+      return;
+    }
     if (not _graph.checkValidity(u_data.v))
     {
       // u itself is invalid, there is no point in processing it any further
@@ -278,23 +298,21 @@ protected:
       updateVertexKey(u_data);
     }
     else
-    {  // check whether we have the true g value for u when coming from p (i.e. edge weight is correct)
-      if (u_data.v != u_data.p)
-      {
-        VertexData& p_data = getVertexData(u_data.p);
+    {
+      if (not_start_state)
+      {  // check whether we have the true g value for u when coming from p (i.e. edge weight is correct)
         double true_rhs = p_data.g + _graph.getEdgeCost(u_data.p, u_data.v, false);
         if (true_rhs > u_data.rhs)
         {
           handleCostIncrease(p_data, u_data);
         }
         else
-        {
-          // edge cost was correct, proceed as usual
+        {  // edge cost was correct, proceed as usual
           resolveInconsistency(u_data);
         }
       }
       else
-      {
+      {  // handle start state
         resolveInconsistency(u_data);
       }
     }
@@ -326,7 +344,14 @@ protected:
       for (; iter != end_iter; ++iter)
       {
         VertexData& v_data = getVertexData(*iter);
-        handleCostIncrease(u_data, v_data);
+        if constexpr (ee_type == LazyWeighted)
+        {
+          handleLazyCostIncrease(u_data, v_data);
+        }
+        else
+        {
+          handleCostIncrease(u_data, v_data);
+        }
       }
       updateVertexKey(u_data);
     }
@@ -358,6 +383,23 @@ protected:
         }
       }
       updateVertexKey(v_data);
+    }
+  }
+
+  void handleLazyCostIncrease(VertexData& u_data, VertexData& v_data)
+  {
+    if (v_data.p == u_data.v)
+    {
+      if (v_data.g == v_data.rhs)
+      {
+        // v_data.g = std::numeric_limits<double>::infinity();
+        // updateVertexKey(v_data);
+        if (!v_data.in_pq)
+        {
+          v_data.pq_handle = _pq.push(PQElement(v_data.v, computeKey(v_data.g, v_data.h, v_data.rhs)));
+          v_data.in_pq = true;
+        }
+      }  // else v is inconsistent and thus in the PQ -> there is nothing we have to do
     }
   }
 
