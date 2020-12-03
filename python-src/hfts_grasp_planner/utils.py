@@ -20,17 +20,17 @@ import hfts_grasp_planner.external.transformations as transformations
 import hfts_grasp_planner.hfts_generation as hfts_generation
 from scipy.spatial import ConvexHull
 
-DEFAULT_HFTS_GENERATION_PARAMS = {'max_normal_variance': 0.2,
-                                  'min_contact_patch_radius': 0.015,
-                                  'contact_density': 300,
-                                  'max_num_points': 10000,
-                                  'position_weight': 2,
-                                  'branching_factor': 4,
-                                  'first_level_branching_factor': 3}
+DEFAULT_HFTS_GENERATION_PARAMS = {
+    'max_normal_variance': 0.2,
+    'min_contact_patch_radius': 0.015,
+    'contact_density': 300,
+    'max_num_points': 10000,
+    'position_weight': 2,
+    'branching_factor': 4,
+    'first_level_branching_factor': 3
+}
 
-DEFAULT_SDF_GENERATION_PARAMS = {'static_sdf_resolution': 0.02,
-                                 'sdf_resolution': 0.02,
-                                 'max_rel_approx_error': 0.1}
+DEFAULT_SDF_GENERATION_PARAMS = {'static_sdf_resolution': 0.02, 'sdf_resolution': 0.02, 'max_rel_approx_error': 0.1}
 
 
 class ObjectIO(object):
@@ -52,7 +52,9 @@ class ObjectIO(object):
 
 
 class ObjectFileIO(ObjectIO):
-    def __init__(self, data_path, var_filter=True,
+    def __init__(self,
+                 data_path,
+                 var_filter=True,
                  hfts_generation_parameters=DEFAULT_HFTS_GENERATION_PARAMS,
                  sdf_generation_parameters=DEFAULT_SDF_GENERATION_PARAMS,
                  max_num_points=10000):
@@ -85,18 +87,14 @@ class ObjectFileIO(ObjectIO):
         if points is not None:
             com = np.mean(points[:, :3], axis=0)
             if b_filter:
-                patch_size = extract_hfts_gen_parameter(self._hfts_generation_params,
-                                                        'min_contact_patch_radius')
-                max_variance = extract_hfts_gen_parameter(self._hfts_generation_params,
-                                                          'max_normal_variance')
-                points = hfts_generation.filter_unsmooth_points(points,
-                                                                radius=patch_size,
-                                                                max_variance=max_variance)
+                patch_size = extract_hfts_gen_parameter(self._hfts_generation_params, 'min_contact_patch_radius')
+                max_variance = extract_hfts_gen_parameter(self._hfts_generation_params, 'max_normal_variance')
+                points = hfts_generation.filter_unsmooth_points(points, radius=patch_size, max_variance=max_variance)
                 max_num_points = extract_hfts_gen_parameter(self._hfts_generation_params, 'max_num_points')
                 points = hfts_generation.down_sample_points(points, max_num_points)
         else:
-            rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + str(file_extension) +
-                         ' file for object ' + obj_id)
+            rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + str(file_extension) + ' file for object ' +
+                         obj_id)
             com = None
         return points, com
 
@@ -172,8 +170,8 @@ class ObjectFileIO(ObjectIO):
 
     def set_hfts_generation_parameters(self, params):
         if type(params) is not dict:
-            raise TypeError(
-                'ObjectFileIO::set_hfts_generation_parameters] Expected a dictionary, received ' + str(type(params)))
+            raise TypeError('ObjectFileIO::set_hfts_generation_parameters] Expected a dictionary, received ' +
+                            str(type(params)))
         self._hfts_generation_params = params
 
     def show_hfts(self, level, or_drawer, object_transform=None, b_normals=False):
@@ -189,8 +187,12 @@ class ObjectFileIO(ObjectIO):
             return
         if level > len(self._last_hfts_param) - 1:
             raise ValueError('[objectFileIO::showHFTS] level ' + str(level) + ' does not exist')
-        hfts_generation.or_render_hfts(or_drawer, self._last_hfts, self._last_hfts_param,
-                                       level, transform=object_transform, b_normals=b_normals)
+        hfts_generation.or_render_hfts(or_drawer,
+                                       self._last_hfts,
+                                       self._last_hfts_param,
+                                       level,
+                                       transform=object_transform,
+                                       b_normals=b_normals)
         # b_factors = []
         # for i in range(level + 1):
         #     b_factors.append(np.arange(self._last_hfts_param[i]))
@@ -230,8 +232,7 @@ class ObjectFileIO(ObjectIO):
         self._last_hfts = hfts_gen.get_hfts()
         self._last_hfts_param = hfts_gen.get_hfts_param()
         self._last_obj_com = com
-        hfts_gen.save_hfts(hfts_file=hfts_file, hfts_param_file=hfts_param_file,
-                           com_file=obj_com_file)
+        hfts_gen.save_hfts(hfts_file=hfts_file, hfts_param_file=hfts_param_file, com_file=obj_com_file)
         return True
 
     def get_placement_planes(self, obj_id):
@@ -297,8 +298,8 @@ def read_stl_file(file_id):
             stl_mesh.update_normals()
             normal_length = np.linalg.norm(stl_mesh.normals[face_idx])
             if normal_length == 0.0:
-                raise IOError('[utils.py::read_stl_file] Could not extract valid normals from the given file '
-                              + str(file_id))
+                raise IOError('[utils.py::read_stl_file] Could not extract valid normals from the given file ' +
+                              str(file_id))
         points[face_idx, 3:6] = stl_mesh.normals[face_idx] / normal_length
     return points
 
@@ -504,7 +505,7 @@ def path_to_trajectory(robot, path, bvelocities=True, vel_factor=0.2):
     #     j += 1
     # configurations_path.append(last_config)
     active_dofs = robot.GetActiveDOFIndices()
-    assert(len(active_dofs) == len(configurations_path[0]))
+    assert (len(active_dofs) == len(configurations_path[0]))
     traj = orpy.RaveCreateTrajectory(robot.GetEnv(), '')
     cs = traj.GetConfigurationSpecification()
     dof_string = string.join([' ' + str(x) for x in active_dofs])
@@ -521,6 +522,22 @@ def path_to_trajectory(robot, path, bvelocities=True, vel_factor=0.2):
         robot.SetDOFVelocityLimits(vel_limits)
     # print "TRAJECTORY FOUND, TRY THINGS OUT!"
     return traj
+
+
+def reverse_trajectory(traj, robot, b_compute_vel=True):
+    """Reverse the given trajectory.
+
+    Args:
+        traj (OpenRAVE Trajectory): The trajectory to reverse.
+        robot (OpenRAVE Robot): The robot this trajectory is for (active DOFs should be correct)
+        b_compute_vel (bool): If true, compute timestamps and velocities for the return trajectory,
+            otherwise only compute the path. TODO velocity factor?
+    Returns:
+        traj (OpenRAVE Trajectory): A copy of the given trajectory in the reverse direction
+    """
+    wps = [traj.GetWaypoint(i) for i in range(traj.GetNumWaypoints())]
+    wps.reverse()
+    return path_to_trajectory(robot, wps, b_compute_vel)  # TODO what about velocity factor?
 
 
 def get_manipulator_links(manip):
@@ -540,8 +557,11 @@ def get_manipulator_links(manip):
     # add the links connecting to the base link.... although this reduces the freespace of the arm,
     # it is better to have than not (ie waist on humanoid)
     tobasejoints = manip.GetRobot().GetChain(0, manip.GetBase().GetIndex())
-    dofindices = [np.arange(joint.GetDOFIndex(), joint.GetDOFIndex()+joint.GetDOF())
-                  for joint in tobasejoints if joint.GetDOFIndex() >= 0 and not joint.IsStatic()]
+    dofindices = [
+        np.arange(joint.GetDOFIndex(),
+                  joint.GetDOFIndex() + joint.GetDOF()) for joint in tobasejoints
+        if joint.GetDOFIndex() >= 0 and not joint.IsStatic()
+    ]
     tobasedofs = np.hstack(dofindices) if len(dofindices) > 0 else np.array([], int)
     robot = manip.GetRobot()
     joints = robot.GetJoints()
@@ -599,7 +619,7 @@ def vec_angle_diff(v0, v1):
     l1 = math.sqrt(np.inner(v1, v1))
     if l0 == 0 or l1 == 0:
         return 0
-    x = np.dot(v0, v1) / (l0*l1)
+    x = np.dot(v0, v1) / (l0 * l1)
     x = min(1.0, max(-1.0, x))  # fixing math precision error
     angel = math.acos(x)
     return angel
@@ -631,7 +651,7 @@ def dist_in_range(d, r):
 def normal_distance(normals_a, normals_b):
     d = 0.0
     for i in range(len(normals_a)):
-        d += vec_angel_diff(normals_a[i], normals_b[i])
+        d += vec_angle_diff(normals_a[i], normals_b[i])
     return d
 
 
@@ -712,14 +732,14 @@ def chomps_distance(distances, eps, dist_gradients=None):
     buffer_ind = np.nonzero(buffer_mask)[0]
     positive_ind = np.nonzero(distances > eps)[0]
     # compute the actual funciton
-    return_values[negative_ind] = - distances[negative_ind] + eps / 2.0
+    return_values[negative_ind] = -distances[negative_ind] + eps / 2.0
     return_values[buffer_ind] = 1.0 / (2.0 * eps) * np.square((distances[buffer_ind] - eps))
     return_values[positive_ind] = 0.0
     # optionally compute gradients
     if dist_gradients is not None:
         gradients = np.empty_like(dist_gradients)
         gradients[negative_ind] = -dist_gradients[negative_ind]
-        gradients[buffer_ind] = (dist_gradients[buffer_ind].T * (distances[buffer_ind] - eps) * 1.0/eps).T
+        gradients[buffer_ind] = (dist_gradients[buffer_ind].T * (distances[buffer_ind] - eps) * 1.0 / eps).T
         gradients[positive_ind] = 0.0
         return return_values, gradients
     return return_values

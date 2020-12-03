@@ -1,0 +1,11 @@
+or_env: ../../models/environments/cabinet_high_clutter.xml
+target_obj_file:  ../../models/objects/expo/expo.kinbody.xml
+target_object_name: 'expo'
+manip_name: left_arm_with_gripper
+urdf_file: ../../models/robots/yumi/yumi.urdf
+gripper_file: ../../models/robots/yumi/yumi_gripper_l.robot.xml
+gripper_information: ../../models/robots/yumi/gripper_information.yaml
+dmg_file: ../../models/objects/expo/dmg_info.yaml
+grasp_file: ../placement_problems/grasps/new/expo.yaml
+object_pose: [-0.15445, 0.68409, 0.29418, 0.49614, 0.51562, -0.48131, -0.50629] # x y z qw qx qz qy
+approach_box_extents: [0.2, 0.2, 0.08]
