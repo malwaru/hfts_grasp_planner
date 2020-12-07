@@ -171,6 +171,12 @@ public:
       return std::make_pair(edges.cbegin(), edges.cend());
     }
 
+    /**
+     * Retrieve the best-known validity of this node conditioned on grasp gid.
+     * @param gid: the grasp to retrieve validity for
+     * @param validity: output variable containing validity
+     * @return validity-known: True iff the conditional validity is known.
+     */
     bool getConditionalValidity(unsigned int gid, bool& validity)
     {
       auto iter = conditional_validity.find(gid);
@@ -354,6 +360,28 @@ typedef std::shared_ptr<const MultiGraspGoalSet> MultiGraspGoalSetConstPtr;
 class MultiGraspGoalSet
 {
 public:
+  // Provides read access to goals in goal set
+  struct GoalIterator
+  {
+    ~GoalIterator() = default;
+    GoalIterator& operator++();
+    bool operator==(const GoalIterator& other) const;
+    bool operator!=(const GoalIterator& other) const;
+    const MultiGraspMP::Goal& operator*();
+    const MultiGraspMP::Goal* operator->();
+    // iterator traits
+    using difference_type = long;
+    using value_type = MultiGraspMP::Goal;
+    using pointer = const MultiGraspMP::Goal*;
+    using reference = const MultiGraspMP::Goal&;
+    using iterator_category = std::forward_iterator_tag;
+
+  private:
+    friend class MultiGraspGoalSet;
+    GoalIterator(std::unordered_map<unsigned int, MultiGraspMP::Goal>::const_iterator iter);
+    std::unordered_map<unsigned int, MultiGraspMP::Goal>::const_iterator _iter;
+  };
+
   /**
    * Construct a new MultiGraspGoalSet.
    */
@@ -384,6 +412,12 @@ public:
    *  The corresponding configurations are not removed from the underlying roadmap.
    */
   void removeGoals(const std::vector<unsigned int>& goal_ids);
+
+  /**
+   * Remove goals in the given range [begin, end).
+   * This range may refer to goals from a different MultiGraspGoalSet.
+   */
+  void removeGoals(GoalIterator begin, GoalIterator end);
 
   /**
    *  Return whether the given node is a goal under the given grasp.
@@ -420,28 +454,7 @@ public:
    * Return a vector containing all currently active goals.
    */
   void getGoals(std::vector<MultiGraspMP::Goal>& goals) const;
-
-  // Provides read access to goals in goal set
-  struct GoalIterator
-  {
-    ~GoalIterator() = default;
-    GoalIterator& operator++();
-    bool operator==(const GoalIterator& other) const;
-    bool operator!=(const GoalIterator& other) const;
-    const MultiGraspMP::Goal& operator*();
-    const MultiGraspMP::Goal* operator->();
-    // iterator traits
-    using difference_type = long;
-    using value_type = MultiGraspMP::Goal;
-    using pointer = const MultiGraspMP::Goal*;
-    using reference = const MultiGraspMP::Goal&;
-    using iterator_category = std::forward_iterator_tag;
-
-  private:
-    friend class MultiGraspGoalSet;
-    GoalIterator(std::unordered_map<unsigned int, MultiGraspMP::Goal>::const_iterator iter);
-    std::unordered_map<unsigned int, MultiGraspMP::Goal>::const_iterator _iter;
-  };
+  std::vector<MultiGraspMP::Goal> getGoals() const;
 
   /**
    * Return forward iterator over this goal set.
@@ -521,8 +534,31 @@ public:
    * Return a lower bound of the cost to go from a to any of the goals given upon construction.
    */
   double costToGo(const Config& a) const;
+  /**
+   * Just like costToGo but in addition also return the id of the closest goal.
+   */
+  std::pair<double, MultiGraspMP::Goal> nearestGoal(const Config& a) const;
   // return the goal cost of a goal with the given quality
   double qualityToGoalCost(double quality) const;
+
+  /**
+   * Remove all goals that are in the given range [from, end).
+   * @param from: ForwardIterator with type(*from) MultiGraspMP::Goal, beginning of the range
+   * @param end: ForwardIterator with type(*end) MultiGraspMP::Goal, end of the range
+   */
+  template <class GoalIter>
+  void removeGoals(GoalIter& from, const GoalIter& end)
+  {
+    while (from != end)
+    {
+      auto [dist, nearest_goal] = nearestGoal(from->config);
+      if (nearest_goal.id == *from)
+      {
+        _goals.remove(*from);
+      }
+      ++from;
+    }
+  }
 
 private:
   struct GoalDistanceFn

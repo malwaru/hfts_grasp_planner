@@ -10,6 +10,249 @@ namespace mp
 namespace mgsearch
 {
 /**
+ * The LazyLayeredMultiGraspRoadmapGraph is a special type of MultiGraspRoadmapGraph that aims to combine the
+ * benefits of MultiGraspRoadmapGraph and the FoldedMultiGraspRoadmapGraph. Similar to the FoldedMultiGraspRoadmapGraph,
+ * the LazyLayeredMultiGraspRoadmapGraph has initially only a single layer that corresponds to all grasps and
+ * contains all goals.
+ * Whenever an edge on the base layer is found to differ for a specific grasp g, a new layer is inserted into the graph
+ * that represents the roadmap conditioned on g. This is done by simply adding an edge between the virtual start vertex
+ * and the start node conditioned on g. For the base layer, in turn, the heuristic function is adapted to no longer
+ * include goals for g and the goal costs of goals belonging to g are set to infinity for that layer. This way, the
+ * graph lazily grows from a single layer to MultiGraspRoadmapGraph as more different grasps are actually evaluated.
+ * Once the base layer corresponds only to a single grasp, the graph is equivalent to the MultiGraspRoadmapGraph.
+ *
+ * The graph is designed to be used by a grasp-aware specialization of LazySP that uses a grasp-agnostic LPA*.
+ * For this, the graph implements the GraspAgnostic interface and additional grasp-aware functions.
+ * Whenever LPA* finds a new solution on the grasp-agnostic interface, the specialized LazySP algorithm
+ * identifies what grasp is required by the goal of that solution and starts evaluating
+ * the true edge costs w.r.t this grasp. When a cost is different, the graph adjusts its internal structure as described
+ * and informs LazySP about the new edge weights and goal cost increases.
+ *
+ * Similar to the MultiGraspRoadmapGraph, the type of cost evaluation performed
+ * when using the grasp-agnostic interface is template-parameterized by the enum CostCheckingType.
+ * Note that as long as the base layer represents multiple grasps, the cost evaluation on the base layer is always
+ * VertexEdgeWithoutGrasp.
+ */
+template <CostCheckingType cost_checking_type = EdgeWithoutGrasp>
+class LazyLayeredMultiGraspRoadmapGraph
+{
+public:
+  struct NeighborIterator
+  {
+    NeighborIterator(const NeighborIterator& other);
+    NeighborIterator(NeighborIterator&& other);
+    ~NeighborIterator() = default;
+    NeighborIterator& operator++();
+    bool operator==(const NeighborIterator& other) const;
+    bool operator!=(const NeighborIterator& other) const;
+    unsigned int operator*();
+    // iterator traits
+    using difference_type = long;
+    using value_type = unsigned int;
+    using pointer = const unsigned int*;
+    using reference = const unsigned int&;
+    using iterator_category = std::forward_iterator_tag;
+
+    static NeighborIterator begin(unsigned int v, bool forward, bool lazy,
+                                  LazyLayeredMultiGraspRoadmapGraph const* graph);
+    static NeighborIterator end(unsigned int v, bool forward, bool lazy,
+                                LazyLayeredMultiGraspRoadmapGraph const* graph);
+
+    struct IteratorImplementation
+    {
+      virtual ~IteratorImplementation() = 0;
+      virtual bool equals(const IteratorImplementation* const other) const = 0;
+      virtual unsigned int dereference() const = 0;
+      virtual void next() = 0;
+      virtual std::unique_ptr<IteratorImplementation> copy() const = 0;
+      virtual void setToEnd() = 0;
+    };
+
+  private:
+    NeighborIterator(unsigned int v, bool forward, bool lazy, LazyLayeredMultiGraspRoadmapGraph const* parent);
+    std::unique_ptr<IteratorImplementation> _impl;
+  };
+
+  /**
+   * Create a new LazyLayeredMultiGraspRoadmapGraph defined by the given roadmap for the given grasps.
+   * @param roadmap - roadmap to use
+   * @param goal_set: Set of goals containing goals for the given grasps
+   * @param cost_params: Parameters for the goal-path cost tradeoff
+   * @param grasp_ids - the ids of the grasps TODO: retrieve from goal_set
+   * @param start_id - the id of the roadmap node that defines the start node
+   */
+  LazyLayeredMultiGraspRoadmapGraph(::placement::mp::mgsearch::RoadmapPtr roadmap,
+                                    ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set,
+                                    const ::placement::mp::mgsearch::GoalPathCostParameters& cost_params,
+                                    const std::set<unsigned int>& grasp_ids, unsigned int start_id);
+  ~LazyLayeredMultiGraspRoadmapGraph();
+
+  // GraspAgnostic graph interface
+  bool checkValidity(unsigned int v);
+  void getSuccessors(unsigned int v, std::vector<unsigned int>& successors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getSuccessors(unsigned int v, bool lazy = false);
+  void getPredecessors(unsigned int v, std::vector<unsigned int>& predecessors, bool lazy = false);
+  std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
+  double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
+  bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
+  unsigned int getStartNode() const;
+  bool isGoal(unsigned int v) const;
+  double getGoalCost(unsigned int v) const;
+  double heuristic(unsigned int v) const;
+
+  // additional functions needed to deal with this graph
+  // Return whether the heuristic value for v is valid.
+  bool isHeuristicValid(unsigned int v) const;
+  // Inform the graph that vertex v has been closed and it no longer needs to monitor the correctness of v's heuristic
+  // value.
+  void vertexClosed(unsigned int v);
+  // grasp-aware interface
+
+  /**
+   * Return/Compute the cost of the edge connecting v1 and v2 for grasp gid.
+   * If v1 and v2 belong to the layer that is only associated with gid, this function simply computes the true cost
+   * of the edge <v1,v2> taking the grasp into account.
+   * If v1 and v2 belong the the base layer that is associated with many grasps (including gid), this function in
+   * addition may result in a split of the layer if cost(v1, v2, gid) != cost(v1, v2). This means that this function
+   * has severe influence on the future behaviour of this graph. Apart from changes to edge weights, the goal costs of
+   * some vertices may change, too. This implies that some vertices may no longer be goals and isGoal returns false
+   * for vertices for which it formerly returned true. In addition, if eventually the base layer only corresponds to a
+   * single grasp, the return values of trueEdgeCostKnown, getEdgeCost for vertices on that layer also change. You can
+   * query information about changes that occurred during splits using the functions getNewEdges and
+   * getInvalidatedGoals.
+   * @param v1 - the first vertex
+   * @param v2 - the second vertex
+   * @param gid - the id of the grasp
+   * @return edge cost
+   */
+  double getGraspSpecificEdgeCost(unsigned int v1, unsigned int v2, unsigned int gid);
+
+  /**
+   * Return the new edges that were added due to grasp-specific edge cost computations, i.e. layer splits.
+   * @param edge_changes vector of edge changes <v1, v2, increase=false>
+   * @param clear_cache - if true, clear the change cache so that next time this function is called only
+   *    new changes are returned
+   * @return true if there are any new edges
+   */
+  bool getNewEdges(std::vector<EdgeChange>& edge_changes, bool clear_cache);
+
+  /**
+   * Return the ids of vertices for which goal costs have changed and may no longer be goals due to layer splits.
+   * @param changed_goals will contain the vertices for which the goal cost has changed.
+   * @param clear_cache: if true, clear the internal cache so that subsequent calls will not return the same goals
+   * again.
+   * @return true if there are any changed goals
+   */
+  bool getGoalChanges(std::vector<unsigned int>& goal_changes, bool clear_cache);
+
+  // roadmap id, grasp id
+  // std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;
+  /**
+   * Return the best goal associated with v and the cost associated with it.
+   * If there is no goal associated with v, the goal is uninitialized and the goal cost is infinite.
+   * @param v: the graph vertex id
+   * @return: the best goal and the corresponding goal cost
+   */
+  std::pair<MultiGraspMP::Goal, double> getBestGoal(unsigned int v);
+
+private:
+  // roadmap, costs, etc
+  ::placement::mp::mgsearch::RoadmapPtr _roadmap;
+  const ::placement::mp::mgsearch::GoalPathCostParameters _cost_params;
+  const unsigned int _roadmap_start_id;  // roadmap node id of the start node
+  double _start_h;                       // heuristic value of virtual start vertex
+  std::pair<double, double> _goal_quality_range;
+
+  struct LayerInformation
+  {  // stores information for each layer
+    ::placement::mp::mgsearch::MultiGoalCostToGoPtr cost_to_go;
+    ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set;
+    std::set<unsigned int> grasps;
+    unsigned int start_vertex_id;  // vertex id of the start vertex of this layer
+
+    LayerInformation() : cost_to_go(nullptr), goal_set(nullptr), start_vertex_id(0)
+    {
+    }
+
+    LayerInformation(::placement::mp::mgsearch::MultiGoalCostToGoPtr cost_to_go_,
+                     ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set_, std::set<unsigned int>& grasps_,
+                     unsigned int start_vertex_id_)
+      : cost_to_go(cost_to_go_), goal_set(goal_set_), grasps(grasps_), start_vertex_id(start_vertex_id_)
+    {
+    }
+  };
+  std::vector<LayerInformation> _layers;
+  std::unordered_map<unsigned int, unsigned int> _grasp_id_to_layer_id;
+  // store for base layer vertices which grasp was responsible for their last computed heuristic value
+  std::unordered_map<unsigned int, unsigned int> _grasp_for_heuristic_value;
+  // edge change cache
+  std::vector<EdgeChange> _new_edges;
+  // goal change cache
+  std::vector<unsigned int> _goal_changes;
+  // id helper
+  typedef std::pair<unsigned int, unsigned int> LayerNodeIDPair;  // {layer_id, roadmap_node_id}
+  LayerNodeIDPair toLayerRoadmapKey(unsigned int graph_id) const;
+  unsigned int toGraphKey(unsigned int layer_id, unsigned int roadmap_id) const;
+  // counter of total number of vertices
+  mutable unsigned int _num_graph_vertices;
+  // hash table mapping (layer_id, roadmap_id) to graph id
+  mutable std::unordered_map<LayerNodeIDPair, unsigned int, boost::hash<LayerNodeIDPair>> _layer_roadmap_key_to_graph;
+  // hash table mapping graph id to (layer_id, roadmap_id)
+  mutable std::unordered_map<unsigned int, LayerNodeIDPair> _graph_key_to_layer_roadmap;
+  // logger
+  VertexExpansionLogger _logger;
+  // Iterator implementations
+  template <bool forward>
+  class StartVertexIterator : public NeighborIterator::IteratorImplementation
+  {
+  public:
+    StartVertexIterator(LazyLayeredMultiGraspRoadmapGraph* graph);
+    ~StartVertexIterator();
+    bool equals(const typename NeighborIterator::IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<typename NeighborIterator::IteratorImplementation> copy() const override;
+    void setToEnd() override;
+
+  private:
+    StartVertexIterator();
+    std::vector<unsigned int>::const_iterator _layer_iter;
+    LazyLayeredMultiGraspRoadmapGraph* _graph;
+  };
+  template <bool forward>
+  friend class StartVertexIterator;
+
+  template <bool lazy, bool forward, bool base>
+  class InLayerVertexIterator : public NeighborIterator::IteratorImplementation
+  {
+  public:
+    InLayerVertexIterator(unsigned int layer_id, unsigned int roadmap_id, LazyLayeredMultiGraspRoadmapGraph* graph);
+    ~InLayerVertexIterator();
+    bool equals(const typename NeighborIterator::IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<typename NeighborIterator::IteratorImplementation> copy() const override;
+    void setToEnd() override;
+
+  private:
+    const LazyLayeredMultiGraspRoadmapGraph* _graph;
+    const unsigned int _layer_id;
+    const unsigned int _roadmap_id;
+    const unsigned int _grasp_id;
+    bool _edge_to_start_returned;  // bit to track whether we returned edge to the start vertex (if forward = false and
+                                   // we are at a layer start vertex)
+    Roadmap::Node::EdgeIterator _iter;
+    Roadmap::Node::EdgeIterator _end;
+    void forwardToNextValid();
+  };
+  template <bool lazy, bool forward>
+  friend class InLayerVertexIterator;
+};
+
+#include <hfts_grasp_planner/placement/mp/mgsearch/LazyGraph-impl.h>
+
+#if 0
+/**
  * The LazyMultiGraspRoadmapGraph class implements a view on a MultiGraspRoadmap for multiple grasps, and
  * implements the GraspAgnostic graph interface. In contrast to the MultiGraspRoadmapGraph, this view is constructed
  * lazily. The base assumption is that the grasp is irrelevant and the graph assumes that any vertex can be reached with
@@ -405,6 +648,7 @@ private:
     VertexInformation::NonGroupNeighborSet::iterator _adjacent_non_group_iter;
   };
 };
+#endif
 }  // namespace mgsearch
 }  // namespace mp
 }  // namespace placement

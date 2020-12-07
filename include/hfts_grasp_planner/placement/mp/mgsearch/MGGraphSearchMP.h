@@ -2,6 +2,7 @@
 #include <hfts_grasp_planner/placement/mp/MultiGraspMP.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/Algorithms.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/Graphs.h>
+#include <hfts_grasp_planner/placement/mp/mgsearch/LazyGraph.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/MultiGraspRoadmap.h>
 #include <set>
 #include <vector>
