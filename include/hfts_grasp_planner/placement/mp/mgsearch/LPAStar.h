@@ -74,8 +74,10 @@ protected:
     unsigned int p;        // parent id
     bool in_pq;            // true if vertex is in PQ
     typename PQ::handle_type pq_handle;
+    bool in_goal_pq;  // true if vertex is in goal PQ
+    typename PQ::handle_type goal_pq_handle;
     VertexData(unsigned int v_, double g_, double h_, double rhs_, unsigned int p_)
-      : v(v_), g(g_), h(h_), rhs(rhs_), p(p_), in_pq(false)
+      : v(v_), g(g_), h(h_), rhs(rhs_), p(p_), in_pq(false), in_goal_pq(false)
     {
     }
   };
@@ -104,8 +106,6 @@ public:
       _result.path_cost = std::numeric_limits<double>::infinity();
       _result.goal_cost = std::numeric_limits<double>::infinity();
       _result.goal_node = _v_start;
-      _goal_key = computeKey(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(),
-                             std::numeric_limits<double>::infinity());
     }
   }
 
@@ -152,6 +152,22 @@ public:
   }
 
   /**
+   * Update the algorithm state to reflect the invalidation or cost change of goals.
+   * @param old_goals - a list of goal vertices that are no longer goals or whose goal costs have changed.
+   */
+  void invalidateGoals(const std::vector<unsigned int>& old_goals)
+  {
+    for (auto v : old_goals)
+    {
+      VertexData& v_data = getVertexData(v);
+      if (v_data.in_goal_pq)
+      {
+        updateGoalKey(v_data);
+      }
+    }
+  }
+
+  /**
    * Compute the shortest path given the current algorithm state.
    * @param result: Struct that will contain the search result
    */
@@ -167,7 +183,7 @@ public:
     // 3. pq.top().v is a normal vertex and we encountered a reachable goal before with key <= _pq.top().key
     while (not _pq.empty() and updateGoalKey(getVertexData(_pq.top().v)) > _pq.top().key)
     {
-      assert(_pq.top().key <= _goal_key);
+      // assert(_pq.top().key <= _);
       PQElement current_el(_pq.top());
       // get vertex data
       VertexData& u_data = getVertexData(current_el.v);
@@ -188,7 +204,8 @@ protected:
   PQ _pq;
   VertexDataMap _vertex_data;
   SearchResult _result;
-  Key _goal_key;  // stores (path_cost + goal_cost, path_cost) for the best **reachable** goal
+  PQ _goal_keys;  // stores the goals that we found to be reachable under their respective goal key (path_cost +
+                  // goal_cost, path_cost)
   G& _graph;
   unsigned int _v_start;
 
@@ -225,32 +242,50 @@ protected:
   }
 
   /**
-   * Compute the goal key for the given vertex data and update _goal_key if
-   * it improves over our current _goal_key or if v_data.v was responsible for _goal_key (i.e. _result.goal_node =
-   * v_data.v)
+   * Compute the goal key for the given vertex data and update _goal_keys.
    * @param v_data: the vertex data to compute the goal key for
-   * @return _goal_key: the potentially updated goal key
+   * @return _goal_keys.top().key: the potentially updated goal key
    */
-  Key updateGoalKey(const VertexData& v_data)
+  Key updateGoalKey(VertexData& v_data)
   {
     Key new_goal_key = computeGoalKey(v_data);
-    if (new_goal_key < _goal_key)
-    {
-      _goal_key = new_goal_key;
-      assert(new_goal_key.second == v_data.rhs and not std::isinf(v_data.rhs));
-      _result.goal_node = v_data.v;
-      _result.goal_cost = new_goal_key.first - new_goal_key.second;
-      _result.path_cost = new_goal_key.second;
-      _result.solved = v_data.rhs <= v_data.g;
+    bool goal_pq_modified = false;
+    if (std::isinf(new_goal_key.first) and v_data.in_goal_pq)
+    {  // remove v_data from goal_pq
+      _goal_keys.erase(v_data.goal_pq_handle);
+      v_data.in_goal_pq = false;
+      goal_pq_modified = true;
     }
-    else if (_result.goal_node == v_data.v and new_goal_key > _goal_key)
-    {
-      _goal_key = new_goal_key;
-      _result.solved = false;
+    else if (v_data.in_goal_pq and new_goal_key != (*v_data.goal_pq_handle).key)
+    {  // update key (new_goal_key is finite)
+      (*v_data.goal_pq_handle).key = new_goal_key;
+      _goal_keys.update(v_data.goal_pq_handle);  // TODO can new_goal_key even be cheaper? if not use increase
+      goal_pq_modified = true;
+    }
+    else if (not v_data.in_goal_pq and not std::isinf(new_goal_key.first))
+    {  // add to goal_pq
+      v_data.goal_pq_handle = _goal_keys.push(PQElement(v_data.v, new_goal_key));
+      v_data.in_goal_pq = true;
+      goal_pq_modified = true;
+    }
+    if (_goal_keys.empty())
+    {  // no goal key -> return inf, inf
+      _result.goal_node = _v_start;
       _result.goal_cost = std::numeric_limits<double>::infinity();
       _result.path_cost = std::numeric_limits<double>::infinity();
+      _result.solved = false;
+      return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
     }
-    return _goal_key;
+    // else _goal_data.top() is our best reachable goal
+    if (goal_pq_modified)
+    {  // update _result
+      const VertexData& goal_data = _vertex_data.at(_goal_keys.top().v);
+      _result.goal_node = goal_data.v;
+      _result.goal_cost = (*goal_data.goal_pq_handle).key.first - (*goal_data.goal_pq_handle).key.second;
+      _result.path_cost = goal_data.rhs;
+      _result.solved = goal_data.rhs <= goal_data.g;
+    }
+    return _goal_keys.top().key;
   }
 
   // inner loop for when using explicit edge evaluation
@@ -420,7 +455,7 @@ protected:
   }
 
   /**
-   * Update the v's key in _pq and remove if needed.
+   * Update v's key in _pq and remove if needed.
    * If v is a goal and responsible for _goal_key, also update _goal_key.
    */
   void updateVertexKey(VertexData& v_data)
@@ -455,7 +490,7 @@ protected:
       _pq.pop();
       v_data.in_pq = false;
     }
-    // update goal key in case we just invalidated the goal resonsible for _goal_key
+    // update goal key in case we just invalidated the goal responsible for _goal_key.top()
     if (v_data.v == _result.goal_node)
     {
       updateGoalKey(v_data);
