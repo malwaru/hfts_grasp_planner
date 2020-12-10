@@ -100,14 +100,17 @@ public:
   double getGoalCost(unsigned int v) const;
   double heuristic(unsigned int v) const;
 
-  // additional functions needed to deal with this graph
+  // non-stationary heuristic interface
+  typedef std::bool_constant<false> heuristic_stationary;
+  // Inform the graph that vertex v has been closed and it no longer needs to monitor the correctness of v's heuristic
+  // value. We do not care about the actual cost.
+  void registerMinimalCost(unsigned int v, double cost);
   // Return whether the heuristic value for v is valid.
   bool isHeuristicValid(unsigned int v) const;
-  // Inform the graph that vertex v has been closed and it no longer needs to monitor the correctness of v's heuristic
-  // value.
-  void vertexClosed(unsigned int v);
-  // grasp-aware interface
+  // we have no vertex dependency for the heuristic
+  typedef std::bool_constant<false> heuristic_vertex_dependency;
 
+  // Grasp-aware interface
   /**
    * Return/Compute the cost of the edge connecting v1 and v2 for grasp gid.
    * If v1 and v2 belong to the layer that is only associated with gid, this function simply computes the true cost
@@ -126,6 +129,26 @@ public:
    * @return edge cost
    */
   double getGraspSpecificEdgeCost(unsigned int v1, unsigned int v2, unsigned int gid);
+
+  /**
+   * Return whether the grasp specific cost for grasp gid of edge (v1, v2) is known.
+   * If v1 and v2 to not belong to the same layer or gid is not associated with layer of v1 and v2, an TODO: assertion
+   * error will be thrown.
+   * @param v1: the first vertex
+   * @param v2: the second vertex
+   * @param gid: the grasp id
+   * @return whether the cost(v1, v2, gid) is known.
+   */
+  bool isGraspSpecificEdgeCostKnown(unsigned int v1, unsigned int v2, unsigned int gid) const;
+
+  /**
+   * Return whether the grasp-specific validity of v is known for grasp gid.
+   * If v is not on a layer containing gid, an TODO assertion error will be thrown.
+   * @param v: the vertex id
+   * @param gid: the grasp id
+   * @return true if grasp-specific validity is known, else false
+   */
+  bool isGraspSpecificValidityKnown(unsigned int v, unsigned int gid) const;
 
   /**
    * Return the new edges that were added due to grasp-specific edge cost computations, i.e. layer splits.
@@ -153,7 +176,16 @@ public:
    * @param v: the graph vertex id
    * @return: the best goal and the corresponding goal cost
    */
-  std::pair<MultiGraspMP::Goal, double> getBestGoal(unsigned int v);
+  std::pair<MultiGraspMP::Goal, double> getBestGoal(unsigned int v) const;
+
+  /**
+   * Return the grasp and roadmap node associated with vertex vid.
+   * If the vertex vid is on the base layer, and thus associated with multiple grasps
+   * TODO: gid = 0 is returned. TODO a logic_error is thrown?
+   * @param vid: the vertex id
+   * @return {roadmap_id, grasp_id}
+   */
+  std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;
 
 private:
   // roadmap, costs, etc
@@ -175,7 +207,7 @@ private:
     }
 
     LayerInformation(::placement::mp::mgsearch::MultiGoalCostToGoPtr cost_to_go_,
-                     ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set_, std::set<unsigned int>& grasps_,
+                     ::placement::mp::mgsearch::MultiGraspGoalSetPtr goal_set_, const std::set<unsigned int>& grasps_,
                      unsigned int start_vertex_id_)
       : cost_to_go(cost_to_go_), goal_set(goal_set_), grasps(grasps_), start_vertex_id(start_vertex_id_)
     {
@@ -184,7 +216,7 @@ private:
   std::vector<LayerInformation> _layers;
   std::unordered_map<unsigned int, unsigned int> _grasp_id_to_layer_id;
   // store for base layer vertices which grasp was responsible for their last computed heuristic value
-  std::unordered_map<unsigned int, unsigned int> _grasp_for_heuristic_value;
+  mutable std::unordered_map<unsigned int, unsigned int> _grasp_for_heuristic_value;
   // edge change cache
   std::vector<EdgeChange> _new_edges;
   // goal change cache
@@ -206,7 +238,7 @@ private:
   class StartVertexIterator : public NeighborIterator::IteratorImplementation
   {
   public:
-    StartVertexIterator(LazyLayeredMultiGraspRoadmapGraph* graph);
+    StartVertexIterator(LazyLayeredMultiGraspRoadmapGraph const* graph);
     ~StartVertexIterator();
     bool equals(const typename NeighborIterator::IteratorImplementation* const other) const override;
     unsigned int dereference() const override;
@@ -215,9 +247,8 @@ private:
     void setToEnd() override;
 
   private:
-    StartVertexIterator();
-    std::vector<unsigned int>::const_iterator _layer_iter;
-    LazyLayeredMultiGraspRoadmapGraph* _graph;
+    const LazyLayeredMultiGraspRoadmapGraph* const _graph;
+    typename std::vector<LayerInformation>::const_iterator _layer_iter;
   };
   template <bool forward>
   friend class StartVertexIterator;
@@ -226,7 +257,8 @@ private:
   class InLayerVertexIterator : public NeighborIterator::IteratorImplementation
   {
   public:
-    InLayerVertexIterator(unsigned int layer_id, unsigned int roadmap_id, LazyLayeredMultiGraspRoadmapGraph* graph);
+    InLayerVertexIterator(unsigned int layer_id, unsigned int roadmap_id,
+                          LazyLayeredMultiGraspRoadmapGraph const* graph);
     ~InLayerVertexIterator();
     bool equals(const typename NeighborIterator::IteratorImplementation* const other) const override;
     unsigned int dereference() const override;
@@ -235,7 +267,7 @@ private:
     void setToEnd() override;
 
   private:
-    const LazyLayeredMultiGraspRoadmapGraph* _graph;
+    const LazyLayeredMultiGraspRoadmapGraph* const _graph;
     const unsigned int _layer_id;
     const unsigned int _roadmap_id;
     const unsigned int _grasp_id;
@@ -245,8 +277,24 @@ private:
     Roadmap::Node::EdgeIterator _end;
     void forwardToNextValid();
   };
-  template <bool lazy, bool forward>
+  template <bool lazy, bool forward, bool base>
   friend class InLayerVertexIterator;
+
+  /**
+   * Special iterator implementation for the case that a roadmap node does no longer exist.
+   * It's always equal to its end, i.e. should never be dereferenced nor increased (calling next()).
+   */
+  class InvalidVertexIterator : public NeighborIterator::IteratorImplementation
+  {
+  public:
+    InvalidVertexIterator();
+    ~InvalidVertexIterator();
+    bool equals(const typename NeighborIterator::IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<typename NeighborIterator::IteratorImplementation> copy() const override;
+    void setToEnd() override;
+  };
 };
 
 #include <hfts_grasp_planner/placement/mp/mgsearch/LazyGraph-impl.h>

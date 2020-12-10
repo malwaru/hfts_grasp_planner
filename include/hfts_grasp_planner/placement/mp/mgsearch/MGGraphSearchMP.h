@@ -25,8 +25,13 @@ public:
     LazyWeightedMultiGraspGraph =
         4,  // evaluates costs and validity only for the robot without grasps unless explicity asked
     LazyEdgeWeightedMultiGraspGraph = 5,  // evaluates costs only for the robot without grasps unless explicitly asked
+    LazyGrownMultiGraspGraph = 6,  // builds layers lazily, checks for costs and validity with grasp on non-base layer
+    LazyGrownLazyWeightedMultiGraspGraph =
+        7,  // builds layers lazily, does not check validity and costs with grasp unless explicitly asked
+    LazyGrownLazyEdgeWeightedMultiGraspGraph =
+        8,  // builds layers lazily, checks validity with grasps but costs without unless explicitly asked
   };
-  static const unsigned int NUM_GRAPH_TYPES = 6;
+  static const unsigned int NUM_GRAPH_TYPES = 9;
   enum class AlgorithmType
   {
     Astar = 0,
@@ -45,6 +50,8 @@ public:
     FirstUnknown = 0,
     LastUnknown = 1
   };
+  static const unsigned int NUM_EDGE_SELECTOR_TYPES = 2;
+
   struct Parameters
   {
     AlgorithmType algo_type;
@@ -98,6 +105,18 @@ public:
       {AlgorithmType::LazySP_LLPAstar, GraphType::LazyEdgeWeightedMultiGraspGraph},
       {AlgorithmType::LazySP_LWLPAstar, GraphType::LazyEdgeWeightedMultiGraspGraph},
       {AlgorithmType::LazySP_LPAstar, GraphType::LazyEdgeWeightedMultiGraspGraph},
+      // LazyGrownMultiGraspGraph
+      {AlgorithmType::LazySP_LLPAstar, GraphType::LazyGrownMultiGraspGraph},
+      {AlgorithmType::LazySP_LWLPAstar, GraphType::LazyGrownMultiGraspGraph},
+      {AlgorithmType::LazySP_LPAstar, GraphType::LazyGrownMultiGraspGraph},
+      // LazyGrownLazyWeightedMultiGraspGraph
+      {AlgorithmType::LazySP_LLPAstar, GraphType::LazyGrownLazyWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LWLPAstar, GraphType::LazyGrownLazyWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LPAstar, GraphType::LazyGrownLazyWeightedMultiGraspGraph},
+      // LazyGrownLazyEdgeWeightedMultiGraspGraph
+      {AlgorithmType::LazySP_LLPAstar, GraphType::LazyGrownLazyEdgeWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LWLPAstar, GraphType::LazyGrownLazyEdgeWeightedMultiGraspGraph},
+      {AlgorithmType::LazySP_LPAstar, GraphType::LazyGrownLazyEdgeWeightedMultiGraspGraph},
   };
 
   /**
@@ -127,6 +146,12 @@ public:
    */
   static AlgorithmType getAlgorithmType(const std::string& name);
 
+  /**
+   * Return the type of the edge selection type given a string representation.
+   * If the string representation does not match any type, a runtime error is thrown.
+   */
+  static EdgeSelectorType getEdgeSelectorType(const std::string& name);
+
   MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Config& start, const Parameters& params);
   ~MGGraphSearchMP();
 
@@ -154,6 +179,28 @@ private:
     auto [goal_id, valid_goal] = _goal_set->getGoalId(rid, gid);
     assert(valid_goal);
     sol.goal_id = goal_id;
+    sol.path = wp_path;
+    sol.cost = sr.cost();
+  }
+
+  template <CostCheckingType ctype>
+  void extractSolution(SearchResult& sr, MultiGraspMP::Solution& sol,
+                       const LazyLayeredMultiGraspRoadmapGraph<ctype>& graph)
+  {
+    MultiGraspMP::WaypointPathPtr wp_path = std::make_shared<MultiGraspMP::WaypointPath>();
+    // extract solution path
+    auto iter = ++sr.path.begin();  // skip first dummy vertex
+    for (; iter != sr.path.end(); ++iter)
+    {
+      auto [rid, gid] = graph.getGraspRoadmapId(*iter);
+      auto node = _roadmap->getNode(rid);
+      assert(node);
+      wp_path->push_back(node->config);
+    }
+    // get goal id
+    auto [goal, goal_cost] = graph.getBestGoal(sr.path.back());
+    assert(not std::isinf(goal_cost));
+    sol.goal_id = goal.id;
     sol.path = wp_path;
     sol.cost = sr.cost();
   }

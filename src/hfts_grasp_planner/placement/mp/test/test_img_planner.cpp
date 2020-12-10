@@ -36,6 +36,7 @@ int main(int argc, char** argv)
         ("lambda", po::value<double>()->default_value(1.0), "Scaling factor between path and goal cost.")
         ("algorithm_type", po::value<std::string>(), "Algorithm name")
         ("graph_type", po::value<std::string>(), "Graph name")
+        ("edge_selector_type", po::value<std::string>()->default_value("LastUnknown"), "Edge selector type for LazySP")
         ("roadmap_log_file", po::value<std::string>()->default_value("/tmp/roadmap"), "Filename to log roadmap to")
         ("evaluation_log_file", po::value<std::string>()->default_value("/tmp/evaluation_log"), "Filename to log roadmap evaluations to")
         ("stats_file", po::value<std::string>()->default_value("/tmp/stats_log"), "Filename to log runtime statistics to")
@@ -140,6 +141,8 @@ int main(int argc, char** argv)
   pmp::mgsearch::MGGraphSearchMP::Parameters params;
   params.algo_type = pmp::mgsearch::MGGraphSearchMP::getAlgorithmType(vm["algorithm_type"].as<std::string>());
   params.graph_type = pmp::mgsearch::MGGraphSearchMP::getGraphType(vm["graph_type"].as<std::string>());
+  params.edge_selector_type =
+      pmp::mgsearch::MGGraphSearchMP::getEdgeSelectorType(vm["edge_selector_type"].as<std::string>());
   params.lambda = vm["lambda"].as<double>();
   params.roadmap_log_path = vm["roadmap_log_file"].as<std::string>();
   params.logfile_path = vm["evaluation_log_file"].as<std::string>();

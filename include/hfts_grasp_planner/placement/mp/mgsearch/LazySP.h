@@ -96,6 +96,7 @@ void checkEdge(G& graph, unsigned int v1, unsigned int v2, std::vector<EdgeChang
 /**
  * Check whether the true edge cost from u to v is known.
  * This is the default implementation.
+ * @param result: the search result
  * @param graph: the graph
  * @param u: first vertex id
  * @param v: second vertex id

@@ -141,6 +141,10 @@ if __name__ == "__main__":
     parser.add_argument('algorithm_name', help="Name of the algorithm to use", type=str)
     parser.add_argument('graph_name', help="Name of the graph to use", type=str)
     parser.add_argument('--lmbda', help="Lambda, the tradeoff between path and goal cost", type=float, default=1.0)
+    parser.add_argument('--edge_selector_type',
+                        help="Optionally, specify the edge selector type for LazySP based algorithms",
+                        type=str,
+                        default=None)
     parser.add_argument('--stats_file',
                         help="Filename to log calling stats (runtime, number of function calls) to.",
                         type=str,
@@ -180,7 +184,11 @@ if __name__ == "__main__":
         start_config = robot.GetDOFValues()
     # create planner
     planner = MGMotionPlanner("%s;%s" % (args.algorithm_name, args.graph_name), manip)
-    planner.setup(target_object, lmbda=args.lmbda, log_file=args.planner_log, batchsize=1000)
+    planner.setup(target_object,
+                  lmbda=args.lmbda,
+                  log_file=args.planner_log,
+                  edge_selector_type=args.edge_selector_type,
+                  batchsize=1000)
     planner.addGoals(goals)
     planner.addWaypoints(waypoints)
     # plan

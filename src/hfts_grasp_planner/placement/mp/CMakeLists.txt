@@ -30,6 +30,7 @@ openrave_plugin(ormultigraspmp
   MultiGraspBiRRT.cpp
   mgsearch/MultiGraspRoadmap.cpp
   mgsearch/Graphs.cpp
+  # mgsearch/LazyGraph.cpp
   mgsearch/LPAStar.cpp
   utils/Profiling.cpp
   mgsearch/MGGraphSearchMP.cpp

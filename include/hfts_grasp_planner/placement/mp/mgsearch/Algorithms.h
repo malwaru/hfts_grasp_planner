@@ -5,3 +5,4 @@
 #include <hfts_grasp_planner/placement/mp/mgsearch/LWAStar.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/LazySP.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/LazySPLazyGrasp.h>
+#include <hfts_grasp_planner/placement/mp/mgsearch/LazyGraphAlgorithms.h>

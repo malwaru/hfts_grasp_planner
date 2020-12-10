@@ -622,6 +622,15 @@ void MultiGraspGoalSet::removeGoals(const std::vector<unsigned int>& goal_ids)
   }
 }
 
+void MultiGraspGoalSet::removeGoals(const GoalIterator& begin, const GoalIterator& end)
+{
+  GoalIterator iter(begin);
+  for (; iter != end; ++iter)
+  {
+    removeGoal(iter->id);
+  }
+}
+
 bool MultiGraspGoalSet::isGoal(Roadmap::NodePtr node, unsigned int grasp_id) const
 {
   return isGoal(node->uid, grasp_id);
@@ -680,6 +689,13 @@ void MultiGraspGoalSet::getGoals(std::vector<MultiGraspMP::Goal>& goals) const
   {
     goals.push_back(elem.second);
   }
+}
+
+std::vector<::placement::mp::MultiGraspMP::Goal> MultiGraspGoalSet::getGoals() const
+{
+  std::vector<MultiGraspMP::Goal> goals;
+  getGoals(goals);
+  return goals;
 }
 
 MultiGraspGoalSet::GoalIterator MultiGraspGoalSet::begin() const
@@ -773,15 +789,20 @@ MultiGoalCostToGo::~MultiGoalCostToGo() = default;
 
 double MultiGoalCostToGo::costToGo(const Config& a) const
 {
+  return nearestGoal(a).first;
+}
+
+std::pair<double, placement::mp::MultiGraspMP::Goal> MultiGoalCostToGo::nearestGoal(const Config& a) const
+{
   if (_goals.size() == 0)
   {
-    throw std::logic_error("[MultiGoalCostToGo::costToGo] No goals known. Can not compute cost to go.");
+    throw std::logic_error("[MultiGoalCostToGo::nearestGoal] No goals known. Can not compute cost to go.");
   }
   MultiGraspMP::Goal dummy_goal;
   dummy_goal.config = a;
   dummy_goal.quality = _max_quality;
   const auto& nn = _goals.nearest(dummy_goal);
-  return _goal_distance.distance_const(nn, dummy_goal);
+  return {_goal_distance.distance_const(nn, dummy_goal), nn};
 }
 
 double MultiGoalCostToGo::qualityToGoalCost(double quality) const

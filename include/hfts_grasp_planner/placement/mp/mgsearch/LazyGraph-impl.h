@@ -38,62 +38,51 @@ LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::Neighbo
   }
   else
   {
-    // TODO
+    auto [layer_id, roadmap_id] = parent->toLayerRoadmapKey(v);
+    auto node = parent->_roadmap->getNode(roadmap_id);
+    if (!node)
+    {
+      _impl = std::make_unique<InvalidVertexIterator>();
+    }
+    else
+    {
+      parent->_roadmap->updateAdjacency(node);
+      if (forward)
+      {
+        if (lazy)
+        {
+          if (layer_id == 0)
+            _impl = std::make_unique<InLayerVertexIterator<true, true, true>>(layer_id, roadmap_id, parent);
+          else
+            _impl = std::make_unique<InLayerVertexIterator<true, true, false>>(layer_id, roadmap_id, parent);
+        }
+        else
+        {
+          if (layer_id == 0)
+            _impl = std::make_unique<InLayerVertexIterator<false, true, true>>(layer_id, roadmap_id, parent);
+          else
+            _impl = std::make_unique<InLayerVertexIterator<false, true, false>>(layer_id, roadmap_id, parent);
+        }
+      }
+      else
+      {
+        if (lazy)
+        {
+          if (layer_id == 0)
+            _impl = std::make_unique<InLayerVertexIterator<true, false, true>>(layer_id, roadmap_id, parent);
+          else
+            _impl = std::make_unique<InLayerVertexIterator<true, false, false>>(layer_id, roadmap_id, parent);
+        }
+        else
+        {
+          if (layer_id == 0)
+            _impl = std::make_unique<InLayerVertexIterator<false, false, true>>(layer_id, roadmap_id, parent);
+          else
+            _impl = std::make_unique<InLayerVertexIterator<false, false, false>>(layer_id, roadmap_id, parent);
+        }
+      }
+    }
   }
-  // unsigned int rid = parent->_vertex_info.at(v).roadmap_id;
-  // unsigned int layer_id = parent->_vertex_info.at(v).layer_id;
-  // bool goal_bridge = parent->_goal_set->canBeGoal(rid);
-  // if (layer_id == 0)
-  // {  // base layer
-  //   if (not goal_bridge || not forward)
-  //   {
-  //     if (lazy)
-  //     {
-  //       _impl = std::make_unique<InLayerIterator<true, true>>(v, parent);
-  //     }
-  //     else
-  //     {
-  //       _impl = std::make_unique<InLayerIterator<false, true>>(v, parent);
-  //     }
-  //   }
-  //   else
-  //   {  // bridge and forward
-  //     assert(goal_bridge and forward);
-  //     if (lazy)
-  //     {
-  //       _impl = std::make_unique<LayerBridgeIterator<true, true>>(v, parent);
-  //     }
-  //     else
-  //     {
-  //       _impl = std::make_unique<LayerBridgeIterator<false, true>>(v, parent);
-  //     }
-  //   }
-  // }
-  // else
-  // {  // grasp-specific layer
-  //   if (forward || not goal_bridge)
-  //   {
-  //     if (lazy)
-  //     {
-  //       _impl = std::make_unique<InLayerIterator<true, false>>(v, parent);
-  //     }
-  //     else
-  //     {
-  //       _impl = std::make_unique<InLayerIterator<false, false>>(v, parent);
-  //     }
-  //   }
-  //   else
-  //   {
-  //     if (lazy)
-  //     {
-  //       _impl = std::make_unique<LayerBridgeIterator<true, false>>(v, parent);
-  //     }
-  //     else
-  //     {
-  //       _impl = std::make_unique<LayerBridgeIterator<false, false>>(v, parent);
-  //     }
-  //   }
-  // }
 }
 
 template <CostCheckingType cost_checking_type>
@@ -129,13 +118,6 @@ typename LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator
 LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::begin(
     unsigned int v, bool forward, bool lazy, LazyLayeredMultiGraspRoadmapGraph<cost_checking_type> const* graph)
 {
-  auto [layer_id, rid] = graph->toLayerRoadmapKey(v);
-  auto node = graph->_roadmap->getNode(rid);
-  if (!node)
-  {
-    throw std::logic_error("Creating neighbor iterator on non-existing node");
-  }
-  graph->_roadmap->updateAdjacency(node);
   return NeighborIterator(v, forward, lazy, graph);
 }
 
@@ -158,8 +140,8 @@ LazyLayeredMultiGraspRoadmapGraph<
 template <CostCheckingType ctype>
 template <bool forward>
 LazyLayeredMultiGraspRoadmapGraph<ctype>::StartVertexIterator<forward>::StartVertexIterator(
-    LazyLayeredMultiGraspRoadmapGraph<ctype>* graph)
-  : _layer_iter(_graph->_layers.begin())
+    LazyLayeredMultiGraspRoadmapGraph<ctype> const* graph)
+  : _graph(graph), _layer_iter(_graph->_layers.cbegin())
 {
 }
 
@@ -172,7 +154,7 @@ template <bool forward>
 bool LazyLayeredMultiGraspRoadmapGraph<ctype>::StartVertexIterator<forward>::equals(
     const typename NeighborIterator::IteratorImplementation* const other) const
 {
-  auto other_casted = dynamic_cast<StartVertexIterator<forward>*>(other);
+  auto other_casted = dynamic_cast<StartVertexIterator<forward> const*>(other);
   return other_casted != nullptr and other_casted->_layer_iter == _layer_iter;
 }
 
@@ -182,7 +164,7 @@ unsigned int LazyLayeredMultiGraspRoadmapGraph<ctype>::StartVertexIterator<forwa
 {
   if constexpr (forward)
   {
-    return _graph->layers.at(_layer_iter).start_vertex_id;
+    return (*_layer_iter).start_vertex_id;
   }
   else
   {
@@ -224,7 +206,7 @@ void LazyLayeredMultiGraspRoadmapGraph<ctype>::StartVertexIterator<forward>::set
 template <CostCheckingType ctype>
 template <bool lazy, bool forward, bool base>
 LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forward, base>::InLayerVertexIterator(
-    unsigned int layer_id, unsigned int roadmap_id, LazyLayeredMultiGraspRoadmapGraph<ctype>* graph)
+    unsigned int layer_id, unsigned int roadmap_id, LazyLayeredMultiGraspRoadmapGraph<ctype> const* graph)
   : _graph(graph)
   , _layer_id(layer_id)
   , _roadmap_id(roadmap_id)
@@ -247,7 +229,7 @@ template <bool lazy, bool forward, bool base>
 bool LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forward, base>::equals(
     const typename NeighborIterator::IteratorImplementation* const other) const
 {
-  auto other_casted = dynamic_cast<InLayerVertexIterator<lazy, forward, base>*>(other);
+  auto other_casted = dynamic_cast<InLayerVertexIterator<lazy, forward, base> const*>(other);
   return other_casted != nullptr and other_casted->_layer_id == _layer_id and
          other_casted->_roadmap_id == _roadmap_id and other_casted->_iter == _iter and
          _edge_to_start_returned == other_casted->_edge_to_start_returned;
@@ -267,7 +249,7 @@ unsigned int LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<laz
     {
       return _graph->toGraphKey(_layer_id, _iter->first);
     }
-    assert(_graph->_layers.at(_layer_id).start_vertex_id == _graph->toGraphId(_layer_id, _roadmap_id));
+    assert(_graph->_layers.at(_layer_id).start_vertex_id == _graph->toGraphKey(_layer_id, _roadmap_id));
     assert(!_edge_to_start_returned);
     // capture special case of start state
     return 0;
@@ -278,10 +260,11 @@ template <CostCheckingType ctype>
 template <bool lazy, bool forward, bool base>
 void LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forward, base>::next()
 {
+  ++_iter;
   forwardToNextValid();
   if constexpr (not forward)
   {
-    if (_iter == _end and _graph->_layers.at(_layer_id).start_vertex_id == _graph->toGraphId(_layer_id, _roadmap_id))
+    if (_iter == _end and _graph->_layers.at(_layer_id).start_vertex_id == _graph->toGraphKey(_layer_id, _roadmap_id))
     {
       _edge_to_start_returned = true;
     }
@@ -293,7 +276,7 @@ template <bool lazy, bool forward, bool base>
 std::unique_ptr<typename LazyLayeredMultiGraspRoadmapGraph<ctype>::NeighborIterator::IteratorImplementation>
 LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forward, base>::copy() const
 {
-  auto the_copy = std::make_unique<InLayerVertexIterator<lazy, forward, base>>(_graph);
+  auto the_copy = std::make_unique<InLayerVertexIterator<lazy, forward, base>>(_layer_id, _roadmap_id, _graph);
   the_copy->_iter = _iter;
   if constexpr (not forward)
   {
@@ -309,7 +292,7 @@ void LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forwa
   _iter = _end;
   if constexpr (not forward)
   {
-    if (_graph->_layers.at(_layer_id).start_vertex_id == _graph->toGraphId(_layer_id, _roadmap_id))
+    if (_graph->_layers.at(_layer_id).start_vertex_id == _graph->toGraphKey(_layer_id, _roadmap_id))
     {  // for start vertices we require also to return 0 as neighbor
       _edge_to_start_returned = true;
     }
@@ -331,7 +314,7 @@ void LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forwa
       }
       else
       {  // else we need to compute the base cost and skip this edge if its invalid
-        auto [cost, valid] = _graph->_roadmap->computeCost(_iter->second);
+        auto [valid, cost] = _graph->_roadmap->computeCost(_iter->second);
         if (valid)
           return;
       }
@@ -349,16 +332,16 @@ void LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forwa
       {  // compute cost according to cost checking type
         if constexpr (ctype == WithGrasp)
         {
-          auto [cost, valid] = _graph->_roadmap->computeCost(_iter->second, _grasp_id);
+          auto [valid, cost] = _graph->_roadmap->computeCost(_iter->second, _grasp_id);
           if (valid)
             return;
         }
         else
         {
-          auto [cost, valid] = _graph->_roadmap->computeCost(_iter->second);
+          auto [valid, cost] = _graph->_roadmap->computeCost(_iter->second);
           if (valid)
           {  // check whether we know that the node is invalid for _grasp_id
-            auto node_b = _roadmap->getNode(_iter->first);
+            auto node_b = _graph->_roadmap->getNode(_iter->first);
             bool cond_valid;
             if (node_b->getConditionalValidity(_grasp_id, cond_valid))
               valid = cond_valid;
@@ -369,6 +352,44 @@ void LazyLayeredMultiGraspRoadmapGraph<ctype>::InLayerVertexIterator<lazy, forwa
       }
     }
   }
+}
+/*********************************** InvalidVertexIterator *******************************************/
+template <CostCheckingType cost_checking_type>
+LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::InvalidVertexIterator::InvalidVertexIterator() = default;
+
+template <CostCheckingType cost_checking_type>
+LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::InvalidVertexIterator::~InvalidVertexIterator() = default;
+
+template <CostCheckingType cost_checking_type>
+bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::InvalidVertexIterator::equals(
+    const typename NeighborIterator::IteratorImplementation* const other) const
+{
+  return dynamic_cast<InvalidVertexIterator const*>(other) != nullptr;
+}
+
+template <CostCheckingType cost_checking_type>
+unsigned int LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::InvalidVertexIterator::dereference() const
+{
+  throw std::runtime_error("Dereferencing InvalidVertexIterator");
+}
+
+template <CostCheckingType cost_checking_type>
+void LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::InvalidVertexIterator::next()
+{
+  throw std::runtime_error("Calling next() on InvalidVertexIterator");
+}
+
+template <CostCheckingType cost_checking_type>
+std::unique_ptr<
+    typename LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::IteratorImplementation>
+LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::InvalidVertexIterator::copy() const
+{
+  return std::make_unique<InvalidVertexIterator>();
+}
+
+template <CostCheckingType cost_checking_type>
+void LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::InvalidVertexIterator::setToEnd()
+{
 }
 
 /*********************************** LazyLayeredMultiGraspRoadmapGraph*******************************************/
@@ -381,9 +402,12 @@ LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::LazyLayeredMultiGraspRoad
   , _cost_params(cost_params)
   , _roadmap_start_id(start_id)
   , _num_graph_vertices(1)  // 1 virtual vertex that connects all layers
+  , _logger(_roadmap)
 {
+  // copy goal set
+  auto my_goal_set = goal_set->createSubset(grasp_ids);
   // create base layer
-  _layers.emplace_back(std::make_shared<MultiGoalCostToGo>(goal_set, _cost_params), goal_set, grasp_ids,
+  _layers.emplace_back(std::make_shared<MultiGoalCostToGo>(my_goal_set, _cost_params), my_goal_set, grasp_ids,
                        toGraphKey(0, _roadmap_start_id));
   // init grasp to layer mapping
   for (auto gid : grasp_ids)
@@ -442,6 +466,11 @@ void LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getSuccessors(unsign
                                                                           std::vector<unsigned int>& successors,
                                                                           bool lazy)
 {
+  auto [begin, end] = getSuccessors(v, lazy);
+  for (; begin != end; ++begin)
+  {
+    successors.push_back(*begin);
+  }
 }
 
 template <CostCheckingType cost_checking_type>
@@ -449,6 +478,24 @@ std::pair<typename LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::Neighb
           typename LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator>
 LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getSuccessors(unsigned int v, bool lazy)
 {
+#ifdef ENABLE_GRAPH_LOGGING
+  if (v != 0)
+  {
+    auto [layer_id, rid] = toLayerRoadmapKey(v);
+    if (layer_id == 0)
+    {
+      _logger.logExpansion(rid);
+    }
+    else
+    {
+      _logger.logExpansion(rid, *_layers.at(layer_id).grasps.begin());
+    }
+  }
+#endif
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getSuccessors");
+#endif
+  return {NeighborIterator::begin(v, true, lazy, this), NeighborIterator::end(v, true, lazy, this)};
 }
 
 template <CostCheckingType cost_checking_type>
@@ -456,6 +503,11 @@ void LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getPredecessors(unsi
                                                                             std::vector<unsigned int>& predecessors,
                                                                             bool lazy)
 {
+  auto [begin, end] = getPredecessors(v, lazy);
+  for (; begin != end; ++begin)
+  {
+    predecessors.push_back(*begin);
+  }
 }
 
 template <CostCheckingType cost_checking_type>
@@ -463,6 +515,24 @@ std::pair<typename LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::Neighb
           typename LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator>
 LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getPredecessors(unsigned int v, bool lazy)
 {
+#ifdef ENABLE_GRAPH_LOGGING
+  if (v != 0)
+  {
+    auto [layer_id, rid] = toLayerRoadmapKey(v);
+    if (layer_id == 0)
+    {
+      _logger.logExpansion(rid);
+    }
+    else
+    {
+      _logger.logExpansion(rid, *_layers.at(layer_id).grasps.begin());
+    }
+  }
+#endif
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getPredecessors");
+#endif
+  return {NeighborIterator::begin(v, false, lazy, this), NeighborIterator::end(v, false, lazy, this)};
 }
 
 template <CostCheckingType cost_checking_type>
@@ -480,7 +550,7 @@ double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getEdgeCost(unsign
   auto [lid_1, rnid_1] = toLayerRoadmapKey(v1);
   auto [lid_2, rnid_2] = toLayerRoadmapKey(v2);
   assert(lid_1 == lid_2);
-  LayerInformation& layer = _layers.at(lid_1);
+  const LayerInformation& layer = _layers.at(lid_1);
   auto node_v1 = _roadmap->getNode(rnid_1);
   // ensure v1's edges are up-to-date
   _roadmap->updateAdjacency(node_v1);
@@ -572,6 +642,9 @@ unsigned int LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getStartNode
 template <CostCheckingType cost_checking_type>
 bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::isGoal(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::isGoal");
+#endif
   if (v == 0)
     return false;
   auto [layer_id, rid_id] = toLayerRoadmapKey(v);
@@ -582,6 +655,9 @@ bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::isGoal(unsigned int 
 template <CostCheckingType cost_checking_type>
 double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGoalCost(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getGoalCost");
+#endif
   auto [goal, cost] = getBestGoal(v);
   return cost;
 }
@@ -589,6 +665,9 @@ double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGoalCost(unsign
 template <CostCheckingType cost_checking_type>
 double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::heuristic(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::heuristic");
+#endif
   if (v == 0)
     return _start_h;
   auto [lid, rid] = toLayerRoadmapKey(v);
@@ -606,18 +685,25 @@ double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::heuristic(unsigned
 template <CostCheckingType cost_checking_type>
 bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::isHeuristicValid(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::isHeuristicValid");
+#endif
   auto iter = _grasp_for_heuristic_value.find(v);
   if (iter != _grasp_for_heuristic_value.end())
   {  // verify that the grasp is still part of the same layer
     auto [lid, rid] = toLayerRoadmapKey(v);
-    return lid == _grasp_id_to_layer_id[iter->second];
+    return lid == _grasp_id_to_layer_id.at(iter->second);
   }
   return true;
 }
 
 template <CostCheckingType cost_checking_type>
-void LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::vertexClosed(unsigned int v)
+void LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::registerMinimalCost(unsigned int v, double cost)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::registerMinimalCost");
+#endif
+  // TODO is deleting this really beneficial or just unneeded overhead?
   _grasp_for_heuristic_value.erase(v);
 }
 
@@ -626,19 +712,21 @@ template <CostCheckingType cost_checking_type>
 double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGraspSpecificEdgeCost(unsigned int v1, unsigned int v2,
                                                                                        unsigned int gid)
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getGraspSpecificEdgeCost");
+#endif
   if (v1 == 0 or v2 == 0)
     return 0.0;
   auto [lid1, rid1] = toLayerRoadmapKey(v1);
   auto [lid2, rid2] = toLayerRoadmapKey(v2);
   if (lid1 != lid2)
     return INFINITY;
-  auto& layer = _layers.at(lid1);
   assert(_grasp_id_to_layer_id[gid] == lid1);
   // get node
   auto node = _roadmap->getNode(rid1);
   if (!node)
     return INFINITY;
-  bool split_graph = layer.grasps.size() > 1;  // we only need to split layer with multiple grasps
+  bool split_graph = _layers.at(lid1).grasps.size() > 1;  // we only need to split layer with multiple grasps
   double return_val = INFINITY;
   if (_roadmap->isValid(node, gid))
   {
@@ -646,21 +734,21 @@ double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGraspSpecificEd
     if (!edge)
       return INFINITY;
     bool edge_valid = false;
-    std::tie(return_val, edge_valid) = _roadmap->computeCost(edge, gid);
+    std::tie(edge_valid, return_val) = _roadmap->computeCost(edge, gid);
     split_graph &= return_val != edge->base_cost;
   }
   if (split_graph)
   {
-    assert(layer.grasps.size() > 1);
+    assert(_layers.at(lid1).grasps.size() > 1);
     // add new layer for gid
     std::set<unsigned int> single_grasp_set({gid});
-    auto sub_goal_set = layer.goal_set->createSubset(single_grasp_set);
+    auto sub_goal_set = _layers.at(lid1).goal_set->createSubset(single_grasp_set);
     _layers.emplace_back(std::make_shared<MultiGoalCostToGo>(sub_goal_set, _cost_params, _goal_quality_range),
                          sub_goal_set, single_grasp_set, toGraphKey(_layers.size(), _roadmap_start_id));
     _grasp_id_to_layer_id[gid] = _layers.size() - 1;
     // remove gid from old layer
-    layer.goal_set->removeGoals(sub_goal_set->begin(), sub_goal_set->end());
-    layer.cost_to_go->removeGoals(sub_goal_set->begin(), sub_goal_set->end());
+    _layers.at(lid1).goal_set->removeGoals(sub_goal_set->begin(), sub_goal_set->end());
+    _layers.at(lid1).cost_to_go->removeGoals(sub_goal_set->begin(), sub_goal_set->end());
     // add changes to change caches
     _new_edges.push_back({0, _layers.back().start_vertex_id, false});  // new edge
     for (auto iter = sub_goal_set->begin(); iter != sub_goal_set->end(); ++iter)
@@ -672,41 +760,92 @@ double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGraspSpecificEd
 }
 
 template <CostCheckingType cost_checking_type>
+bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::isGraspSpecificEdgeCostKnown(unsigned int v1,
+                                                                                         unsigned int v2,
+                                                                                         unsigned int gid) const
+{
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::isGraspSpecificEdgeCostKnown");
+#endif
+  if (v1 == 0 || v2 == 0)
+    return true;
+  auto [lid1, rid1] = toLayerRoadmapKey(v1);
+  auto [lid2, rid2] = toLayerRoadmapKey(v2);
+  // if (lid1 != lid2) throw std::logic_error("The vertices " + std::to_string(v1) + ", " + std::to_string(v2) )
+  assert(lid1 == lid2);
+  assert(_grasp_id_to_layer_id.at(gid) == lid1);
+  auto node = _roadmap->getNode(rid1);
+  if (!node)
+    return true;
+  auto edge = node->getEdge(rid2);
+  if (!edge)
+    return true;
+  return edge->conditional_costs.find(gid) != edge->conditional_costs.end();
+}
+
+template <CostCheckingType cost_checking_type>
+bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::isGraspSpecificValidityKnown(unsigned int v,
+                                                                                         unsigned int gid) const
+{
+  if (v == 0)
+    return true;
+  auto [lid, rid] = toLayerRoadmapKey(v);
+  assert(_grasp_id_to_layer_id.at(gid) == lid);
+  auto node = _roadmap->getNode(rid);
+  if (!node)
+    return true;
+  bool validity;
+  return node->getConditionalValidity(gid, validity);
+}
+
+template <CostCheckingType cost_checking_type>
 bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getNewEdges(std::vector<EdgeChange>& edge_changes,
                                                                         bool clear_cache)
 {
-  edge_changes.clear();
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getNewEdges");
+#endif
+  if (_new_edges.empty())
+    return false;
   edge_changes.insert(edge_changes.end(), _new_edges.begin(), _new_edges.end());
   if (clear_cache)
   {
     _new_edges.clear();
   }
-  return edge_changes.size() > 0;
+  return true;
 }
 
 template <CostCheckingType cost_checking_type>
 bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGoalChanges(std::vector<unsigned int>& goal_changes,
                                                                            bool clear_cache)
 {
-  goal_changes.clear();
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getGoalChanges");
+#endif
+  if (_goal_changes.empty())
+    return false;
   goal_changes.insert(goal_changes.end(), _goal_changes.begin(), _goal_changes.end());
   if (clear_cache)
   {
     _goal_changes.clear();
   }
-  return goal_changes.size() > 0;
+  return true;
 }
 
 template <CostCheckingType cost_checking_type>
-std::pair<MultiGraspMP::Goal, double> LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getBestGoal(unsigned int v)
+std::pair<MultiGraspMP::Goal, double>
+LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getBestGoal(unsigned int v) const
 {
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getBestGoal");
+#endif
   double min_cost = std::numeric_limits<double>::infinity();
   MultiGraspMP::Goal best_goal;
   if (v != 0)
   {  // virtual start is never a goal
     auto [layer_id, rid] = toLayerRoadmapKey(v);
     // the layer's goal set only contains goals for the grasps associated with it
-    LayerInformation& layer_info = _layers.at(layer_id);
+    const LayerInformation& layer_info = _layers.at(layer_id);
     auto goal_ids = layer_info.goal_set->getGoalIds(rid);
     for (auto gid : goal_ids)
     {
@@ -724,6 +863,25 @@ std::pair<MultiGraspMP::Goal, double> LazyLayeredMultiGraspRoadmapGraph<cost_che
 
 template <CostCheckingType cost_checking_type>
 std::pair<unsigned int, unsigned int>
+LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGraspRoadmapId(unsigned int v) const
+{
+#ifdef ENABLE_GRAPH_PROFILING
+  utils::ScopedProfiler profiler("LazyLayeredMultiGraspRoadmapGraph::getGraspRoadmapId");
+#endif
+  if (v == 0)
+  {
+    return {_roadmap_start_id, 0};  // TODO what to return?
+  }
+  auto [layer_id, rid] = toLayerRoadmapKey(v);
+  if (_layers.at(layer_id).grasps.size() > 1)
+  {
+    return {rid, 0};  // TODO what to return?
+  }
+  return {rid, *_layers.at(layer_id).grasps.begin()};
+}
+
+template <CostCheckingType cost_checking_type>
+std::pair<unsigned int, unsigned int>
 LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::toLayerRoadmapKey(unsigned int graph_id) const
 {
   return _graph_key_to_layer_roadmap.at(graph_id);
@@ -737,7 +895,7 @@ unsigned int LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::toGraphKey(u
   if (iter == _layer_roadmap_key_to_graph.end())
   {
     // we do not have a graph node for this layer and roadmap node yet, so add a new one
-    unsigned int new_id = ++_num_graph_vertices;
+    unsigned int new_id = _num_graph_vertices++;
     _layer_roadmap_key_to_graph[{layer_id, roadmap_id}] = new_id;
     _graph_key_to_layer_roadmap[new_id] = {layer_id, roadmap_id};
     return new_id;

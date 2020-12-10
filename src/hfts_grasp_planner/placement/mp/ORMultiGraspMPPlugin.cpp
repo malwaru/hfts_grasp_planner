@@ -184,6 +184,10 @@ void ORMultiGraspMPPlugin::parseParameters(std::istream& sinput, mgsearch::MGGra
         params.roadmap_log_path = param_value + "_roadmap";
         params.logfile_path = param_value + "_evaluation";
       }
+      else if (param_name == "edge_selector_type")
+      {
+        params.edge_selector_type = mgsearch::MGGraphSearchMP::getEdgeSelectorType(param_value);
+      }
       else
       {
         throw std::invalid_argument("Unknown parameter name " + param_name);

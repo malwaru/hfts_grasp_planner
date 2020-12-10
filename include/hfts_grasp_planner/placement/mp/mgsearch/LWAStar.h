@@ -85,14 +85,24 @@ void addToPQ(G& graph, PQ& pq, WaitingListsMap& waiting_lists, const PQElement& 
   else
   {
     // the heuristic may depend on us closing other vertices first. if so add the PQelement to a waiting list
-    if (std::isinf(new_elem.h_value))
+    if constexpr (G::heuristic_vertex_dependency::value)
     {
-      unsigned int dependent_v = graph.getHeuristicDependentVertex(new_elem.v);
-      waiting_lists[dependent_v].push_back(new_elem);
+      if (std::isinf(new_elem.h_value))
+      {
+        unsigned int dependent_v = graph.getHeuristicDependentVertex(new_elem.v);
+        waiting_lists[dependent_v].push_back(new_elem);
+      }
+      else
+      {
+        pq.push(new_elem);
+      }
     }
     else
     {
-      pq.push(new_elem);
+      // TODO this function is generally ugly as it is clearly a specialization for FoldedMultiGraspRoadmapGraph and
+      // probably nothing else
+      throw std::logic_error("Support for graphs with non-stationary heuristic without vertex dependency is not "
+                             "implemented for LWA*");
     }
   }
 }
@@ -105,7 +115,7 @@ void addToPQ(G& graph, PQ& pq, WaitingListsMap& waiting_lists, const PQElement& 
 template <typename G, typename PQ>
 void flushWaitingList(G& graph, PQ& pq, WaitingListsMap& waiting_lists, unsigned int v)
 {
-  static_assert(not G::heuristic_stationary::value);
+  static_assert(not G::heuristic_stationary::value and G::heuristic_vertex_dependency::value);
   auto iter = waiting_lists.find(v);
   if (iter != waiting_lists.end())
   {
@@ -173,11 +183,14 @@ void lwaStarSearch(G& graph, SearchResult& result)
       vertex_data.at(current_el.v).closed = true;
       vertex_data.at(current_el.v).p = current_el.p;
       vertex_data.at(current_el.v).g = current_el.g_value;
-      // register minimal cost
-      graph.registerMinimalCost(current_el.v, current_el.g_value);
       if constexpr (not G::heuristic_stationary::value)
       {  // add dependent PQElements to PQ in case we have a non-stationary heuristic type
-        flushWaitingList(graph, pq, waiting_lists, current_el.v);
+        // register minimal cost
+        graph.registerMinimalCost(current_el.v, current_el.g_value);
+        if constexpr (G::heuristic_vertex_dependency::value)
+        {
+          flushWaitingList(graph, pq, waiting_lists, current_el.v);
+        }
       }
       if (graph.isGoal(current_el.v))
       {  // is it a goal?

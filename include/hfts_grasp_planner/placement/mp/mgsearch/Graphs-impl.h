@@ -403,12 +403,6 @@ double MultiGraspRoadmapGraph<cost_checking_type>::heuristic(unsigned int v) con
 }
 
 template <CostCheckingType cost_checking_type>
-void MultiGraspRoadmapGraph<cost_checking_type>::registerMinimalCost(unsigned int v, double cost)
-{
-  // no-op
-}
-
-template <CostCheckingType cost_checking_type>
 double MultiGraspRoadmapGraph<cost_checking_type>::getEdgeCostWithGrasp(unsigned int v1, unsigned int v2)
 {
 #ifdef ENABLE_GRAPH_PROFILING
@@ -880,6 +874,13 @@ template <BackwardsHeuristicType htype>
 void FoldedMultiGraspRoadmapGraph<htype>::registerMinimalCost(unsigned int v, double cost)
 {
   _registered_costs[v] = cost;
+}
+
+template <BackwardsHeuristicType htype>
+bool FoldedMultiGraspRoadmapGraph<htype>::isHeuristicValid(unsigned int v) const
+{
+  return _vertex_info.at(v).layer_id == 0 or
+         _registered_costs.find(getVertexId(_vertex_info.at(v).roadmap_id, 0)) != _registered_costs.end();
 }
 
 template <BackwardsHeuristicType htype>

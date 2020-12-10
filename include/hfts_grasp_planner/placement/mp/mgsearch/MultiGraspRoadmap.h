@@ -417,7 +417,7 @@ public:
    * Remove goals in the given range [begin, end).
    * This range may refer to goals from a different MultiGraspGoalSet.
    */
-  void removeGoals(GoalIterator begin, GoalIterator end);
+  void removeGoals(const GoalIterator& begin, const GoalIterator& end);
 
   /**
    *  Return whether the given node is a goal under the given grasp.
@@ -547,16 +547,17 @@ public:
    * @param end: ForwardIterator with type(*end) MultiGraspMP::Goal, end of the range
    */
   template <class GoalIter>
-  void removeGoals(GoalIter& from, const GoalIter& end)
+  void removeGoals(const GoalIter& from, const GoalIter& end)
   {
-    while (from != end)
+    GoalIter iter(from);
+    while (iter != end)
     {
-      auto [dist, nearest_goal] = nearestGoal(from->config);
-      if (nearest_goal.id == *from)
+      auto [dist, nearest_goal] = nearestGoal(iter->config);
+      if (nearest_goal.id == iter->id)
       {
-        _goals.remove(*from);
+        _goals.remove(*iter);
       }
-      ++from;
+      ++iter;
     }
   }
 

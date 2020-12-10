@@ -1,5 +1,6 @@
 #include <hfts_grasp_planner/placement/mp/mgsearch/LazyGraph.h>
 
+#if 0
 /*********************** LazyMultiGraspRoadmapGrasph::NeightborIterator ************************/
 LazyMultiGraspRoadmapGraph::NeighborIterator::NeighborIterator(
     const LazyMultiGraspRoadmapGraph::NeighborIterator& other)
@@ -744,3 +745,4 @@ std::string LazyMultiGraspRoadmapGraph::getStringRepresentation(unsigned int gid
   }
   return std::to_string(gid);
 }
+#endif

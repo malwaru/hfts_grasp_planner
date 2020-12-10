@@ -187,6 +187,15 @@ public:
       PQElement current_el(_pq.top());
       // get vertex data
       VertexData& u_data = getVertexData(current_el.v);
+      if constexpr (not G::heuristic_stationary::value)
+      {  // check whether the heuristic value is still correct, else add it back on pq
+        if (not _graph.isHeuristicValid(u_data.v))
+        {
+          u_data.h = _graph.heuristic(u_data.v);
+          updateVertexKey(u_data);
+          continue;
+        }
+      }
       // resolve inconsistency different depending on edge evaluation type ee_type
       innerLoopImplementation(inner_loop_type, u_data);
     }
@@ -227,7 +236,7 @@ protected:
     if (not _graph.isGoal(v_data.v) or v_data.rhs > v_data.g or std::isinf(v_data.rhs))
       return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
     auto parent_data = getVertexData(v_data.p);
-    if (parent_data.g != parent_data.rhs || std::isinf(parent_data.g))
+    if (parent_data.in_pq || std::isinf(parent_data.g))
       return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
     if constexpr (ee_type == LazyWeighted)
     {
@@ -489,6 +498,11 @@ protected:
       assert(_pq.top().v == v_data.v);
       _pq.pop();
       v_data.in_pq = false;
+      if constexpr (not G::heuristic_stationary::value)
+      {
+        if (not std::isinf(v_data.g))
+          _graph.registerMinimalCost(v_data.v, v_data.g);
+      }
     }
     // update goal key in case we just invalidated the goal responsible for _goal_key.top()
     if (v_data.v == _result.goal_node)

@@ -95,14 +95,35 @@ public:
   // heuristic needs to be connected to the graph anyways.
   double heuristic(unsigned int v) const;
 
+  // A flag whether the heuristic is stationary
+  typedef std::bool_constant<true> heuristic_stationary;
+
+  /** Additional interface if heuristic is not stationary **/
+
   /**
-   * Inform the heuristic about the minimal cost to reach v from the start node.
+   * Query whether the last computed heuristic value for v is still valid.
+   * @param v: the vertex id
+   * @return true iff heuristic(v) would return the same value as the last time heuristic(v) has been called if ever.
+   */
+  bool isHeuristicValid(unsigned int v) const;
+
+  /**
+   * Inform the graph about the minimal cost to reach v from the start node.
    * This information may be used to improve the heuristic.
    */
   void registerMinimalCost(unsigned int v, double cost);
 
-  // A flag whether the heuristic is stationary
-  typedef std::bool_constant<true> heuristic_stationary;
+  // An additional flag indicating that some vertices' heuristic can depend on other vertices being visited
+  typedef std::bool_constant<true> heuristic_vertex_dependency;
+
+  /** In case there is a heuristic dependency between vertices, the following additional interface needs to be
+   * implemented **/
+  /**
+   * Return the id of the vertex v0 that needs to be closed so that v has a valid heuristic value.
+   * @param v: vertex id
+   * @return the node v's heuristic value depends on
+   */
+  unsigned int getHeuristicDependentVertex(unsigned int v) const;
 };
 
 class VertexExpansionLogger
@@ -180,8 +201,6 @@ public:
   bool isGoal(unsigned int v) const;
   double getGoalCost(unsigned int v) const;
   double heuristic(unsigned int v) const;
-  // no-op
-  void registerMinimalCost(unsigned int v, double cost);
   typedef std::bool_constant<true> heuristic_stationary;
 
   std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;
@@ -307,8 +326,6 @@ public:
   bool isGoal(unsigned int v) const;
   double getGoalCost(unsigned int v) const;
   double heuristic(unsigned int v) const;
-  // no-op
-  void registerMinimalCost(unsigned int v, double cost);
   typedef std::bool_constant<true> heuristic_stationary;
   // additional functions to evaluate grasp-specific costs in case cost_checking_type is not WithGrasp
   double getEdgeCostWithGrasp(unsigned int v1, unsigned int v2);
@@ -452,9 +469,11 @@ public:
 
   // cost aware interface
   void registerMinimalCost(unsigned int v, double cost);
+  bool isHeuristicValid(unsigned int v) const;
   typedef std::is_same<std::integral_constant<BackwardsHeuristicType, htype>,
                        std::integral_constant<BackwardsHeuristicType, BackwardsHeuristicType::LowerBound>>
       heuristic_stationary;
+  typedef std::bool_constant<true> heuristic_vertex_dependency;
   // return the id of the vertex v0 that needs to be closed so that v has a valid heuristic value
   unsigned int getHeuristicDependentVertex(unsigned int v) const;
 

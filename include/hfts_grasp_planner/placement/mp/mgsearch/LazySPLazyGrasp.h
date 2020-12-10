@@ -1,3 +1,4 @@
+#pragma once
 #include <hfts_grasp_planner/placement/mp/mgsearch/LazySP.h>
 #include <hfts_grasp_planner/placement/mp/mgsearch/Graphs.h>
 

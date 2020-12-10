@@ -6,6 +6,15 @@ std::string MGGraphSearchMP::getName(GraphType gtype)
 {
   switch (gtype)
   {
+    case GraphType::LazyGrownMultiGraspGraph: {
+      return "LazyGrownMultiGraspGraph";
+    }
+    case GraphType::LazyGrownLazyWeightedMultiGraspGraph: {
+      return "LazyGrownLazyWeightedMultiGraspGraph";
+    }
+    case GraphType::LazyGrownLazyEdgeWeightedMultiGraspGraph: {
+      return "LazyGrownLazyEdgeWeightedMultiGraspGraph";
+    }
     case GraphType::FoldedMultiGraspGraphDynamic: {
       return "FoldedMultiGraspGraphDynamic";
     }
@@ -104,6 +113,19 @@ MGGraphSearchMP::AlgorithmType MGGraphSearchMP::getAlgorithmType(const std::stri
   throw std::runtime_error("Invalid algorithm type " + name);
 }
 
+MGGraphSearchMP::EdgeSelectorType MGGraphSearchMP::getEdgeSelectorType(const std::string& name)
+{
+  for (unsigned int enum_id = 0; enum_id < NUM_EDGE_SELECTOR_TYPES; ++enum_id)
+  {
+    std::string original_name = getName(static_cast<EdgeSelectorType>(enum_id));
+    if (name == original_name or name == strToLower(original_name))
+    {
+      return static_cast<EdgeSelectorType>(enum_id);
+    }
+  }
+  throw std::runtime_error("Invalid algorithm type " + name);
+}
+
 MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Config& start_config,
                                  const Parameters& params)
   : _params(params), _state_space(state_space)
@@ -118,6 +140,26 @@ MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Conf
 }
 
 MGGraphSearchMP::~MGGraphSearchMP() = default;
+
+// convenience function to call lazySP with different edge selectors
+template <typename GraphType, typename SearchAlgorithmType>
+void lazySPLazyLayered(GraphType& graph, const MGGraphSearchMP::Parameters& params, SearchResult& sr)
+{
+  switch (params.edge_selector_type)
+  {
+    case MGGraphSearchMP::EdgeSelectorType::FirstUnknown: {
+      lazysp::lazySPLazyLayered<GraphType, lazysp::FirstUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
+      break;
+    }
+    case MGGraphSearchMP::EdgeSelectorType::LastUnknown: {
+      lazysp::lazySPLazyLayered<GraphType, lazysp::LastUnknownEdgeSelector, SearchAlgorithmType>(graph, sr);
+      break;
+    }
+    default: {
+      throw std::logic_error("Unknown edge selector type selected");
+    }
+  }
+}
 
 bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
 {
@@ -364,6 +406,124 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       if (sr.solved)
       {
         extractSolution<MultiGraspRoadmapGraph<CostCheckingType::EdgeWithoutGrasp>>(sr, sol, graph);
+      }
+      break;
+    }
+    case GraphType::LazyGrownMultiGraspGraph: {
+      typedef LazyLayeredMultiGraspRoadmapGraph<CostCheckingType::WithGrasp> GraphType;
+      LazyLayeredMultiGraspRoadmapGraph<CostCheckingType::WithGrasp> graph(_roadmap, _goal_set, cost_parameters,
+                                                                           grasp_ids, start_id);
+      SearchResult sr;
+      switch (_params.algo_type)
+      {
+        case AlgorithmType::LazySP_LWLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy-weighted LPA* on lazy-grown multi-grasp graph with explicit "
+                       "grasp "
+                       "check");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::LazyWeighted>
+              SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy LPA* on lazy-grown multi-grasp graph with explicit grasp "
+                       "check");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::Lazy> SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LPAstar: {
+          RAVELOG_INFO("Planning with LazySP using LPA* on lazy-grown multi-grasp graph with explicit grasp "
+                       "check");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::Explicit> SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        default: {
+          RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) + " doesn't support LazyGrownMultiGraspGraph");
+        }
+      }
+      if (sr.solved)
+      {
+        extractSolution<CostCheckingType::WithGrasp>(sr, sol, graph);
+      }
+      break;
+    }
+    case GraphType::LazyGrownLazyWeightedMultiGraspGraph: {
+      typedef LazyLayeredMultiGraspRoadmapGraph<CostCheckingType::VertexEdgeWithoutGrasp> GraphType;
+      GraphType graph(_roadmap, _goal_set, cost_parameters, grasp_ids, start_id);
+      SearchResult sr;
+      switch (_params.algo_type)
+      {
+        case AlgorithmType::LazySP_LWLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy-weighted LPA* on lazy-grown multi-grasp graph with lazy grasp "
+                       "check");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::LazyWeighted>
+              SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy LPA* on lazy-grown multi-grasp graph with lazy grasp "
+                       "check");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::Lazy> SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LPAstar: {
+          RAVELOG_INFO("Planning with LazySP using LPA* on lazy-grown multi-grasp graph with lazy grasp "
+                       "check");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::Explicit> SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        default: {
+          RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) +
+                        " doesn't support LazyGrownMultiGraspGraph with lazy grasp checking");
+        }
+      }
+      if (sr.solved)
+      {
+        extractSolution<CostCheckingType::VertexEdgeWithoutGrasp>(sr, sol, graph);
+      }
+      break;
+    }
+    case GraphType::LazyGrownLazyEdgeWeightedMultiGraspGraph: {
+      typedef LazyLayeredMultiGraspRoadmapGraph<CostCheckingType::EdgeWithoutGrasp> GraphType;
+      GraphType graph(_roadmap, _goal_set, cost_parameters, grasp_ids, start_id);
+      SearchResult sr;
+      switch (_params.algo_type)
+      {
+        case AlgorithmType::LazySP_LWLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy-weighted LPA* on lazy-grown multi-grasp graph with lazy grasp "
+                       "check for edges");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::LazyWeighted>
+              SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LLPAstar: {
+          RAVELOG_INFO("Planning with LazySP using lazy LPA* on lazy-grown multi-grasp graph with lazy grasp "
+                       "check for edges");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::Lazy> SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        case AlgorithmType::LazySP_LPAstar: {
+          RAVELOG_INFO("Planning with LazySP using LPA* on lazy-grown multi-grasp graph with lazy grasp "
+                       "check for edges");
+          typedef lpastar::LPAStarAlgorithm<GraphType, lpastar::EdgeCostEvaluationType::Explicit> SearchAlgorithmType;
+          lazySPLazyLayered<GraphType, SearchAlgorithmType>(graph, _params, sr);
+          break;
+        }
+        default: {
+          RAVELOG_ERROR("Algorithm type " + getName(_params.algo_type) +
+                        " doesn't support LazyGrownMultiGraspGraph with lazy grasp checking");
+        }
+      }
+      if (sr.solved)
+      {
+        extractSolution<CostCheckingType::EdgeWithoutGrasp>(sr, sol, graph);
       }
       break;
     }

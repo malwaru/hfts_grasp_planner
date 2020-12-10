@@ -239,11 +239,6 @@ double SingleGraspRoadmapGraph::heuristic(unsigned int v) const
   return _cost_to_go.costToGo(node->config);
 }
 
-void SingleGraspRoadmapGraph::registerMinimalCost(unsigned int v, double cost)
-{
-  // no-op
-}
-
 std::pair<unsigned int, unsigned int> SingleGraspRoadmapGraph::getGraspRoadmapId(unsigned int vid) const
 {
   return {vid, _grasp_id};
