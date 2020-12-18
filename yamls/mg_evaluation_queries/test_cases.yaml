@@ -1,13 +1,40 @@
-- name: Standard2DScene
-  domain: 2d
-  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/2d/cspaces/arrays/
-  num_grasps: 2
-  lambda: 0.2
-  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/2d_scene_5_goals.yaml
-- name: YumiTestScene
+# - name: Standard2DScene
+#   domain: 2d
+#   scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/2d/cspaces/arrays/
+#   num_grasps: 2
+#   lambda: 0.2
+#   configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/2d_scene_5_goals.yaml
+# - name: Bugtrap2DScene
+#   domain: 2d
+#   scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/data/2d/cspaces/c_shaped/
+#   num_grasps: 4
+#   lambda: 0.2
+#   configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/2d_c_shaped_scene_5_goals.yaml
+- name: YumiTestScene6grasps
   domain: placing
   scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/environments/cabinet_high_clutter.xml
   object_xml: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/objects/expo/expo.kinbody.xml
   num_grasps: 6
-  lambda: 1.0
+  lambda: 10.0
   configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/rpl_shelf_100_goals.yaml
+- name: YumiTestScene20grasps
+  domain: placing
+  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/environments/cabinet_high_clutter.xml
+  object_xml: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/objects/expo/expo.kinbody.xml
+  num_grasps: 20
+  lambda: 10.0
+  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/rpl_shelf_20_grasps.yaml
+- name: YumiTestScene158grasps
+  domain: placing
+  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/environments/cabinet_high_clutter.xml
+  object_xml: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/objects/expo/expo.kinbody.xml
+  num_grasps: 158
+  lambda: 10.0
+  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/rpl_shelf_200_goals.yaml
+- name: YumiTestScene422grasps
+  domain: placing
+  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/environments/cabinet_high_clutter.xml
+  object_xml: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/objects/expo/expo.kinbody.xml
+  num_grasps: 422
+  lambda: 10.0
+  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/rpl_shelf_1000_goals_wp.yaml

@@ -50,4 +50,4 @@ parameters:
   sampler_type: mcts_sampler  # random, random_proj, random_afr, conservative_random, optimistic_random
   motion_planner: real
   proj_type: None
-  grasp_selector_type: cache_hierarchy  # naive, cache_global, cache_hierarchy, bandit, dummy
+  grasp_selector_type: naive  # naive, cache_global, cache_hierarchy, bandit, dummy
