@@ -18,6 +18,8 @@ public:
    * The numpy array with name 0.npy is considered to be the base case, i.e. the state space of
    * only the robot without any grasp. The remaining files represent the state space of the robot
    * with grasp <id> - 1.
+   * Each image is expected to store state-based costs, where a state should have infinite cost if it is
+   * unreachable and otherwise a finite cost >= 1.
    */
   ImageStateSpace(const std::experimental::filesystem::path& root_path);
   ~ImageStateSpace();

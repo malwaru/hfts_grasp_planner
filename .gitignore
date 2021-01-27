@@ -110,3 +110,5 @@ models/objects/crayola/hfts.npy
 models/objects/crayola/hftsParam.npy
 models/objects/crayola/objCOM.npy
 models/objects/crayola/objectModel_rot.ply
+
+data/2d/cspaces/*

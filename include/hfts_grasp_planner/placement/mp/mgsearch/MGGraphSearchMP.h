@@ -13,6 +13,87 @@ namespace mp
 {
 namespace mgsearch
 {
+/**
+ * Return the true edge cost from vertex v1 to v2 on graph g.
+ */
+template <typename Graph>
+double getTrueEdgeCost(Graph& g, unsigned int v1, unsigned int v2)
+{
+  return g.getEdgeCost(v1, v2, false);
+}
+
+/***
+ * Specialization of getTrueEdgeCost for lazy graph.
+ */
+template <CostCheckingType CType>
+double getTrueEdgeCost(LazyLayeredMultiGraspRoadmapGraph<CType>& g, unsigned int v1, unsigned int v2)
+{
+  auto [rid, gid] = g.getGraspRoadmapId(v2);
+  return g.getGraspSpecificEdgeCost(v1, v2, gid);
+}
+
+/**
+ * Verify that the given result is valid and its costs are correct.
+ * If the result does not represent a solution (sr.solved = false), true is returned.
+ * @param g - the graph
+ * @param sr - the search result to evaluate
+ * @return true if sr.solved is false or sr contains a correct solution, else false
+ */
+template <typename Graph>
+bool verifyResult(Graph& g, const SearchResult& sr)
+{
+  if (not sr.solved)
+  {
+    RAVELOG_DEBUG("Search result trivially valid as it does not contain a solution.");
+    return true;
+  }
+  if (sr.path.empty() || sr.path.size() == 1)
+  {
+    RAVELOG_DEBUG("Search result invalid as it does not contain a path.");
+    return false;
+  }
+  if (sr.path.front() != g.getStartNode())
+  {
+    RAVELOG_DEBUG("Search result invalid because path does not begin with start node.");
+    return false;
+  }
+  if (sr.goal_node != sr.path.back())
+  {
+    RAVELOG_DEBUG("Search result invalid because goal node member differs from path end.");
+    return false;
+  }
+  if (not g.isGoal(sr.path.back()))
+  {
+    RAVELOG_DEBUG("Search result invalid because path does not end in goal node.");
+    return false;
+  }
+  // verify costs
+  double path_cost = 0.0;
+  unsigned int prev_v = sr.path.front();
+  for (size_t i = 1; i < sr.path.size(); ++i)
+  {
+    double ecost = getTrueEdgeCost<Graph>(g, prev_v, sr.path.at(i));
+    path_cost += ecost;
+    prev_v = sr.path.at(i);
+  }
+  if (std::abs(path_cost - sr.path_cost) > 1e-6)
+  {
+    RAVELOG_DEBUG_FORMAT("Search result invalid because path cost is incorrect. Result path cost: %1%, True path cost: "
+                         "%2%",
+                         sr.path_cost % path_cost);
+    return false;
+  }
+  double goal_cost = g.getGoalCost(sr.goal_node);
+  if (goal_cost != sr.goal_cost)
+  {
+    RAVELOG_DEBUG_FORMAT("Search result invalid because goal cost is incorrect. Result goal cost: %1%, True goal cost "
+                         "%1%",
+                         sr.goal_cost % goal_cost);
+    return false;
+  }
+  return true;
+}
+
 class MGGraphSearchMP
 {
 public:
@@ -239,6 +320,7 @@ private:
   mgsearch::Roadmap::NodeWeakPtr _start_node;
   mgsearch::MultiGraspGoalSetPtr _goal_set;
 };
+
 typedef std::shared_ptr<MGGraphSearchMP> MGGraphSearchMPPtr;
 typedef std::shared_ptr<const MGGraphSearchMP> MGGraphSearchMPConstPtr;
 }  // namespace mgsearch

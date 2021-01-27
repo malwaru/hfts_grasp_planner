@@ -95,7 +95,7 @@ bool ImageStateSpace::isValid(const Config& c) const
   assert(c.size() == 2);
   unsigned int i = (unsigned int)std::round(c[0]);
   unsigned int j = (unsigned int)std::round(c[1]);
-  return _images.at(0)->at(i, j) > 0.0;
+  return not std::isinf(_images.at(0)->at(i, j));
 }
 
 bool ImageStateSpace::isValid(const Config& c, unsigned int grasp_id, bool only_obj) const
@@ -104,7 +104,7 @@ bool ImageStateSpace::isValid(const Config& c, unsigned int grasp_id, bool only_
   assert(c.size() == 2);
   unsigned int i = (unsigned int)std::round(c[0]);
   unsigned int j = (unsigned int)std::round(c[1]);
-  return _images.at(grasp_id + 1)->at(i, j) > 0.0;
+  return not std::isinf(_images.at(grasp_id + 1)->at(i, j));
 }
 
 // state cost
@@ -114,14 +114,7 @@ double ImageStateSpace::cost(const Config& a) const
   assert(a.size() == 2);
   unsigned int i = (unsigned int)std::round(a[0]);
   unsigned int j = (unsigned int)std::round(a[1]);
-  double val = _images.at(0)->at(i, j);
-  if (val <= 0.0)
-  {
-    return std::numeric_limits<float>::infinity();
-  }
-  return 1.0;  // TODO some formula that is 1.0 for distance above some safety margin and increases as we get closer to
-               // 0.0
-  return val;  // TODO reduce as the distance increases?
+  return _images.at(0)->at(i, j);
 }
 
 double ImageStateSpace::cost(const Config& a, unsigned int grasp_id) const
@@ -130,14 +123,7 @@ double ImageStateSpace::cost(const Config& a, unsigned int grasp_id) const
   assert(a.size() == 2);
   unsigned int i = (unsigned int)std::round(a[0]);
   unsigned int j = (unsigned int)std::round(a[1]);
-  double val = _images.at(grasp_id + 1)->at(i, j);
-  if (val <= 0.0)
-  {
-    return std::numeric_limits<float>::infinity();
-  }
-  return 1.0;  // TODO some formula that is 1.0 for distance above some safety margin and increases as we get closer to
-               // 0.0
-  return val;  // TODO reduce as the distance increases?
+  return _images.at(grasp_id + 1)->at(i, j);
 }
 
 // distance
@@ -145,7 +131,6 @@ double ImageStateSpace::distance(const Config& a, const Config& b) const
 {
   assert(a.size() == 2);
   assert(b.size() == 2);
-  // return std::abs((a[0] - b[0])) + std::abs((a[1] - b[1]));
   return std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]));
 }
 

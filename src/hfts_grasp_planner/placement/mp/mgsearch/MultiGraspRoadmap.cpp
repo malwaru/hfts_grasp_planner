@@ -36,20 +36,21 @@ double IntegralEdgeCostComputer::integrateCosts(const Config& a, const Config& b
   {
     return 0.0;
   }
-  delta /= norm;
   // iterate over path
   double integral_cost = 0.0;
-  unsigned int num_steps = std::ceil(norm / _step_size);
-  double progress = 0.0;
-  for (size_t t = 0; t < num_steps; ++t)
+  unsigned int num_intervals = std::ceil(norm / _step_size);
+  // to ensure this function is symmetric in a and b, use an even step size
+  double interval_size = norm / num_intervals;
+  delta *= interval_size / norm;
+  qvec = avec + 0.5 * delta;
+  for (size_t t = 0; t < num_intervals; ++t)
   {
-    qvec = progress * delta + avec;
-    double step_size = std::min(_step_size, norm - progress);
-    progress += step_size;
+    // qvec = (t + 0.5) * step_size * delta + avec;
     double dc = cost_fn(q);  // qvec is a view on q's data
     if (std::isinf(dc))
       return INFINITY;
-    integral_cost += dc * step_size;
+    integral_cost += dc * interval_size;
+    qvec += delta;
   }
   return integral_cost;
 }

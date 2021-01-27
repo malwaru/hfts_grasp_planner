@@ -26,6 +26,7 @@ int main(int argc, char** argv)
 {
   po::options_description desc("Test multi-grasp motion planner on 2D image state spaces.");
   bool print_profile = false;
+  bool show_combinations = false;
   // clang-format off
     desc.add_options()
         ("help", "produce help message")
@@ -41,7 +42,9 @@ int main(int argc, char** argv)
         ("evaluation_log_file", po::value<std::string>()->default_value("/tmp/evaluation_log"), "Filename to log roadmap evaluations to")
         ("stats_file", po::value<std::string>()->default_value("/tmp/stats_log"), "Filename to log runtime statistics to")
         ("results_file", po::value<std::string>()->default_value("/tmp/results_log"), "Filename to log planning results to")
-        ("print_profile", po::bool_switch(&print_profile), "If set, print profiling information");
+        ("batch_size", po::value<int>()->default_value(1000), "Number of roadmap samples per densification step")
+        ("print_profile", po::bool_switch(&print_profile), "If set, print profiling information")
+        ("show_combinations", po::bool_switch(&show_combinations), "If set, show valid combinations of algorithm and graph");
   // clang-format on
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -59,10 +62,21 @@ int main(int argc, char** argv)
     printHelp(desc, boost::diagnostic_information(err));
     return -1;
   }
+  if (show_combinations)
+  {
+    std::cout << "Valid algorithm-graph combinations:" << std::endl;
+    for (auto valid_combi : mgs::MGGraphSearchMP::VALID_ALGORITHM_GRAPH_COMBINATIONS)
+    {
+      std::cout << mgs::MGGraphSearchMP::getName(valid_combi.first) << ", "
+                << mgs::MGGraphSearchMP::getName(valid_combi.second) << std::endl;
+    }
+    return 0;
+  }
   // load start and goal either from configuration file or from command line arguments
   pmp::Config start;
   std::vector<pmp::MultiGraspMP::Goal> goals;
-  if (vm.count("configs_file"))
+  std::string config_file_path = vm.at("configs_file").as<std::string>();
+  if (not config_file_path.empty())
   {  // read start and goals from yaml
     YAML::Node config_file = YAML::LoadFile(vm.at("configs_file").as<std::string>());
     if (!config_file["start_config"] or not config_file["start_config"].IsSequence() or
@@ -146,6 +160,7 @@ int main(int argc, char** argv)
   params.lambda = vm["lambda"].as<double>();
   params.roadmap_log_path = vm["roadmap_log_file"].as<std::string>();
   params.logfile_path = vm["evaluation_log_file"].as<std::string>();
+  params.batchsize = (unsigned int)vm["batch_size"].as<int>();
   // create search and add goals
   pmp::ImgGraphSearch imgs(image_file_path, start, params);
   for (auto& goal : goals)

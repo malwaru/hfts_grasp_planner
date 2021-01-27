@@ -225,6 +225,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
         // pick the best solution
         if (sr.solved && sr.cost() < sol.cost)
         {
+          // verify result
+          if (!verifyResult(graph, sr))
+          {
+            RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+            return false;
+          }
           extractSolution<SingleGraspRoadmapGraph>(sr, sol, graph);
         }
       }
@@ -270,6 +276,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<MultiGraspRoadmapGraph<>>(sr, sol, graph);
       }
       break;
@@ -293,6 +305,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<BackwardsHeuristicType::LowerBound>(sr, sol, graph);
       }
       break;
@@ -315,6 +333,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<BackwardsHeuristicType::SearchAwareBestKnownDistance>(sr, sol, graph);
       }
       break;
@@ -360,6 +384,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<MultiGraspRoadmapGraph<CostCheckingType::VertexEdgeWithoutGrasp>>(sr, sol, graph);
       }
       break;
@@ -405,6 +435,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<MultiGraspRoadmapGraph<CostCheckingType::EdgeWithoutGrasp>>(sr, sol, graph);
       }
       break;
@@ -445,6 +481,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<CostCheckingType::WithGrasp>(sr, sol, graph);
       }
       break;
@@ -484,6 +526,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<CostCheckingType::VertexEdgeWithoutGrasp>(sr, sol, graph);
       }
       break;
@@ -523,6 +571,12 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
       }
       if (sr.solved)
       {
+        // verify result
+        if (!verifyResult(graph, sr))
+        {
+          RAVELOG_ERROR("Search result invalid. See DEBUG printouts for more information.");
+          return false;
+        }
         extractSolution<CostCheckingType::EdgeWithoutGrasp>(sr, sol, graph);
       }
       break;

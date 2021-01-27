@@ -25,8 +25,8 @@ class MGRoadmapVisualizer(HasTraits):
     num_extensions_plot = Instance(PipelineBase)
 
     view = traitsui.api.View(
-        traitsui.api.Item('scene', editor=SceneEditor(scene_class=MayaviScene),
-                          height=400, width=400, show_label=False),
+        traitsui.api.Item('scene', editor=SceneEditor(scene_class=MayaviScene), height=400, width=400,
+                          show_label=False),
         traitsui.api.Item('_'),
         # TODO according to the documentation it should be possible to provide an editor here: editor=RangeEditor(mode='xslider'), it doesn't work though
         traitsui.api.Item('log_slide_range', label='LogStep'),
@@ -95,6 +95,7 @@ class MGRoadmapVisualizer(HasTraits):
                 def parse_vertex(s):
                     values = s.split(',')
                     return map(float, values[2:])
+
                 self._vertices = np.array(map(parse_vertex, file_content))
 
     def _synch_logs(self):
@@ -151,22 +152,32 @@ class MGRoadmapVisualizer(HasTraits):
         for fname in os.listdir(self._grasp_folder):
             gid = int(os.path.basename(fname).split('.')[0])
             image_data = np.load(self._grasp_folder + '/' + fname)
-            self._grasp_images[gid] = np.clip(image_data, 0.0, np.max(image_data))
+            invalid_vals = np.isinf(image_data)
+            valid_vals = np.logical_not(invalid_vals)
+            image_data[invalid_vals] = np.nan  # np.max(image_data[valid_vals])
+            self._grasp_images[gid] = image_data
+            # np.clip(image_data, 0.0, np.max(image_data))
 
     def _create_base_plot(self):
         # create image views
         for (gid, grasp_image) in self._grasp_images.iteritems():
             grasp_z = float(gid * self.grasp_distance)
             # draw grasp cost space
-            img_actor = self.scene.mlab.imshow(grasp_image, extent=[0, grasp_image.shape[0], 0,
-                                                                    grasp_image.shape[1], grasp_z, grasp_z],
-                                               interpolate=False)
+            img_actor = self.scene.mlab.imshow(
+                grasp_image,
+                extent=[0, grasp_image.shape[0], 0, grasp_image.shape[1], grasp_z, grasp_z],
+                interpolate=False)
+            img_actor.module_manager.scalar_lut_manager.lut.nan_color = 0.2, 0.2, 0.2, 1
+            img_actor.update_pipeline()
+            # colormap=u'YlOrRd')
             # img_actor.actor.position[2] = grasp_z
             self._img_actors[gid] = img_actor
             # render roadmap for this grasp
-            self.rm_vertices_plot = self.scene.mlab.plot3d(self._vertices[:, 1], self._vertices[:, 0],
+            self.rm_vertices_plot = self.scene.mlab.plot3d(self._vertices[:, 1],
+                                                           self._vertices[:, 0],
                                                            np.repeat(grasp_z + 0.1, self._vertices.shape[0]),
-                                                           color=(0, 0, 0), representation='points')
+                                                           color=(0, 0, 0),
+                                                           representation='points')
 
     @on_trait_change('log_slide_range,scene.activated')
     def update_plot(self):
@@ -215,8 +226,12 @@ class MGRoadmapVisualizer(HasTraits):
         # render valid vertices
         if len(nxs[1]):
             if self.valid_checked_vertices_plot is None:
-                self.valid_checked_vertices_plot = self.scene.mlab.points3d(
-                    nxs[1], nys[1], nzs[1], color=(0, 1, 0), scale_factor=10.0, reset_zoom=False)
+                self.valid_checked_vertices_plot = self.scene.mlab.points3d(nxs[1],
+                                                                            nys[1],
+                                                                            nzs[1],
+                                                                            color=(0, 1, 0),
+                                                                            scale_factor=10.0,
+                                                                            reset_zoom=False)
             else:
                 self.valid_checked_vertices_plot.actor.visible = True
                 self.valid_checked_vertices_plot.mlab_source.reset(x=nxs[1], y=nys[1], z=nzs[1])
@@ -225,8 +240,12 @@ class MGRoadmapVisualizer(HasTraits):
         # render invalid vertices
         if len(nxs[0]):
             if self.invalid_checked_vertices_plot is None:
-                self.invalid_checked_vertices_plot = self.scene.mlab.points3d(
-                    nxs[0], nys[0], nzs[0], color=(1, 0, 0), scale_factor=10.0, reset_zoom=False)
+                self.invalid_checked_vertices_plot = self.scene.mlab.points3d(nxs[0],
+                                                                              nys[0],
+                                                                              nzs[0],
+                                                                              color=(1, 0, 0),
+                                                                              scale_factor=10.0,
+                                                                              reset_zoom=False)
             else:
                 self.invalid_checked_vertices_plot.actor.visible = True
                 self.invalid_checked_vertices_plot.mlab_source.reset(x=nxs[0], y=nys[0], z=nzs[0])
@@ -235,23 +254,47 @@ class MGRoadmapVisualizer(HasTraits):
         # render valid edges
         if len(exs[1]):
             if self.valid_checked_edges_plot is None:
-                self.valid_checked_edges_plot = self.scene.mlab.quiver3d(
-                    exs[1], eys[1], ezs[1], us[1], vs[1], np.zeros_like(us[1]), scale_factor=1, mode='2ddash', color=(0, 0.4, 0), reset_zoom=False)
+                self.valid_checked_edges_plot = self.scene.mlab.quiver3d(exs[1],
+                                                                         eys[1],
+                                                                         ezs[1],
+                                                                         us[1],
+                                                                         vs[1],
+                                                                         np.zeros_like(us[1]),
+                                                                         scale_factor=1,
+                                                                         mode='2ddash',
+                                                                         color=(0, 0.4, 0),
+                                                                         reset_zoom=False)
             else:
                 self.valid_checked_edges_plot.actor.visible = True
-                self.valid_checked_edges_plot.mlab_source.reset(
-                    x=exs[1], y=eys[1], z=ezs[1], u=us[1], v=vs[1], w=np.zeros_like(us[1]))
+                self.valid_checked_edges_plot.mlab_source.reset(x=exs[1],
+                                                                y=eys[1],
+                                                                z=ezs[1],
+                                                                u=us[1],
+                                                                v=vs[1],
+                                                                w=np.zeros_like(us[1]))
         elif self.valid_checked_edges_plot is not None:
             self.valid_checked_edges_plot.actor.visible = False
         # render invalid edges
         if len(exs[0]):
             if self.invalid_checked_edges_plot is None:
-                self.invalid_checked_edges_plot = self.scene.mlab.quiver3d(
-                    exs[0], eys[0], ezs[0], us[0], vs[0], np.zeros_like(us[0]), scale_factor=1, mode='2ddash', color=(0.4, 0, 0), reset_zoom=False)
+                self.invalid_checked_edges_plot = self.scene.mlab.quiver3d(exs[0],
+                                                                           eys[0],
+                                                                           ezs[0],
+                                                                           us[0],
+                                                                           vs[0],
+                                                                           np.zeros_like(us[0]),
+                                                                           scale_factor=1,
+                                                                           mode='2ddash',
+                                                                           color=(0.4, 0, 0),
+                                                                           reset_zoom=False)
             else:
                 self.invalid_checked_edges_plot.actor.visible = True
-                self.invalid_checked_edges_plot.mlab_source.reset(
-                    x=exs[0], y=eys[0], z=ezs[0], u=us[0], v=vs[0], w=np.zeros_like(us[0]))
+                self.invalid_checked_edges_plot.mlab_source.reset(x=exs[0],
+                                                                  y=eys[0],
+                                                                  z=ezs[0],
+                                                                  u=us[0],
+                                                                  v=vs[0],
+                                                                  w=np.zeros_like(us[0]))
         elif self.invalid_checked_edges_plot is not None:
             self.invalid_checked_edges_plot.actor.visible = False
         # render number of expansions
@@ -264,30 +307,37 @@ class MGRoadmapVisualizer(HasTraits):
                 zs.append(layer_id * self.grasp_distance)
                 ss.append(num + 1)
             if self.num_extensions_plot is None:
-                self.num_extensions_plot = self.scene.mlab.points3d(
-                    xs, ys, zs, ss, mode="2dcircle", reset_zoom=False, scale_mode='none', scale_factor=15,
-                    vmin=0.0, vmax=self._max_num_visits)
+                self.num_extensions_plot = self.scene.mlab.points3d(xs,
+                                                                    ys,
+                                                                    zs,
+                                                                    ss,
+                                                                    mode="2dcircle",
+                                                                    reset_zoom=False,
+                                                                    scale_mode='none',
+                                                                    scale_factor=15,
+                                                                    vmin=0.0,
+                                                                    vmax=self._max_num_visits)
             else:
                 self.num_extensions_plot.actor.visible = True
                 self.num_extensions_plot.mlab_source.reset(x=xs, y=ys, z=zs, scalars=ss)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Visualize roadmap exploration for multi-grasp configuration spaces. ' +
-                                     'In case of visualization issues, try running with Qt4: 1. install python-qt4, 2. set environment variables ' +
-                                     'ETS_TOOLKIT=qt4; QT_API=pyqt')
-    parser.add_argument(
-        'grasp_costs', help='Path to a folder containing numpy arrays storing cost spaces for a 2d robot.' +
-        'The files in the folder should be named <id>.npy, where <id> is an integer grasp id.',
-        type=str)
-    parser.add_argument(
-        'roadmap_file', help='Path to a single file containing the roadmap to visualize.', type=str)
-    parser.add_argument(
-        'log_file', help='Path to a single file containing the evaluation logs to visualize.', type=str)
-    parser.add_argument(
-        '--max_num_visits', help='The maximal number of visits of a node used to normalize the color of the visit'
-        ' indicator.', type=int, default=100
-    )
+    parser = argparse.ArgumentParser(
+        description='Visualize roadmap exploration for multi-grasp configuration spaces. ' +
+        'In case of visualization issues, try running with Qt4: 1. install python-qt4, 2. set environment variables ' +
+        'ETS_TOOLKIT=qt4; QT_API=pyqt')
+    parser.add_argument('grasp_costs',
+                        help='Path to a folder containing numpy arrays storing cost spaces for a 2d robot.' +
+                        'The files in the folder should be named <id>.npy, where <id> is an integer grasp id.',
+                        type=str)
+    parser.add_argument('roadmap_file', help='Path to a single file containing the roadmap to visualize.', type=str)
+    parser.add_argument('log_file', help='Path to a single file containing the evaluation logs to visualize.', type=str)
+    parser.add_argument('--max_num_visits',
+                        help='The maximal number of visits of a node used to normalize the color of the visit'
+                        ' indicator.',
+                        type=int,
+                        default=100)
     args = parser.parse_args()
     viewer = MGRoadmapVisualizer(args.roadmap_file, args.grasp_costs, args.log_file, args.max_num_visits)
     viewer.configure_traits()
