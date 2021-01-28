@@ -178,6 +178,8 @@ bool MGGraphSearchMP::plan(MultiGraspMP::Solution& sol)
   // get start id
   assert(not _start_node.expired());
   unsigned int start_id = _start_node.lock()->uid;
+  // info printout
+  RAVELOG_INFO_FORMAT("Planning with parameters:\n %1%", _params.toString());
   // create the graph and plan
   switch (_params.graph_type)
   {

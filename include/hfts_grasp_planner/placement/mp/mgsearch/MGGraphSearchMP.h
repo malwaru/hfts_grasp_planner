@@ -156,7 +156,7 @@ public:
       std::stringstream ss;
       ss << "AlgorithmType=" << getName(algo_type) << " GraphType=" << getName(graph_type)
          << " EdgeSelectorType=" << getName(edge_selector_type) << " lambda=" << lambda << " batchsize=" << batchsize
-         << " roadmap_log_path" << roadmap_log_path << " logfile_path" << logfile_path;
+         << " roadmap_log_path=" << roadmap_log_path << " logfile_path=" << logfile_path;
 
       return ss.str();
     }

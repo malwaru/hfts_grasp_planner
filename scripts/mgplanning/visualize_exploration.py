@@ -6,6 +6,7 @@ import numpy as np
 from traits.api import Instance, Range, HasTraits, on_trait_change, Int, Property
 from mayavi.core.ui.api import MlabSceneModel, SceneEditor, MayaviScene
 from mayavi.core.api import PipelineBase
+import mayavi.mlab as mlab
 import traitsui.api
 import os.path
 import IPython
@@ -25,6 +26,18 @@ class MGRoadmapVisualizer(HasTraits):
     num_extensions_plot = Instance(PipelineBase)
     solution_plot = Instance(PipelineBase)
 
+    event_names = {
+        'EdgeValidity': ['EDGE_COST', 'EDGE_COST_GRASP'],
+        'VertexValidity': ['VAL_BASE', 'VAL_GRASP'],
+        'VertexExpansion': ['BASE_EXPANSION', 'EXPANSION'],
+        'Solution': ['SOLUTION_EDGE']
+    }
+
+    VERTEX_SIZE = 15.0
+    EDGE_WIDTH = 5.0
+    SOLUTION_EDGE_WIDTH = 15.0
+    SOLUTION_OFFSET = 1.0
+
     view = traitsui.api.View(
         traitsui.api.Item('scene', editor=SceneEditor(scene_class=MayaviScene), height=400, width=400,
                           show_label=False),
@@ -34,7 +47,7 @@ class MGRoadmapVisualizer(HasTraits):
         traitsui.api.Item('max_log_length', label='Max log steps', style='readonly'),
         resizable=True)
 
-    def __init__(self, roadmap_file, grasp_folder, log_file, max_num_visits, grasp_distance=400):
+    def __init__(self, roadmap_file, grasp_folder, log_file, max_num_visits, hide_list, grasp_distance=400):
         """
             Create a new MGRoadmapVisualizer.
 
@@ -48,6 +61,8 @@ class MGRoadmapVisualizer(HasTraits):
                 path to log file to read evaluations of roadmap states from
             max_num_visits : int
                 the maximal number of visits to expect for a node. This is used to normalize the color of the visit indicator.
+            hide_list : list of string
+                list of events to hide
         """
         super(MGRoadmapVisualizer, self).__init__()
         # stores positions of all roadmap vertices, shape: #vertices, 2
@@ -57,6 +72,7 @@ class MGRoadmapVisualizer(HasTraits):
         self._roadmap_filename = roadmap_file
         self._log_filename = log_file
         self._last_log_update = None  # last time the logfile was loaded
+        self._hide_list = hide_list
         # parsed logs: contains tuples ((checked_node_id, grasp_id, state), (checked_edge, grasp_id, state));
         # grasp_id is None if base was only checked; state = 1 if valid, 0 if invalid
         self._logs = []
@@ -100,6 +116,10 @@ class MGRoadmapVisualizer(HasTraits):
                 self._vertices = np.array(map(parse_vertex, file_content))
 
     def _synch_logs(self):
+        def filter_entry(log_line):
+            line_args = log_line.split(',')
+            return line_args[0] not in self._hide_list
+
         def parse_log_entry(log_line):
             line_args = log_line.split(',')
             event_type = line_args[0]
@@ -148,7 +168,7 @@ class MGRoadmapVisualizer(HasTraits):
             self._last_log_update = os.path.getmtime(self._log_filename)
             # reload log file
             with open(self._log_filename, 'r') as log_file:
-                self._logs = map(parse_log_entry, log_file.readlines())
+                self._logs = map(parse_log_entry, filter(filter_entry, log_file.readlines()))
             self.trait_set(max_log_length=len(self._logs))
 
     def _load_grasp_images(self):
@@ -190,6 +210,7 @@ class MGRoadmapVisualizer(HasTraits):
         """
             Issue an update of the visualization of the exploration state of the roadmap.
         """
+        # mlab.view(-90, 68.79285548404428, 3139.0443403849304, np.array([479.24520597, 500.59099056, 401.7819012]))
         self._synch_roadmap()
         self._synch_logs()
         if self.rm_vertices_plot is None or self._img_actors is None:
@@ -235,7 +256,7 @@ class MGRoadmapVisualizer(HasTraits):
                 gid = 0 if gid is None else gid + 1
                 solutions_edges[0].append(self._vertices[vid1, 1])
                 solutions_edges[1].append(self._vertices[vid1, 0])
-                solutions_edges[2].append(gid * self.grasp_distance + self.grasp_distance / 10.0)
+                solutions_edges[2].append(gid * self.grasp_distance + self.SOLUTION_OFFSET)
                 edge_dir = self._vertices[vid2] - self._vertices[vid1]
                 solutions_edges[3].append(edge_dir[1])
                 solutions_edges[4].append(edge_dir[0])
@@ -247,7 +268,7 @@ class MGRoadmapVisualizer(HasTraits):
                                                                             nys[1],
                                                                             nzs[1],
                                                                             color=(0, 1, 0),
-                                                                            scale_factor=10.0,
+                                                                            scale_factor=self.VERTEX_SIZE,
                                                                             reset_zoom=False)
             else:
                 self.valid_checked_vertices_plot.actor.visible = True
@@ -261,7 +282,7 @@ class MGRoadmapVisualizer(HasTraits):
                                                                               nys[0],
                                                                               nzs[0],
                                                                               color=(1, 0, 0),
-                                                                              scale_factor=10.0,
+                                                                              scale_factor=self.VERTEX_SIZE,
                                                                               reset_zoom=False)
             else:
                 self.invalid_checked_vertices_plot.actor.visible = True
@@ -278,6 +299,7 @@ class MGRoadmapVisualizer(HasTraits):
                                                                          vs[1],
                                                                          np.zeros_like(us[1]),
                                                                          scale_factor=1,
+                                                                         line_width=self.EDGE_WIDTH,
                                                                          mode='2ddash',
                                                                          color=(0, 0.4, 0),
                                                                          reset_zoom=False)
@@ -300,6 +322,7 @@ class MGRoadmapVisualizer(HasTraits):
                                                                            us[0],
                                                                            vs[0],
                                                                            np.zeros_like(us[0]),
+                                                                           line_width=self.EDGE_WIDTH,
                                                                            scale_factor=1,
                                                                            mode='2ddash',
                                                                            color=(0.4, 0, 0),
@@ -331,7 +354,7 @@ class MGRoadmapVisualizer(HasTraits):
                                                                     mode="2dcircle",
                                                                     reset_zoom=False,
                                                                     scale_mode='none',
-                                                                    scale_factor=15,
+                                                                    scale_factor=1.1 * self.VERTEX_SIZE,
                                                                     vmin=0.0,
                                                                     vmax=self._max_num_visits)
             else:
@@ -347,6 +370,7 @@ class MGRoadmapVisualizer(HasTraits):
                                                               solutions_edges[4],
                                                               np.zeros(len(solutions_edges[3])),
                                                               scale_factor=1,
+                                                              line_width=self.SOLUTION_EDGE_WIDTH,
                                                               mode='2ddash',
                                                               color=(0, 0, 0.5),
                                                               reset_zoom=False)
@@ -376,7 +400,18 @@ if __name__ == "__main__":
                         ' indicator.',
                         type=int,
                         default=100)
+    parser.add_argument(
+        '--hide',
+        help='Provide a list of events to hide from the visualization. Options are: VertexValidity, EdgeValidity,'
+        ' VertexExpansion, Solution',
+        type=str,
+        nargs='+')
     args = parser.parse_args()
-    viewer = MGRoadmapVisualizer(args.roadmap_file, args.grasp_costs, args.log_file, args.max_num_visits)
+    hide_list = []
+    if args.hide:
+        for hide_elem in args.hide:
+            hide_list.extend(MGRoadmapVisualizer.event_names[hide_elem])
+
+    viewer = MGRoadmapVisualizer(args.roadmap_file, args.grasp_costs, args.log_file, args.max_num_visits, hide_list)
     viewer.configure_traits()
     # IPython.embed()

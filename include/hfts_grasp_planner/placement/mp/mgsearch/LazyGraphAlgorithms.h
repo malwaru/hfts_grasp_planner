@@ -110,7 +110,7 @@ void lazySPLazyLayered(LazyLayeredMultiGraspRoadmapGraph<ctype>& graph, SearchAl
         }
       }
       // add additional new edges to edge changes
-      graph.getNewEdges(edge_changes, true);
+      graph.getHiddenEdgeChanges(edge_changes, true);
       algorithm.updateEdges(edge_changes);
       // update goal changes
       std::vector<unsigned int> goal_changes;

@@ -151,13 +151,15 @@ public:
   bool isGraspSpecificValidityKnown(unsigned int v, unsigned int gid) const;
 
   /**
-   * Return the new edges that were added due to grasp-specific edge cost computations, i.e. layer splits.
-   * @param edge_changes vector of edge changes <v1, v2, increase=false>
+   * Return edge changes that were made due to grasp-specific edge cost computations, i.e. layer splits.
+   * These are typically new edges to grasp-specific layers, but may also be an edge removal to the base layer if
+   * there is a grasp-specific layer for each grasp.
+   * @param edge_changes vector of edge changes <v1, v2, increase>
    * @param clear_cache - if true, clear the change cache so that next time this function is called only
-   *    new changes are returned
-   * @return true if there are any new edges
+   *    new edge changes are returned
+   * @return true if there are any new edge changes
    */
-  bool getNewEdges(std::vector<EdgeChange>& edge_changes, bool clear_cache);
+  bool getHiddenEdgeChanges(std::vector<EdgeChange>& edge_changes, bool clear_cache);
 
   /**
    * Return the ids of vertices for which goal costs have changed and may no longer be goals due to layer splits.
@@ -218,7 +220,7 @@ private:
   // store for base layer vertices which grasp was responsible for their last computed heuristic value
   mutable std::unordered_map<unsigned int, unsigned int> _grasp_for_heuristic_value;
   // edge change cache
-  std::vector<EdgeChange> _new_edges;
+  std::vector<EdgeChange> _hidden_edge_changes;
   // goal change cache
   std::vector<unsigned int> _goal_changes;
   // id helper
