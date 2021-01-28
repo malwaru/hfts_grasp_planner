@@ -23,6 +23,7 @@ class MGRoadmapVisualizer(HasTraits):
     valid_checked_edges_plot = Instance(PipelineBase)
     invalid_checked_edges_plot = Instance(PipelineBase)
     num_extensions_plot = Instance(PipelineBase)
+    solution_plot = Instance(PipelineBase)
 
     view = traitsui.api.View(
         traitsui.api.Item('scene', editor=SceneEditor(scene_class=MayaviScene), height=400, width=400,
@@ -106,36 +107,41 @@ class MGRoadmapVisualizer(HasTraits):
                 # base evaluation of a vertex
                 vid = int(line_args[1])
                 bvalid = bool(int(line_args[2]))
-                return ((vid, None, bvalid), (), ())
+                return ((vid, None, bvalid), (), (), ())
                 # print vid, bvalid
             elif (event_type == "VAL_GRASP"):
                 # evaluation of a vertex for a certain grasp
                 vid = int(line_args[1])
                 gid = int(line_args[2])
                 bvalid = bool(int(line_args[3]))
-                return ((vid, gid, bvalid), (), ())
+                return ((vid, gid, bvalid), (), (), ())
             elif (event_type == "EDGE_COST"):
                 # base evaluation of an edge
                 vid1 = int(line_args[1])
                 vid2 = int(line_args[2])
                 cost = float(line_args[3])
-                return ((), (vid1, vid2, None, cost), ())
+                return ((), (vid1, vid2, None, cost), (), ())
             elif (event_type == "EDGE_COST_GRASP"):
                 # evaluation of an edge for a certain grasp
                 vid1 = int(line_args[1])
                 vid2 = int(line_args[2])
                 gid = int(line_args[3])
                 cost = float(line_args[4])
-                return ((), (vid1, vid2, gid, cost), ())
+                return ((), (vid1, vid2, gid, cost), (), ())
             elif (event_type == "EXPANSION"):
                 # expanding a node (iterating over its neighbors)
                 vid = int(line_args[1])
                 gid = int(line_args[2])
-                return ((), (), (vid, gid))
+                return ((), (), (vid, gid), ())
             elif (event_type == "BASE_EXPANSION"):
                 # expanding a node (iterating over its neighbors)
                 vid = int(line_args[1])
-                return ((), (), (vid, None))
+                return ((), (), (vid, None), ())
+            elif (event_type == "SOLUTION_EDGE"):
+                vid1 = int(line_args[1])
+                vid2 = int(line_args[2])
+                gid = int(line_args[3])
+                return ((), (), (), (vid1, vid2, gid))
 
         # check if there are new logs
         if self._last_log_update != os.path.getmtime(self._log_filename):
@@ -195,10 +201,12 @@ class MGRoadmapVisualizer(HasTraits):
         nxs, nys, nzs = [[], []], [[], []], [[], []]
         # and checked edges (invalid valid)
         exs, eys, ezs, us, vs = [[], []], [[], []], [[], []], [[], []], [[], []]
+        # solution edges
+        solutions_edges = [[], [], [], [], []]  # xs, ys, zs, us, vs (u and v are directions)
         # map from (vid, layer_id) -> number of expansions
         num_expansions = {}
         for i in xrange(int(idx)):
-            node_check, edge_check, node_expansion = self._logs[i]
+            node_check, edge_check, node_expansion, sol_edge = self._logs[i]
             if len(node_check):
                 vid, gid, valid = node_check
                 gid = 0 if gid is None else gid + 1
@@ -222,6 +230,15 @@ class MGRoadmapVisualizer(HasTraits):
                     num_expansions[key] += 1
                 else:
                     num_expansions[key] = 1
+            if len(sol_edge):
+                vid1, vid2, gid = sol_edge
+                gid = 0 if gid is None else gid + 1
+                solutions_edges[0].append(self._vertices[vid1, 1])
+                solutions_edges[1].append(self._vertices[vid1, 0])
+                solutions_edges[2].append(gid * self.grasp_distance + self.grasp_distance / 10.0)
+                edge_dir = self._vertices[vid2] - self._vertices[vid1]
+                solutions_edges[3].append(edge_dir[1])
+                solutions_edges[4].append(edge_dir[0])
 
         # render valid vertices
         if len(nxs[1]):
@@ -320,6 +337,27 @@ class MGRoadmapVisualizer(HasTraits):
             else:
                 self.num_extensions_plot.actor.visible = True
                 self.num_extensions_plot.mlab_source.reset(x=xs, y=ys, z=zs, scalars=ss)
+        # render solution
+        if len(solutions_edges) > 0 and len(solutions_edges[0]) > 0:
+            if self.solution_plot is None:
+                self.solution_plot = self.scene.mlab.quiver3d(solutions_edges[0],
+                                                              solutions_edges[1],
+                                                              solutions_edges[2],
+                                                              solutions_edges[3],
+                                                              solutions_edges[4],
+                                                              np.zeros(len(solutions_edges[3])),
+                                                              scale_factor=1,
+                                                              mode='2ddash',
+                                                              color=(0, 0, 0.5),
+                                                              reset_zoom=False)
+            else:
+                self.solution_plot.actor.visible = True
+                self.solution_plot.mlab_source.reset(x=solutions_edges[0],
+                                                     y=solutions_edges[1],
+                                                     z=solutions_edges[2],
+                                                     u=solutions_edges[3],
+                                                     v=solutions_edges[4],
+                                                     w=np.zeros(len(solutions_edges[3])))
 
 
 if __name__ == "__main__":

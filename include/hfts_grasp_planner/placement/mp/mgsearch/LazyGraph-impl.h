@@ -51,14 +51,14 @@ LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::Neighbo
       {
         if (lazy)
         {
-          if (layer_id == 0)
+          if (parent->_layers.at(layer_id).grasps.size() > 1)
             _impl = std::make_unique<InLayerVertexIterator<true, true, true>>(layer_id, roadmap_id, parent);
           else
             _impl = std::make_unique<InLayerVertexIterator<true, true, false>>(layer_id, roadmap_id, parent);
         }
         else
         {
-          if (layer_id == 0)
+          if (parent->_layers.at(layer_id).grasps.size() > 1)
             _impl = std::make_unique<InLayerVertexIterator<false, true, true>>(layer_id, roadmap_id, parent);
           else
             _impl = std::make_unique<InLayerVertexIterator<false, true, false>>(layer_id, roadmap_id, parent);
@@ -68,14 +68,14 @@ LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::NeighborIterator::Neighbo
       {
         if (lazy)
         {
-          if (layer_id == 0)
+          if (parent->_layers.at(layer_id).grasps.size() > 1)
             _impl = std::make_unique<InLayerVertexIterator<true, false, true>>(layer_id, roadmap_id, parent);
           else
             _impl = std::make_unique<InLayerVertexIterator<true, false, false>>(layer_id, roadmap_id, parent);
         }
         else
         {
-          if (layer_id == 0)
+          if (parent->_layers.at(layer_id).grasps.size() > 1)
             _impl = std::make_unique<InLayerVertexIterator<false, false, true>>(layer_id, roadmap_id, parent);
           else
             _impl = std::make_unique<InLayerVertexIterator<false, false, false>>(layer_id, roadmap_id, parent);
@@ -482,7 +482,7 @@ LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getSuccessors(unsigned in
   if (v != 0)
   {
     auto [layer_id, rid] = toLayerRoadmapKey(v);
-    if (layer_id == 0)
+    if (_layers.at(layer_id).grasps.size() > 1)
     {
       _logger.logExpansion(rid);
     }
@@ -519,7 +519,7 @@ LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getPredecessors(unsigned 
   if (v != 0)
   {
     auto [layer_id, rid] = toLayerRoadmapKey(v);
-    if (layer_id == 0)
+    if (_layers.at(layer_id).grasps.size() > 1)
     {
       _logger.logExpansion(rid);
     }
@@ -749,6 +749,7 @@ double LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getGraspSpecificEd
     // remove gid from old layer
     _layers.at(lid1).goal_set->removeGoals(sub_goal_set->begin(), sub_goal_set->end());
     _layers.at(lid1).cost_to_go->removeGoals(sub_goal_set->begin(), sub_goal_set->end());
+    _layers.at(lid1).grasps.erase(gid);
     // add changes to change caches
     _new_edges.push_back({0, _layers.back().start_vertex_id, false});  // new edge
     for (auto iter = sub_goal_set->begin(); iter != sub_goal_set->end(); ++iter)

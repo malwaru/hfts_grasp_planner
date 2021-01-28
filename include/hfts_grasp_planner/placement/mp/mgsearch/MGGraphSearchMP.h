@@ -247,6 +247,7 @@ private:
   void extractSolution(SearchResult& sr, MultiGraspMP::Solution& sol, const G& graph)
   {
     MultiGraspMP::WaypointPathPtr wp_path = std::make_shared<MultiGraspMP::WaypointPath>();
+    auto [prev_rid, prev_gid] = graph.getGraspRoadmapId(sr.path.front());
     // extract solution path
     for (unsigned int vid : sr.path)
     {
@@ -254,6 +255,9 @@ private:
       auto node = _roadmap->getNode(rid);
       assert(node);
       wp_path->push_back(node->config);
+      if (prev_rid != rid)
+        _roadmap->logCustomEvent((boost::format("SOLUTION_EDGE, %1%, %2%, %3%") % prev_rid % rid % gid).str());
+      prev_rid = rid;
     }
     // get goal id
     auto [rid, gid] = graph.getGraspRoadmapId(sr.path.back());
@@ -271,12 +275,18 @@ private:
     MultiGraspMP::WaypointPathPtr wp_path = std::make_shared<MultiGraspMP::WaypointPath>();
     // extract solution path
     auto iter = ++sr.path.begin();  // skip first dummy vertex
+    auto [prev_rid, prev_gid] = graph.getGraspRoadmapId(*iter);
     for (; iter != sr.path.end(); ++iter)
     {
       auto [rid, gid] = graph.getGraspRoadmapId(*iter);
       auto node = _roadmap->getNode(rid);
       assert(node);
       wp_path->push_back(node->config);
+      if (prev_rid != rid)
+      {
+        _roadmap->logCustomEvent((boost::format("SOLUTION_EDGE, %1%, %2%, %3%") % prev_rid % rid % gid).str());
+      }
+      prev_rid = rid;
     }
     // get goal id
     auto [goal, goal_cost] = graph.getBestGoal(sr.path.back());
@@ -294,21 +304,25 @@ private:
     // iterate over path in reverse order; abort when we reached the base layer
     std::pair<unsigned int, unsigned int> rid_gid_pair;
     unsigned int gid;
-    unsigned int last_rid;
+    unsigned int prev_rid;
     for (auto iter = sr.path.rbegin(); iter != sr.path.rend(); ++iter)
     {
       bool gid_valid = false;
       std::tie(rid_gid_pair, gid_valid) = graph.getGraspRoadmapId(*iter);
       if (gid_valid)
       {
-        last_rid = rid_gid_pair.first;
+        if (prev_rid != rid_gid_pair.first)
+          _roadmap->logCustomEvent(
+              (boost::format("SOLUTION_EDGE, %1%, %2%, %3%") % prev_rid % rid_gid_pair.first % rid_gid_pair.second)
+                  .str());
+        prev_rid = rid_gid_pair.first;
         gid = rid_gid_pair.second;
-        auto node = _roadmap->getNode(rid_gid_pair.first);
+        auto node = _roadmap->getNode(prev_rid);
         assert(node);
         wp_path->push_back(node->config);
       }
     }
-    auto [goal_id, valid_goal] = _goal_set->getGoalId(last_rid, gid);
+    auto [goal_id, valid_goal] = _goal_set->getGoalId(prev_rid, gid);
     assert(valid_goal);
     sol.goal_id = goal_id;
     sol.path = wp_path;

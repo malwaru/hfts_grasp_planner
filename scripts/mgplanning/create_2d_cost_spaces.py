@@ -81,7 +81,7 @@ def compute_cost_spaces(collision_spaces, d_thresh=1.0):
         cost_space = distance_transform_edt(1.0 - image)
         free_space = image == 0.0
         # cost_space[free_space] = d_thresh / np.minimum(cost_space[free_space], d_thresh)
-        cost_space[free_space] = 1.0 + np.power(np.minimum(cost_space[free_space] - d_thresh, 0.0), 2.0)
+        cost_space[free_space] = 1.0 + np.power(np.minimum(cost_space[free_space] - d_thresh, 0.0) / d_thresh, 2.0)
         cost_space[image > 0] = np.inf
         cost_spaces[gid] = cost_space
 
