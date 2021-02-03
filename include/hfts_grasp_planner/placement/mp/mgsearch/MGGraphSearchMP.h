@@ -84,10 +84,10 @@ bool verifyResult(Graph& g, const SearchResult& sr)
     return false;
   }
   double goal_cost = g.getGoalCost(sr.goal_node);
-  if (goal_cost != sr.goal_cost)
+  if (std::abs(goal_cost - sr.goal_cost) > 1e-6)
   {
     RAVELOG_DEBUG_FORMAT("Search result invalid because goal cost is incorrect. Result goal cost: %1%, True goal cost "
-                         "%1%",
+                         "%2%",
                          sr.goal_cost % goal_cost);
     return false;
   }
@@ -140,6 +140,7 @@ public:
     EdgeSelectorType edge_selector_type;  // only for LazySP
     double lambda;                        // weight between path and goal cost
     unsigned int batchsize;               // roadmap batch size
+    double step_size;                     // step size for cost integrator ( <= 0 --> default)
     std::string roadmap_log_path;         // file to log roadmap to
     std::string logfile_path;             // file to log roadmap cost evaluations to
     Parameters()
@@ -148,6 +149,7 @@ public:
       , edge_selector_type(EdgeSelectorType::FirstUnknown)
       , lambda(1.0)
       , batchsize(1000)
+      , step_size(0.0)
     {
     }
 
@@ -156,7 +158,7 @@ public:
       std::stringstream ss;
       ss << "AlgorithmType=" << getName(algo_type) << " GraphType=" << getName(graph_type)
          << " EdgeSelectorType=" << getName(edge_selector_type) << " lambda=" << lambda << " batchsize=" << batchsize
-         << " roadmap_log_path=" << roadmap_log_path << " logfile_path=" << logfile_path;
+         << " step_size=" << step_size << " roadmap_log_path=" << roadmap_log_path << " logfile_path=" << logfile_path;
 
       return ss.str();
     }

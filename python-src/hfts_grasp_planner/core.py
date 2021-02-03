@@ -9,7 +9,7 @@ from scipy.spatial import KDTree
 import openravepy as orpy
 import hfts_grasp_planner.external.transformations
 from hfts_grasp_planner.sdf.core import SceneSDF
-from hfts_grasp_planner.sdf.robot import RobotSDF
+# from hfts_grasp_planner.sdf.robot import RobotSDF
 from hfts_grasp_planner.sdf.costs import DistanceToFreeSpace
 from hfts_grasp_planner.robot_hand import RobotHand, InvalidTriangleException
 from hfts_grasp_planner.utils import ObjectFileIO, clamp, compute_grasp_stability, normal_distance, position_distance, dist_in_range
@@ -24,7 +24,6 @@ class PlanningSceneInterface(object):
         A PlanningSceneInterface provides access to a planning scene that contains
         a full robot (arm + hand) and any obstacles in the environment of the robot.
     """
-
     def __init__(self, or_env, robot_name):
         """ Sets scene information for grasp planning that considers the whole robot.
             @param or_env OpenRAVE environment containing the whole planning scene and robot
@@ -33,8 +32,8 @@ class PlanningSceneInterface(object):
         self._or_env = or_env
         self._robot = or_env.GetRobot(robot_name)
         self._manip = self._robot.GetActiveManipulator()
-        self._arm_ik = orpy.databases.inversekinematics.InverseKinematicsModel(self._robot,
-                                                                               iktype=orpy.IkParameterization.Type.Transform6D)
+        self._arm_ik = orpy.databases.inversekinematics.InverseKinematicsModel(
+            self._robot, iktype=orpy.IkParameterization.Type.Transform6D)
         # Make sure we have an ik solver
         if not self._arm_ik.load():
             rospy.loginfo('No IKFast solver found. Generating new one...')
@@ -98,7 +97,6 @@ class HFTSSampler(object):
         hierarchical object surface representation (HFTS). The algorithm performs stochastic
         optimization of a grasp stability and reachability function on each level of the hierarchy.
     """
-
     def __init__(self, object_io_interface, scene_interface=None, verbose=False, num_hops=2, vis=False):
         """
             Creates a new HFTSSampler.
@@ -136,7 +134,7 @@ class HFTSSampler(object):
         # TODO make #hops setable again. At the moment only 2 hops are supported
         self._hops = 2
         self._robot = None
-        self._robot_sdf = None
+        # self._robot_sdf = None
         self._obj = None
         self._obj_com = None
         self._data_labeled = None
@@ -188,8 +186,7 @@ class HFTSSampler(object):
             return False
         real_contacts = self.get_real_contacts()
         # self.draw_contacts(real_contacts)
-        stability = compute_grasp_stability(grasp_contacts=real_contacts,
-                                            mu=self._mu)
+        stability = compute_grasp_stability(grasp_contacts=real_contacts, mu=self._mu)
         return stability > self._min_stability and self.is_grasp_collision_free()
 
     def create_object_kd_tree(self, points):
@@ -223,8 +220,8 @@ class HFTSSampler(object):
         while len(self._contact_combinations) < self._num_levels:
             self._contact_combinations.append([])
         for i in range(self._num_levels):
-            self._contact_combinations[i] = set(itertools.product(range(self._branching_factors[i]),
-                                                                  repeat=self._num_contacts))
+            self._contact_combinations[i] = set(
+                itertools.product(range(self._branching_factors[i]), repeat=self._num_contacts))
 
     def compose_grasp_info(self, contact_labels):
         """
@@ -275,9 +272,9 @@ class HFTSSampler(object):
         # Draw planned contacts
         arrow_handles = []
         for i in range(object_contacts.shape[0]):
-            arrow_handles.append(self._orEnv.drawarrow(object_contacts[i, :3],
-                                                       object_contacts[i, :3] - length * object_contacts[i, 3:],
-                                                       width, colors[i]))
+            arrow_handles.append(
+                self._orEnv.drawarrow(object_contacts[i, :3], object_contacts[i, :3] - length * object_contacts[i, 3:],
+                                      width, colors[i]))
         return arrow_handles
 
     def _debug_visualize(self, labels, handle_index=-1):
@@ -304,9 +301,9 @@ class HFTSSampler(object):
         # Draw planned contacts
         arrow_handles = []
         for i in range(object_contacts.shape[0]):
-            arrow_handles.append(self._orEnv.drawarrow(object_contacts[i, :3],
-                                                       object_contacts[i, :3] - length * object_contacts[i, 3:],
-                                                       width, colors[i]))
+            arrow_handles.append(
+                self._orEnv.drawarrow(object_contacts[i, :3], object_contacts[i, :3] - length * object_contacts[i, 3:],
+                                      width, colors[i]))
         self._or_handles[handle_index] = arrow_handles
 
     def evaluate_grasp(self, contact_label):
@@ -429,8 +426,7 @@ class HFTSSampler(object):
 
     def get_root_node(self):
         possible_num_children, possible_num_leaves = self.get_branch_information(0)
-        return HFTSNode(num_possible_children=possible_num_children,
-                        num_possible_leaves=possible_num_leaves)
+        return HFTSNode(num_possible_children=possible_num_children, num_possible_leaves=possible_num_leaves)
 
     def is_grasp_collision_free(self):
         links = self._robot.get_non_fingertip_links()
@@ -451,12 +447,14 @@ class HFTSSampler(object):
                                 hand
         """
         if not self._hand_loaded:
-            self._robot = RobotHand(env=self._orEnv, cache_file=hand_cache_file,
-                                    or_hand_file=hand_file, hand_config_file=hand_config_file)
-            self._robot_sdf = RobotSDF(self._robot)
+            self._robot = RobotHand(env=self._orEnv,
+                                    cache_file=hand_cache_file,
+                                    or_hand_file=hand_file,
+                                    hand_config_file=hand_config_file)
+            # self._robot_sdf = RobotSDF(self._robot)
             if self._do_visualize:  # we can set the viewer after loading the robot
                 self._orEnv.SetViewer('qtcoin')
-            self._robot_sdf.load_approximation(hand_ball_file)
+            # self._robot_sdf.load_approximation(hand_ball_file)
             self._hand_manifold = self._robot.get_hand_manifold()
             self._hand_manifold.load()
             self._num_contacts = self._robot.get_contact_number()
@@ -505,7 +503,7 @@ class HFTSSampler(object):
             self._scene_interface.set_target_object(obj_id)
         self.compute_contact_combinations()
         # load scene sdf for object
-        self._load_sdf(obj_id, or_obj_name)
+        # self._load_sdf(obj_id, or_obj_name)
         self._obj_loaded = True
 
     def _load_sdf(self, obj_id, or_obj_name):
@@ -514,10 +512,12 @@ class HFTSSampler(object):
             - :obj_id: identifier of the object
             - :or_obj_name: name of the kinbody in the OpenRAVE environment
         """
-        scene_sdf = SceneSDF(self._orEnv, movable_body_names=[or_obj_name], excluded_bodies=[self._robot.GetName()],
+        scene_sdf = SceneSDF(self._orEnv,
+                             movable_body_names=[or_obj_name],
+                             excluded_bodies=[self._robot.GetName()],
                              sdf_paths={or_obj_name: self._object_io_interface.get_object_sdf_path(obj_id)})
         object_aabb = self._obj.ComputeAABB()
-        aabb = orpy.AABB(np.array((0, 0, 0)), np.array(3*[self._robot.get_bounding_radius()]) + object_aabb.extents())
+        aabb = orpy.AABB(np.array((0, 0, 0)), np.array(3 * [self._robot.get_bounding_radius()]) + object_aabb.extents())
         scene_sdf.create_sdf(aabb)
         self._robot_sdf.set_sdf(scene_sdf)
 
@@ -536,8 +536,7 @@ class HFTSSampler(object):
             # TODO This currently only works for hops == 2
             assert self._hops == 2
             allowed_finger_combos = self.compute_allowed_contact_combinations(node.get_depth(), label_cache)
-            rospy.logdebug('[HFTSSampler::sample_grasp] We have %i allowed contacts' %
-                           allowed_finger_combos.shape[0])
+            rospy.logdebug('[HFTSSampler::sample_grasp] We have %i allowed contacts' % allowed_finger_combos.shape[0])
             if allowed_finger_combos.shape[0] == 0:
                 rospy.logwarn('[HFTSSampler::sample_grasp] We have no allowed contacts left! Aborting.')
                 return node
@@ -554,8 +553,7 @@ class HFTSSampler(object):
             # If we are not at a leaf node, go down in the hierarchy
             seed_ik = node.get_arm_configuration()
             contact_label = copy.deepcopy(node.get_labels())
-            best_o, contact_label = self.extend_hfts_node(contact_label,
-                                                          allowed_finger_combos=allowed_finger_combos)
+            best_o, contact_label = self.extend_hfts_node(contact_label, allowed_finger_combos=allowed_finger_combos)
 
         self.reset_robot()
         depth_limit -= 1
@@ -623,18 +621,26 @@ class HFTSSampler(object):
 
         depth = len(contact_label[0])
         possible_num_children, possible_num_leaves = self.get_branch_information(depth)
-        return HFTSNode(labels=contact_label, hand_conf=np.asarray(grasp_conf),
-                        pre_grasp_conf=pre_grasp_conf, arm_conf=arm_conf,
-                        is_goal=is_goal_sample, is_leaf=is_leaf, is_valid=collision_free_arm_ik,
-                        num_possible_children=possible_num_children, num_possible_leaves=possible_num_leaves,
+        return HFTSNode(labels=contact_label,
+                        hand_conf=np.asarray(grasp_conf),
+                        pre_grasp_conf=pre_grasp_conf,
+                        arm_conf=arm_conf,
+                        is_goal=is_goal_sample,
+                        is_leaf=is_leaf,
+                        is_valid=collision_free_arm_ik,
+                        num_possible_children=possible_num_children,
+                        num_possible_leaves=possible_num_leaves,
                         hand_transform=self._robot.GetTransform())
 
     def set_max_iter(self, m):
         assert m > 0
         self._max_iters = m
 
-    def set_parameters(self, max_iters=None, reachability_weight=None,
-                       hfts_generation_params=None, b_force_new_hfts=None):
+    def set_parameters(self,
+                       max_iters=None,
+                       reachability_weight=None,
+                       hfts_generation_params=None,
+                       b_force_new_hfts=None):
         if max_iters is not None:
             self._max_iters = max_iters
             assert self._max_iters > 0
@@ -671,14 +677,14 @@ class HFTSSampler(object):
         return False, self._robot.GetDOFValues(), self._robot.GetTransform()
 
     def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False, swap_contacts=True):
-        b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(
-            grasp_conf, hand_contacts, object_contacts, post_opt)
+        b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts,
+                                                                         post_opt)
         if not b_grasp_valid and swap_contacts:
             for symmetry in self._robot.get_fingertip_symmetries():
                 self.swap_contacts(symmetry, object_contacts)
                 swapped_conf, swapped_hand_contacts = self.compute_hand_config_and_contacts(object_contacts)
-                b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(
-                    swapped_conf, swapped_hand_contacts, object_contacts, post_opt)
+                b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(swapped_conf, swapped_hand_contacts,
+                                                                                 object_contacts, post_opt)
                 if b_grasp_valid:
                     return b_grasp_valid, new_grasp_conf, grasp_pose
                 else:  # swap contacts back
@@ -750,12 +756,13 @@ class HFTSSampler(object):
 
         # collision_dist = DistanceToFreeSpace(self._robot, self._robot_sdf, safety_margin=0.005)
         collision_dist = None
-        x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
-                                           [joint_limits_constraint],
-                                           rhobeg=.1, rhoend=1e-4,
-                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:],
-                                                 self._robot, collision_dist),
-                                           maxfun=int(1e8), iprint=0)
+        x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn,
+                                           robot_dofs + transform_params, [joint_limits_constraint],
+                                           rhobeg=.1,
+                                           rhoend=1e-4,
+                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot,
+                                                 collision_dist),
+                                           maxfun=int(1e8))
         num_dofs = self._robot.GetDOF()
         self._robot.SetDOFValues(x_min[:num_dofs])
         axis = x_min[num_dofs:num_dofs + 3]
@@ -798,9 +805,18 @@ class HFTSSampler(object):
 
 
 class HFTSNode:
-    def __init__(self, labels=None, hand_conf=None, hand_transform=None,
-                 pre_grasp_conf=None, arm_conf=None, is_leaf=False, is_valid=False, is_goal=False,
-                 num_possible_children=0, num_possible_leaves=0, quality=0.0):
+    def __init__(self,
+                 labels=None,
+                 hand_conf=None,
+                 hand_transform=None,
+                 pre_grasp_conf=None,
+                 arm_conf=None,
+                 is_leaf=False,
+                 is_valid=False,
+                 is_goal=False,
+                 num_possible_children=0,
+                 num_possible_leaves=0,
+                 quality=0.0):
         # None values represent the root node
         if labels is None:
             self._depth = 0

@@ -26,6 +26,7 @@ public:
     Config lower;
     Config upper;
     unsigned int dimension;
+    double step_size;  // reasonable step size to use when integrating costs on this space
   };
   virtual ~StateSpace() = 0;
   /**
@@ -58,7 +59,16 @@ public:
    */
   virtual unsigned int getDimension() const = 0;
   virtual void getBounds(Config& lower, Config& upper) const = 0;
+  /**
+   * Return a reasonable step size to integrate over costs on this space.
+   */
+  virtual double getStepSize() const = 0;
+
+  /**
+   * Return the grasp ids this state space can be conditioned on.
+   */
   virtual void getValidGraspIds(std::vector<unsigned int>& grasp_ids) const = 0;
+
   /**
    * Return the number of valid grasps.
    */
@@ -69,6 +79,7 @@ public:
     SpaceInformation si;
     getBounds(si.lower, si.upper);
     si.dimension = getDimension();
+    si.step_size = getStepSize();
     return si;
   }
 };
@@ -100,7 +111,13 @@ typedef std::shared_ptr<EdgeCostComputer> EdgeCostComputerPtr;
 class IntegralEdgeCostComputer : public EdgeCostComputer
 {
 public:
-  IntegralEdgeCostComputer(StateSpacePtr ss, double integral_step_size = 0.1);
+  /**
+   * Create a new IntegralEdgeCostComputer.
+   * @param ss: the state space to use.
+   * @param integral_step_size: the step size to use when integrating costs. If 0.0, step size is retrieved from state
+   * space.
+   */
+  IntegralEdgeCostComputer(StateSpacePtr ss, double integral_step_size = 0.0);
   ~IntegralEdgeCostComputer();
   double lowerBound(const Config& a, const Config& b) const override;
   double cost(const Config& a, const Config& b) const override;

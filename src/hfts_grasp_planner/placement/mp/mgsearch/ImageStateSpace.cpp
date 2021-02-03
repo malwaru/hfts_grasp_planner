@@ -140,6 +140,11 @@ unsigned int ImageStateSpace::getDimension() const
   return 2;
 }
 
+double ImageStateSpace::getStepSize() const
+{
+  return 0.5;
+}
+
 void ImageStateSpace::getBounds(Config& lower, Config& upper) const
 {
   lower.resize(2);

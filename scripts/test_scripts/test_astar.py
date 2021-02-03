@@ -136,7 +136,8 @@ if __name__ == "__main__":
         # planner = MGMotionPlanner("SequentialMGBiRRT", manip)
         # planner = MGMotionPlanner("LWAstar;FoldedMultiGraspGraphDynamic",
         #                           manip)
-        planner = MGMotionPlanner("LWAstar;MultiGraspGraph", manip)
+        planner = MGMotionPlanner(
+            "LazySP_LWLPAstar;LazyWeightedMultiGraspGraph", manip)
         planner.setup(target_object)
         print "Adding goals"
         planner.addGoals(goals)

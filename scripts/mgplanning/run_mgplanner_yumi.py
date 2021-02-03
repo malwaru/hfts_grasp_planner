@@ -157,6 +157,11 @@ if __name__ == "__main__":
                         help="Basename to log planning logs (roadmap, evaluation) to.",
                         type=str,
                         default=None)
+    parser.add_argument('--batch_size', help="Batch size for the roadmap", type=int, default=1000)
+    parser.add_argument('--integrator_step_size',
+                        help='Step size used for edge cost integration',
+                        type=float,
+                        default=0.1)
     parser.add_argument('--show_viewer', help="Show viewer at the end of planning.", action='store_true')
     args = parser.parse_args()
 
@@ -188,7 +193,8 @@ if __name__ == "__main__":
                   lmbda=args.lmbda,
                   log_file=args.planner_log,
                   edge_selector_type=args.edge_selector_type,
-                  batchsize=1000)
+                  batchsize=args.batch_size,
+                  integrator_step_size=args.integrator_step_size)
     planner.addGoals(goals)
     planner.addWaypoints(waypoints)
     # plan

@@ -188,6 +188,10 @@ void ORMultiGraspMPPlugin::parseParameters(std::istream& sinput, mgsearch::MGGra
       {
         params.edge_selector_type = mgsearch::MGGraphSearchMP::getEdgeSelectorType(param_value);
       }
+      else if (param_name == "integrator_step_size")
+      {
+        params.step_size = std::stod(param_value);
+      }
       else
       {
         throw std::invalid_argument("Unknown parameter name " + param_name);

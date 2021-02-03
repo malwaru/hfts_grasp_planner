@@ -130,7 +130,7 @@ MGGraphSearchMP::MGGraphSearchMP(mgsearch::StateSpacePtr state_space, const Conf
                                  const Parameters& params)
   : _params(params), _state_space(state_space)
 {
-  auto edge_computer = std::make_shared<IntegralEdgeCostComputer>(_state_space);
+  auto edge_computer = std::make_shared<IntegralEdgeCostComputer>(_state_space, params.step_size);
   _roadmap = std::make_shared<Roadmap>(_state_space, edge_computer, params.batchsize, params.roadmap_log_path,
                                        params.logfile_path);
   _goal_set = std::make_shared<MultiGraspGoalSet>(_roadmap);

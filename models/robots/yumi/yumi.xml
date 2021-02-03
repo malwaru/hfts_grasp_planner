@@ -385,14 +385,14 @@
     <base>yumi_body</base>
     <effector>gripper_r_base</effector>
     <joints>gripper_r_joint</joints>
-    <closingdirection>1</closingdirection>
+    <closingdirection>-1</closingdirection>
     <direction>0 0 1</direction>
 </manipulator>
 <manipulator name="left_arm_with_gripper">
     <base>yumi_body</base>
     <effector>gripper_l_base</effector>
     <joints>gripper_l_joint</joints>
-    <closingdirection>1</closingdirection>
+    <closingdirection>-1</closingdirection>
     <direction>0 0 1</direction>
 </manipulator>
 </Robot>

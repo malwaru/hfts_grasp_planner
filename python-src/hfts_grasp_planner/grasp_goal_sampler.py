@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 """This module contains a wrapper class of the HFTS Grasp Sampler."""
 
 from hfts_grasp_planner.core import HFTSSampler, HFTSNode
@@ -24,13 +23,12 @@ class GraspGoalSampler(GoalHierarchy):
         """
             Implementation of GoalHierarchyNode for HFTS grasp planner.
         """
-
         def __init__(self, hfts_node):
             self._hfts_node = hfts_node
             config = hfts_node.get_arm_configuration()
             if config is not None:
                 config = numpy.concatenate((config, hfts_node.get_pre_grasp_config()))
-            super(GraspGoalSampler.GraspGoalNode, self).__init__(config, data_extractor=HFTSNodeDataExtractor())
+            super(GraspGoalSampler.GraspGoalNode, self).__init__(config)
 
         def is_valid(self):
             return self._hfts_node.is_valid()
@@ -67,6 +65,13 @@ class GraspGoalSampler(GoalHierarchy):
             """
             return self._hfts_node.get_unique_label()
 
+        def get_local_hashable_label(self):
+            """
+                Return a hashable identifier for this node that is unique with respect to its parent.
+                I.e. it should uniquely identify it among its siblings.
+            """
+            return self.get_hashable_label()
+
         def get_label(self):
             """
                 Return a unique identifier for this node.
@@ -94,8 +99,30 @@ class GraspGoalSampler(GoalHierarchy):
             """
             return self._hfts_node.is_extendible()
 
-    def __init__(self, object_io_interface, hand_path, hand_cache_file, hand_config_file, hand_ball_file,
-                 planning_scene_interface, visualize=False, open_hand_offset=0.1):
+        def get_quality(self):
+            """
+                Return the quality associated with this node.
+                The quality is assumed to be floating point number in range (-infty, 1.0]
+            """
+            return self._hfts_node.get_quality()
+
+        def get_white_list(self):
+            """
+                Return a white list of locally unique ids of this nodes children
+                that can be sampled from this node.
+            """
+            # TODO what should this return??? Is this information even contained in a HFTSNode?
+            return []
+
+    def __init__(self,
+                 object_io_interface,
+                 hand_path,
+                 hand_cache_file,
+                 hand_config_file,
+                 hand_ball_file,
+                 planning_scene_interface,
+                 visualize=False,
+                 open_hand_offset=0.1):
         """ Creates a new wrapper.
             @param object_io_interface IOObject Object that handles IO requests
             @param hand_path Path to OpenRAVE hand file
@@ -111,7 +138,8 @@ class GraspGoalSampler(GoalHierarchy):
             configuration we open the hand by some constant offset.
             """
         self.grasp_planner = HFTSSampler(object_io_interface=object_io_interface,
-                                         vis=visualize, scene_interface=planning_scene_interface)
+                                         vis=visualize,
+                                         scene_interface=planning_scene_interface)
         self.grasp_planner.set_max_iter(100)
         self.open_hand_offset = open_hand_offset
         self.root_node = GraspGoalSampler.GraspGoalNode(self.grasp_planner.get_root_node())
@@ -123,9 +151,9 @@ class GraspGoalSampler(GoalHierarchy):
 
     def sample_warm_start(self, hierarchy_node, depth_limit, label_cache=None, post_opt=False):
         """ Samples a grasp from the given node on. """
-        rospy.logdebug('[GoalSamplerWrapper] Sampling a grasp from hierarchy depth ' +
-                       str(hierarchy_node.get_depth()))
-        sampled_node = self.grasp_planner.sample_grasp(node=hierarchy_node._hfts_node, depth_limit=depth_limit,
+        rospy.logdebug('[GoalSamplerWrapper] Sampling a grasp from hierarchy depth ' + str(hierarchy_node.get_depth()))
+        sampled_node = self.grasp_planner.sample_grasp(node=hierarchy_node._hfts_node,
+                                                       depth_limit=depth_limit,
                                                        post_opt=post_opt,
                                                        label_cache=label_cache,
                                                        open_hand_offset=self.open_hand_offset)

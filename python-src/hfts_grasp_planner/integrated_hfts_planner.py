@@ -3,7 +3,7 @@ import openravepy as orpy
 import rospy
 import numpy
 from orsampler import RobotCSpaceSampler, GraspApproachConstraintsManager
-from sampler import FreeSpaceProximitySampler
+from sampler import LazyHierarchySampler, ProximityRating
 from rrt import DynamicPGoalProvider, RRT
 from utils import OpenRAVEDrawer, ObjectFileIO
 from grasp_goal_sampler import GraspGoalSampler
@@ -13,14 +13,31 @@ from hierarchy_visualization import FreeSpaceProximitySamplerVisualizer
 
 class IntegratedHFTSPlanner(object):
     """ Implements a simple to use interface to the integrated HFTS planner. """
-
-    def __init__(self, env_file, hand_file, hand_cache_file, hand_config_file,
-                 hand_ball_file, robot_name, manipulator_name,
-                 data_root_path, dof_weights=None, max_num_hierarchy_descends=4,
-                 min_iterations=20, max_iterations=70, p_goal_tree=0.8, vel_factor=0.2,
-                 b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
-                 b_show_traj=False, b_show_search_tree=False, free_space_weight=0.1, connected_space_weight=4.0,
-                 use_approximates=True, compute_velocities=True, time_limit=60.0,
+    def __init__(self,
+                 env_file,
+                 hand_file,
+                 hand_cache_file,
+                 hand_config_file,
+                 hand_ball_file,
+                 robot_name,
+                 manipulator_name,
+                 data_root_path,
+                 dof_weights=None,
+                 max_num_hierarchy_descends=4,
+                 min_iterations=20,
+                 max_iterations=70,
+                 p_goal_tree=0.8,
+                 vel_factor=0.2,
+                 b_visualize_system=False,
+                 b_visualize_grasps=False,
+                 b_visualize_hfts=False,
+                 b_show_traj=False,
+                 b_show_search_tree=False,
+                 free_space_weight=0.1,
+                 connected_space_weight=4.0,
+                 use_approximates=True,
+                 compute_velocities=True,
+                 time_limit=60.0,
                  open_hand_config=None):
         """ Creates a new instance of an HFTS planner
             NOTE: It is only possible to display one scene in OpenRAVE at a time. Hence, if the parameters
@@ -70,7 +87,8 @@ class IntegratedHFTSPlanner(object):
         planning_scene_interface = PlanningSceneInterface(self._env, self._robot.GetName())
         self._object_io_interface = ObjectFileIO(data_path=data_root_path)
         self._grasp_planner = GraspGoalSampler(object_io_interface=self._object_io_interface,
-                                               hand_path=hand_file, hand_cache_file=hand_cache_file,
+                                               hand_path=hand_file,
+                                               hand_cache_file=hand_cache_file,
                                                hand_ball_file=hand_ball_file,
                                                hand_config_file=hand_config_file,
                                                planning_scene_interface=planning_scene_interface,
@@ -80,26 +98,32 @@ class IntegratedHFTSPlanner(object):
             hierarchy_visualizer = FreeSpaceProximitySamplerVisualizer(self._robot)
         if max_num_hierarchy_descends <= 0:
             max_num_hierarchy_descends = self._grasp_planner.get_max_depth() + 1
-        self._hierarchy_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler,
-                                                            k=max_num_hierarchy_descends,
-                                                            num_iterations=max_iterations,
-                                                            min_num_iterations=min_iterations,
-                                                            b_return_approximates=use_approximates,
-                                                            connected_weight=connected_space_weight,
-                                                            free_space_weight=free_space_weight,
-                                                            debug_drawer=hierarchy_visualizer)
+        self._hierarchy_sampler = LazyHierarchySampler(self._grasp_planner,
+                                                       rating_function=ProximityRating(
+                                                           self._cSampler.get_diameter(),
+                                                           connected_weight=connected_space_weight,
+                                                           free_space_weight=free_space_weight),
+                                                       k=max_num_hierarchy_descends,
+                                                       num_iterations=max_iterations,
+                                                       min_num_iterations=min_iterations,
+                                                       b_return_approximates=use_approximates,
+                                                       debug_drawer=hierarchy_visualizer)
         # default open hand configuration is initial configuration
         if open_hand_config is None:
             manip = self._robot.GetActiveManipulator()
             open_hand_config = self._robot.GetDOFValues(manip.GetGripperIndices())
-        self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot,
-                                                                    self._cSampler, open_hand_config)
+        self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot, self._cSampler,
+                                                                    open_hand_config)
         p_goal_provider = DynamicPGoalProvider()
         self._debug_tree_drawer = None
         if b_show_search_tree:
             self._debug_tree_drawer = OpenRAVEDrawer(self._env, self._robot, True)
-        self._rrt_planner = RRT(p_goal_provider, self._cSampler, self._hierarchy_sampler, logging.getLogger(),
-                                pgoal_tree=p_goal_tree, constraints_manager=self._constraints_manager)
+        self._rrt_planner = RRT(p_goal_provider,
+                                self._cSampler,
+                                self._hierarchy_sampler,
+                                logging.getLogger(),
+                                pgoal_tree=p_goal_tree,
+                                constraints_manager=self._constraints_manager)
         self._time_limit = time_limit
         self._vel_factor = vel_factor
         self._last_path = None
@@ -165,8 +189,10 @@ class IntegratedHFTSPlanner(object):
             if body is not None:
                 self._robot.Grab(body)
         try:
-            traj = self._or_motion_planner.MoveToHandPosition(matrices=[target_pose], outputtraj=True,
-                                                              outputtrajobj=True, execute=self._b_show_trajectory)
+            traj = self._or_motion_planner.MoveToHandPosition(matrices=[target_pose],
+                                                              outputtraj=True,
+                                                              outputtrajobj=True,
+                                                              execute=self._b_show_trajectory)
         except orpy.planning_error as pe:
             rospy.loginfo('[IntegratedHFTSPlanner::plan_arm_motion] Planning arm motion to pose failed.')
             traj = None
@@ -199,10 +225,13 @@ class IntegratedHFTSPlanner(object):
             self._debug_tree_drawer.clear()
             debug_function = self._debug_tree_drawer.draw_trees
         else:
+
             def debug_function(forward_tree, backward_trees):
                 pass
+
         self._robot.SetDOFValues(start_configuration)
-        self._last_path = self._rrt_planner.proximity_birrt(start_configuration, time_limit=self._time_limit,
+        self._last_path = self._rrt_planner.proximity_birrt(start_configuration,
+                                                            time_limit=self._time_limit,
                                                             debug_function=debug_function)
         grasp_pose = None
         if self._last_path is not None:
@@ -252,13 +281,19 @@ class IntegratedHFTSPlanner(object):
                 return True
             return False
 
-    def set_parameters(self, min_iterations=None, max_iterations=None,
-                       free_space_weight=None, connected_space_weight=None,
-                       use_approximates=None, compute_velocities=None,
+    def set_parameters(self,
+                       min_iterations=None,
+                       max_iterations=None,
+                       free_space_weight=None,
+                       connected_space_weight=None,
+                       use_approximates=None,
+                       compute_velocities=None,
                        time_limit=None,
                        reachability_weight=None,
-                       hfts_generation_params=None, max_num_hierarchy_descends=None,
-                       b_force_new_hfts=None, vel_factor=None):
+                       hfts_generation_params=None,
+                       max_num_hierarchy_descends=None,
+                       b_force_new_hfts=None,
+                       vel_factor=None):
         # TODO some of these parameters are robot hand specific
         if time_limit is not None:
             self._time_limit = time_limit

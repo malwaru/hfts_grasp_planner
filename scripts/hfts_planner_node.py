@@ -12,13 +12,11 @@ import tf.transformations as tff
 from std_msgs.msg import Header
 from dynamic_reconfigure.server import Server
 
-
 PACKAGE_NAME = 'hfts_grasp_planner'
 
 
 class HandlerClass(object):
     """ Class that provides a ROS service callback for executing the HFTS grasp planner."""
-
     def __init__(self):
         """ Creates a new handler class."""
         rospack = rospkg.RosPack()
@@ -28,7 +26,7 @@ class HandlerClass(object):
         b_visualize = rospy.get_param(rospy.get_name() + '/visualize', default=False)
         # Update dynamic parameters
         # Create planner
-        self._object_loader = ObjectFileIO(package_path + '/data/')
+        self._object_loader = ObjectFileIO(package_path + '/models/objects/')
         self._planner = HFTSSampler(self._object_loader, num_hops=4, vis=b_visualize)
         # Load hand and save joint names
         hand_file = package_path + rospy.get_param(rospy.get_name() + '/hand_file')
@@ -54,13 +52,15 @@ class HandlerClass(object):
         # TODO setting this boolean parameter should be solved in a more elegant manner
         self._object_loader._b_var_filter = self._params['hfts_filter_points']
         self._planner.load_object(req.object_identifier)
-        hfts_gen_params = {'max_normal_variance': self._params['max_normal_variance'],
-                           'contact_density': self._params['contact_density'],
-                           'min_contact_patch_radius': self._params['min_contact_patch_radius'],
-                           'max_num_points': self._params['max_num_points'],
-                           'position_weight': self._params['hfts_position_weight'],
-                           'branching_factor': self._params['hfts_branching_factor'],
-                           'first_level_branching_factor': self._params['hfts_first_level_branching_factor']}
+        hfts_gen_params = {
+            'max_normal_variance': self._params['max_normal_variance'],
+            'contact_density': self._params['contact_density'],
+            'min_contact_patch_radius': self._params['min_contact_patch_radius'],
+            'max_num_points': self._params['max_num_points'],
+            'position_weight': self._params['hfts_position_weight'],
+            'branching_factor': self._params['hfts_branching_factor'],
+            'first_level_branching_factor': self._params['hfts_first_level_branching_factor']
+        }
         self._planner.set_parameters(max_iters=self._params['num_hfts_iterations'],
                                      reachability_weight=self._params['reachability_weight'],
                                      hfts_generation_params=hfts_gen_params,
@@ -68,13 +68,12 @@ class HandlerClass(object):
         # We always start from the root node, so create a root node
         root_hfts_node = HFTSNode()
         num_planning_attempts = self._params['num_planning_attempts']
-        rospy.loginfo('[HandlerClass::handle_plan_request] Planning grasp, running %i attempts.' % num_planning_attempts)
+        rospy.loginfo('[HandlerClass::handle_plan_request] Planning grasp, running %i attempts.' %
+                      num_planning_attempts)
         iteration = 0
         # Iterate until either shutdown, max_iterations reached or a good grasp was found
         while iteration < num_planning_attempts and not rospy.is_shutdown():
-            return_node = self._planner.sample_grasp(root_hfts_node,
-                                                     self._planner.get_maximum_depth(),
-                                                     post_opt=True)
+            return_node = self._planner.sample_grasp(root_hfts_node, self._planner.get_maximum_depth(), post_opt=True)
             iteration += 1
             if return_node.is_goal():
                 rospy.loginfo('[HandlerClass::handle_plan_request] Found a grasp after %i attempts.' % iteration)
@@ -122,4 +121,3 @@ if __name__ == "__main__":
     srv = Server(HFTSPlannerConfig, handler.update_parameters)
     s = rospy.Service('/hfts_planner/plan_fingertip_grasp', PlanGrasp, handler.handle_plan_request)
     rospy.spin()
-

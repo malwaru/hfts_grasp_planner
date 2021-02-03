@@ -150,6 +150,11 @@ unsigned int ORStateSpace::getDimension() const
   return _robot->GetActiveDOF();
 }
 
+double ORStateSpace::getStepSize() const
+{
+  return 0.1;
+}
+
 void ORStateSpace::getBounds(Config& lower, Config& upper) const
 {
   _robot->GetActiveDOFLimits(lower, upper);

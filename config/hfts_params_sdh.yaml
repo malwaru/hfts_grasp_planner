@@ -1,5 +1,5 @@
 visualize: True
 hand_cache_file: data/cache/sdh_hand.npy
-hand_file: /models/schunk-sdh/Schunk-SDH.robot.xml
-hand_config_file: /models/schunk-sdh/hand_config.yaml
-hand_ball_file: /models/schunk-sdh/ball_description.yaml
+hand_file: /models/robots/schunk-sdh/Schunk-SDH.robot.xml
+hand_config_file: /models/robots/schunk-sdh/hand_config.yaml
+hand_ball_file: /models/robots/schunk-sdh/ball_description.yaml

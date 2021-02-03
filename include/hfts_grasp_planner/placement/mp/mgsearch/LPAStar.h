@@ -233,7 +233,7 @@ protected:
   Key computeGoalKey(const VertexData& v_data)
   {
     // v must be a goal, not underconsistent and reachable
-    if (not _graph.isGoal(v_data.v) or v_data.rhs > v_data.g or std::isinf(v_data.rhs))
+    if (v_data.rhs > v_data.g or std::isinf(v_data.rhs) or not _graph.isGoal(v_data.v))
       return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
     auto parent_data = getVertexData(v_data.p);
     if (parent_data.in_pq || std::isinf(parent_data.g))
@@ -346,7 +346,7 @@ protected:
       if (not_start_state)
       {  // check whether we have the true g value for u when coming from p (i.e. edge weight is correct)
         double true_rhs = p_data.g + _graph.getEdgeCost(u_data.p, u_data.v, false);
-        if (true_rhs > u_data.rhs)
+        if (true_rhs != u_data.rhs)
         {
           handleCostIncrease(p_data, u_data);
         }

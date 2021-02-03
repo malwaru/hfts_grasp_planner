@@ -16,7 +16,7 @@ StateSpace::~StateSpace() = default;
 EdgeCostComputer::~EdgeCostComputer() = default;
 
 IntegralEdgeCostComputer::IntegralEdgeCostComputer(StateSpacePtr state_space, double step_size)
-  : _state_space(state_space), _step_size(step_size)
+  : _state_space(state_space), _step_size(step_size > 0.0 ? step_size : state_space->getStepSize())
 {
 }
 
@@ -43,14 +43,14 @@ double IntegralEdgeCostComputer::integrateCosts(const Config& a, const Config& b
   double interval_size = norm / num_intervals;
   delta *= interval_size / norm;
   qvec = avec + 0.5 * delta;
-  for (size_t t = 0; t < num_intervals; ++t)
+  for (size_t t = 0; t < num_intervals and not std::isinf(integral_cost); ++t)
   {
     // qvec = (t + 0.5) * step_size * delta + avec;
-    double dc = cost_fn(q);  // qvec is a view on q's data
-    if (std::isinf(dc))
-      return INFINITY;
-    integral_cost += dc * interval_size;
-    qvec += delta;
+    // double dc = cost_fn(q);  // qvec is a view on q's data
+    // if (std::isinf(dc))
+    //   return INFINITY;
+    integral_cost += cost_fn(q) * interval_size;
+    qvec += delta;  // qvec is a view on q's data
   }
   return integral_cost;
 }

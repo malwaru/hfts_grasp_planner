@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Environment>
-    <Robot file="../../models/r850/r850_sdh.xml"/>
+    <Robot file="../robots/r850/r850_sdh.xml"/>
     <KinBody name="beckhoff">
         <Translation>0.76 0.58 1.0</Translation>
         <Body type="static">

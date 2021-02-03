@@ -33,6 +33,7 @@ public:
   double distance(const Config& a, const Config& b) const override;
   // space information
   unsigned int getDimension() const override;
+  double getStepSize() const override;
   void getBounds(Config& lower, Config& upper) const override;
   // grasp query
   void getValidGraspIds(std::vector<unsigned int>& grasp_ids) const override;

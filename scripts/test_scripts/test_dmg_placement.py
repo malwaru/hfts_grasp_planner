@@ -491,12 +491,12 @@ if __name__ == "__main__":
             # print objectives
             # probe = env.GetKinBody("probe")
             # prober = kinbody_sdf_module.RigidBodyOccupancyGrid(0.005, probe.GetLinks()[0])
-            # rospy.loginfo("Starting cProfile")
-            # cProfile.run("goal_sampler.sample(100, 100)", '/tmp/cprofile_placement')
+            rospy.loginfo("Starting cProfile")
+            cProfile.run("goal_sampler.sample(100, 100)", '/tmp/cprofile_placement')
             # solutions, num_solutions = goal_sampler.sample(100, 10)
             # print "Took %f realtime, %f clocktime" % (time.time() - real_time, time.clock() - clock_time)
             # cProfile.run("plan(motion_planner, target_object, 5)", '/tmp/cprofile_placement')
-            # rospy.loginfo("cProfile complete")
+            rospy.loginfo("cProfile complete")
             IPython.embed()
         else:
             print "Running %i iterations of the planning algorithm" % args.num_runs

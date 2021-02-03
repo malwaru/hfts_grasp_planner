@@ -43,6 +43,6 @@
     <effector>hand_root</effector>
     <joints>hand_A1_Joint hand_A2_Joint hand_A3_Joint hand_B2_Joint hand_B3_Joint hand_C2_Joint hand_C3_Joint</joints>
     <closingdirection>1 1 1 1 1 1 1</closingdirection>
-    <direction>1 0 0</direction>
+    <direction>0 0 1</direction>
 </manipulator>
 </robot>

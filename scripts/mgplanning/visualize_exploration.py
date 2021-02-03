@@ -382,6 +382,8 @@ class MGRoadmapVisualizer(HasTraits):
                                                      u=solutions_edges[3],
                                                      v=solutions_edges[4],
                                                      w=np.zeros(len(solutions_edges[3])))
+        elif self.solution_plot is not None:
+            self.solution_plot.actor.visible = False
 
 
 if __name__ == "__main__":

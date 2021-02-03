@@ -7,7 +7,7 @@ import rospy
 import yaml
 import itertools
 from scipy.spatial import KDTree
-from utils import vec_angel_diff, dist_in_range, compute_grasp_stability
+from hfts_grasp_planner.utils import vec_angle_diff, dist_in_range, compute_grasp_stability
 from openravepy.misc import DrawAxes
 
 
@@ -85,7 +85,8 @@ class RobotHand(object):
             if OTHER_LINK_NAMES_KEY not in file_content:
                 all_link_names = [link.GetName() for link in self._or_hand.GetLinks()]
                 file_content[OTHER_LINK_NAMES_KEY] = [
-                    link_name for link_name in all_link_names if link_name not in file_content[FINGERTIP_LINK_NAMES_KEY]]
+                    link_name for link_name in all_link_names if link_name not in file_content[FINGERTIP_LINK_NAMES_KEY]
+                ]
             file_content[OPEN_HAND_DIR_KEY] = np.array(file_content[OPEN_HAND_DIR_KEY])
             return file_content
 
@@ -231,7 +232,7 @@ class RobotHand(object):
             to points[0, :], the y axis is chosen accordingly.
         """
         # TODO this is a special case for 3 fingertips
-        assert(self._hand_params[NUM_FINGERTIPS_KEY] == 3)
+        assert (self._hand_params[NUM_FINGERTIPS_KEY] == 3)
         ori = np.sum(points, axis=0) / 3.0
         x = points[0, :] - ori
         x = x / np.linalg.norm(x)
@@ -272,7 +273,7 @@ class RobotHand(object):
         # although both scale_range_max and scale_range_min should always be >= 0,
         # it can happen due to numerical noise that one is negative if we are at a limit
         scale_range = min(max(scale_range_max, 0), max(scale_range_min, 0))
-        assert(scale_range >= 0.0)
+        assert (scale_range >= 0.0)
         step = scale_range / n_step
         if step < NUMERICAL_EPSILON:  # if we are already at a limit this might become very small
             return open_succes, self.are_fingertips_in_contact()
@@ -314,7 +315,7 @@ class RobotHand(object):
         # although both scale_range_max and scale_range_min should always be >= 0,
         # it can happen due to numerical noise that one is negative if we are at a limit
         scale_range = min(max(scale_range_max, 0), max(scale_range_min, 0))
-        assert(scale_range >= 0.0)
+        assert (scale_range >= 0.0)
         step = scale_range / n_step
         if step < NUMERICAL_EPSILON:  # if we are already at a limit this might become very small
             return not self._or_env.CheckCollision(self._or_hand)
@@ -334,7 +335,6 @@ class ReachabilityKDTree(object):
     """
         KD tree based hand manifold for a robot hand
     """
-
     def __init__(self, or_robot, cache_file_name, hand_params, num_samples=10000):
         """
             Creates a new KD-tree based hand manifold for a robot hand.
@@ -362,11 +362,11 @@ class ReachabilityKDTree(object):
     def load(self):
         if os.path.exists(self._cache_file_name):
             rospy.loginfo('[ReachabilityKDTree::load] Loading sample data set from disk.')
-            stored_data = np.load(self._cache_file_name)
+            stored_data = np.load(self._cache_file_name, allow_pickle=True)
             meta_data = stored_data[0]
             data = stored_data[1]
             code_dimension = 2 * self._hand_params[NUM_FINGERTIPS_KEY]
-            self._codes = data[:, : code_dimension]
+            self._codes = data[:, :code_dimension]
             self._hand_configurations = data[:, code_dimension:]
             self._min_code = meta_data[0]
             self._max_code = meta_data[1]
@@ -402,8 +402,8 @@ class ReachabilityKDTree(object):
             self._hand_configurations = np.array(np.meshgrid(*sample_values)).T.reshape((actual_num_samples, num_dofs))
         else:
             random_data = np.random.rand(self._num_samples, num_dofs)
-            self._hand_configurations = np.apply_along_axis(
-                lambda row: lower_limits + row * joint_ranges, 1, random_data)
+            self._hand_configurations = np.apply_along_axis(lambda row: lower_limits + row * joint_ranges, 1,
+                                                            random_data)
         self._codes = np.zeros((actual_num_samples, 2 * self._hand_params[NUM_FINGERTIPS_KEY]))
         rospy.loginfo('[ReachabilityKDTree::Evaluating %i hand configurations.' % actual_num_samples)
         # now compute codes for all configurations
@@ -484,6 +484,4 @@ class ReachabilityKDTree(object):
         env = self._or_robot.GetEnv()
         # Draw planned contacts
         for i in range(poses.shape[0]):
-            handles.append(env.drawarrow(poses[i, :3],
-                                         poses[i, :3] + length * poses[i, 3:],
-                                         width, colors[i]))
+            handles.append(env.drawarrow(poses[i, :3], poses[i, :3] + length * poses[i, 3:], width, colors[i]))

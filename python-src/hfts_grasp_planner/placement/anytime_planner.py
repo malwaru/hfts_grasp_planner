@@ -42,7 +42,8 @@ class MGMotionPlanner(object):
               sdf_file=None,
               log_file=None,
               edge_selector_type=None,
-              batchsize=1000):
+              batchsize=1000,
+              integrator_step_size=0.1):
         """
             Reset motion planner to plan from the current or given start configuration.
             ---------
@@ -61,6 +62,7 @@ class MGMotionPlanner(object):
             edge_selector_type(optional), string - For Lazy-SP based algorithms, set the edge evaluation type.
             batchsize(optional), int - If a roadmap-based planner is used, this specifies the batchsize
                 for sampling.
+            integrator_step_size(optional), float - Step size for collision detection / integration of costs.
         """
         with self._robot:
             self._robot.SetActiveManipulator(self._manip.GetName())
@@ -78,6 +80,8 @@ class MGMotionPlanner(object):
                 command_str += " batchsize=" + str(batchsize)
             if edge_selector_type is not None and type(edge_selector_type) == str:
                 command_str += " edge_selector_type=" + edge_selector_type
+            if integrator_step_size is not None and type(integrator_step_size) == float:
+                command_str += " integrator_step_size=" + integrator_step_size
             self._planner_interface.SendCommand(command_str)
             self._known_grasps = set()
             self._goals = {}

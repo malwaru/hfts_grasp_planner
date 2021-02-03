@@ -46,6 +46,9 @@ class CSpaceSampler:
     def get_scaling_factors(self):
         return self.get_space_dimension() * [1]
 
+    def get_diameter(self):
+        return distance(self.get_lower_bounds(), self.get_upper_bounds())
+
     def distance(self, config_a, config_b):
         total_sum = 0.0
         scaling_factors = self.get_scaling_factors()

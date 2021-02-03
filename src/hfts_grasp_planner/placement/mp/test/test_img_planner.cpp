@@ -35,6 +35,7 @@ int main(int argc, char** argv)
         ("goal_configs", po::value<std::vector<double>>()->multitoken(), "end configurations (list of quadrets (grasp_id, x, y, quality))")
         ("configs_file", po::value<std::string>()->default_value(""), "Optionally path to configuration file containing start and goal configurations")
         ("lambda", po::value<double>()->default_value(1.0), "Scaling factor between path and goal cost.")
+        ("integrator_step_size", po::value<double>()->default_value(0.0), "Step size for cost integrator.")
         ("algorithm_type", po::value<std::string>(), "Algorithm name")
         ("graph_type", po::value<std::string>(), "Graph name")
         ("edge_selector_type", po::value<std::string>()->default_value("LastUnknown"), "Edge selector type for LazySP")
@@ -161,6 +162,7 @@ int main(int argc, char** argv)
   params.roadmap_log_path = vm["roadmap_log_file"].as<std::string>();
   params.logfile_path = vm["evaluation_log_file"].as<std::string>();
   params.batchsize = (unsigned int)vm["batch_size"].as<int>();
+  params.step_size = vm["integrator_step_size"].as<double>();
   // create search and add goals
   pmp::ImgGraphSearch imgs(image_file_path, start, params);
   for (auto& goal : goals)
