@@ -2,7 +2,10 @@
 
 import argparse
 import subprocess
+from multiprocessing import Pool
 import yaml
+import os
+import itertools
 
 # Hacky script to just run planner for many different algorithms
 
@@ -12,7 +15,7 @@ algorithm_graph_combinations = [
     ("LWAstar", "SingleGraspGraph"),
     ("LPAstar", "SingleGraspGraph"),
     ("LWLPAstar", "SingleGraspGraph"),
-    ("LazySP_LLPAstar", "SingleGraspGraph"),
+    # ("LazySP_LLPAstar", "SingleGraspGraph"),
     # MultiGraspGraph
     ("Astar", "MultiGraspGraph"),
     ("LWAstar", "MultiGraspGraph"),
@@ -23,7 +26,7 @@ algorithm_graph_combinations = [
     ("LWAstar", "FoldedMultiGraspGraphStationary"),
     ("LWAstar", "FoldedMultiGraspGraphDynamic"),
     # LazyWeightedMultiGraspGraph
-    ("LazySP_LLPAstar", "LazyWeightedMultiGraspGraph"),
+    # ("LazySP_LLPAstar", "LazyWeightedMultiGraspGraph"),
     ("LazySP_LWLPAstar", "LazyWeightedMultiGraspGraph"),
     ("LazySP_LPAstar", "LazyWeightedMultiGraspGraph"),
     # LazyEdgeWeightedMultiGraspGraph
@@ -49,15 +52,15 @@ test_case_info = {
     "domain": "can be 'placing', '2d', 'picking'",
     "scene_file": "path to OR scene or image state space folder",
     "object_xml": "path to OR kinbody xml in case of placing or picking",
-    "num_grasps": "the number of grasps",
+    "num_grasps": "a list of number of grasps",
     "lambda": "lambda parameter to scale between path and goal cost",
     "configs": "file with goal and extra configs and grasp information",
-    "integrator_step_size": "(Optional) The step size for edge cost integration",
-    "batch_size": "(Optional) The base size of the roadmap",
+    "integrator_step_sizes": "(Optional) The step size for edge cost integration",
+    "batch_sizes": "(Optional) The base size of the roadmap",
 }
 
 
-def call_planner(algorithm, graph, log_path, test_case_info):
+def call_planner(algorithm, graph, log_path, test_case_info, num_runs, dry_run):
     """Call the planner for
 
     Args:
@@ -65,77 +68,104 @@ def call_planner(algorithm, graph, log_path, test_case_info):
         graph ([type]): [description]
         log_path (str): path to the root folder of where to store results
         test_case_info ([type]): [description]
+        num_runs(int): the number of times to run each instance of a test case
+        dry_run(bool): If True, only print command, don't actually call it
     """
     try:
         commands = []
-        log_folder_name = log_path + '/' + algorithm + "__" + graph + '__' +\
-            test_case_info['name'] + '__' + str(test_case_info['num_grasps'])
-        if test_case_info['domain'] == 'placing':
-            commands = [
-                'rosrun', 'hfts_grasp_planner', 'run_mgplanner_yumi.py', test_case_info['scene_file'],
-                test_case_info['object_xml'], test_case_info['configs'], algorithm, graph, '--lmbda',
-                test_case_info['lambda'], '--stats_file', log_folder_name + '/run_stats', '--results_file',
-                log_folder_name + '/results', '--planner_log', log_folder_name + '/log'
-            ]
-        elif test_case_info['domain'] == 'picking':
-            raise NotImplementedError("Picking is not yet implemented")
-        elif test_case_info['domain'] == '2d':
-            commands = [
-                'rosrun', 'hfts_grasp_planner', 'test_image_space_algorithm', '--image_path',
-                test_case_info['scene_file'], '--configs_file', test_case_info['configs'], '--lambda',
-                test_case_info['lambda'], '--algorithm_type', algorithm, '--graph_type', graph, '--stats_file',
-                log_folder_name + '/run_stats', '--results_file', log_folder_name + '/results', '--roadmap_log_file',
-                log_folder_name + '/log_roadmap', '--evaluation_log_file', log_folder_name + '/log_evaluation'
-            ]
-        else:
-            raise ValueError("ERROR: Unknown domain type %s." % test_case_info['domain'])
-        # append optional commands that are identical for all cases
-        for key_name in ['batch_size', 'integrator_step_size']:
-            if key_name in test_case_info:
-                commands.extend(['--' + key_name, test_case_info[key_name]])
-        print "Executing command %s" % str(commands)
-        subprocess.call(map(str, commands))
+        step_sizes = ['default'
+                      ] if 'integrator_step_sizes' not in test_case_info else test_case_info['integrator_step_sizes']
+        batch_sizes = ['default'] if 'batch_sizes' not in test_case_info else test_case_info['batch_sizes']
+        for num_grasps in test_case_info['num_grasps']:
+            # log_folder_name = log_path + '/' + algorithm + "__" + graph + "__" + test_case_info['name']
+            # log_folder_name += '__' + str(num_grasps)
+            for step_size in step_sizes:
+                for batch_size in batch_sizes:
+                    log_folder_name = (log_path + "/%s__%s__%s__%d-grasps__%s-step_size__%s-batch_size") % (
+                        algorithm, graph, test_case_info['name'], num_grasps, str(step_size), str(batch_size))
+                    if os.path.exists(log_folder_name + '/results'):
+                        # do not overwrite existing results
+                        continue
+                    if test_case_info['domain'] == 'placing':
+                        commands = [
+                            'rosrun', 'hfts_grasp_planner', 'run_mgplanner_yumi.py', test_case_info['scene_file'],
+                            test_case_info['object_xml'], test_case_info['configs'], algorithm, graph, '--lmbda',
+                            test_case_info['lambda'], '--stats_file', log_folder_name + '/run_stats', '--results_file',
+                            log_folder_name + '/results', '--planner_log', log_folder_name + '/log'
+                        ]
+                    elif test_case_info['domain'] == 'picking':
+                        raise NotImplementedError("Picking is not yet implemented")
+                    elif test_case_info['domain'] == '2d':
+                        commands = [
+                            'rosrun', 'hfts_grasp_planner', 'test_image_space_algorithm', '--image_path',
+                            test_case_info['scene_file'], '--configs_file', test_case_info['configs'], '--lambda',
+                            test_case_info['lambda'], '--algorithm_type', algorithm, '--graph_type', graph,
+                            '--stats_file', log_folder_name + '/run_stats', '--results_file',
+                            log_folder_name + '/results', '--roadmap_log_file', log_folder_name + '/log_roadmap',
+                            '--evaluation_log_file', log_folder_name + '/log_evaluation'
+                        ]
+                    else:
+                        raise ValueError("ERROR: Unknown domain type %s." % test_case_info['domain'])
+                    # limit number of grasps
+                    commands.extend(['--limit_grasps', str(num_grasps)])
+                    # append optional commands for step size and roadmap size
+                    if step_size != "default":
+                        commands.extend(['--integrator_step_size', str(step_size)])
+                    if batch_size != "default":
+                        commands.extend(['--batch_size', str(batch_size)])
+                    for i in range(num_runs):
+                        print "Executing command %s for run %d/%d" % (str(commands), i + 1, num_runs)
+                        if not dry_run:
+                            subprocess.call(map(str, commands))
     except (ValueError) as e:
         print "An error occured: %s. Skipping this test case." % str(e)
+
+
+def execute_task(task):
+    eval_info, test_case = task
+    call_planner(eval_info[0], eval_info[1], eval_info[2], test_case, eval_info[3], eval_info[4])
 
 
 def run_tests(testfile,
               log_path,
               num_runs,
+              num_processes,
               algorithm_whitelist=None,
               graph_whitelist=None,
               algorithm_blacklist=None,
-              graph_blacklist=None):
+              graph_blacklist=None,
+              dry_run=False):
     """Run the test cases specified in the yaml file <testfile>.
 
     Args:
         testfile (str): Path to yaml file containing test cases.
         log_path (str): Path to where to store logs
         num_runs (int): The number of executions of each algorithm to get runtime averages.
+        num_processes (int): The number of parallel processes
         algorithm_whitelist (list of str), optional: A subset of algorithms to test only.
         graph_whitelist (list of str), optional: A subset of graphs to test only
         algorithm_blacklist (list of str), optional: A subset of algorithms to not test.
         graph_blacklist (list of str), optional: A subset of graphs to not test.
+        dry_run(bool), optional: If True, only print test cases without executing them
     """
     # read testfile
     with open(testfile, 'r') as yaml_file:
         test_cases = yaml.load(yaml_file)
-    for algo_name, graph_name in algorithm_graph_combinations:
-        # skip combinations that aren't in the whitelist or those that are in the blacklist
-        if algorithm_whitelist and algo_name not in algorithm_whitelist:
-            continue
-        if graph_whitelist and graph_name not in graph_whitelist:
-            continue
-        if algorithm_blacklist and algo_name in algorithm_blacklist:
-            continue
-        if graph_blacklist and graph_name in graph_blacklist:
-            continue
-        for tid, test_case in enumerate(test_cases):
-            # TODO can we parallize this?
-            for r in range(num_runs):
-                print "Running run %i/%i of test case %i/%i for algorithm %s on graph %s" % (
-                    r + 1, num_runs, tid + 1, len(test_cases), algo_name, graph_name)
-                call_planner(algo_name, graph_name, log_path, test_case)
+
+    def is_permitted(algo_name, graph_name):
+        not_permitted = (algorithm_whitelist is not None and algo_name not in algorithm_whitelist) or\
+                        (graph_whitelist is not None and graph_name not in graph_whitelist) or\
+                        (algorithm_blacklist is not None and algo_name in algorithm_blacklist) or\
+                        (graph_blacklist is not None and graph_name in graph_blacklist)
+        return not not_permitted
+
+    permitted_combinations = [(algo_name, graph_name, log_path, num_runs, dry_run)
+                              for algo_name, graph_name in algorithm_graph_combinations
+                              if is_permitted(algo_name, graph_name)]
+    tasks = itertools.product(permitted_combinations, test_cases)
+
+    pool = Pool(num_processes)
+    pool.map(execute_task, tasks)
 
 
 if __name__ == "__main__":
@@ -146,6 +176,7 @@ if __name__ == "__main__":
     parser.add_argument('tests_file', help="Path to a yaml file specifying the test cases", type=str)
     parser.add_argument('log_path', type=str, help='Path to base folder of where to store the results')
     parser.add_argument('--num_runs', help="Number of runs to execute for runtime measurements.", type=int, default=10)
+    parser.add_argument('--num_processes', help="Number of parallel processes to run.", type=int, default=4)
     parser.add_argument("--limit_algorithms",
                         help="Optionally limit the evaluation to the given list of algorithms",
                         nargs="*",
@@ -159,6 +190,9 @@ if __name__ == "__main__":
                         nargs="*",
                         type=str)
     parser.add_argument("--exclude_graphs", help="Optionally exclude the given list of graphs", nargs="*", type=str)
+    parser.add_argument("--dry_run",
+                        help="If set, only print what test cases would be run, but do not execute any",
+                        action='store_true')
     args = parser.parse_args()
-    run_tests(args.tests_file, args.log_path, args.num_runs, args.limit_algorithms, args.limit_graphs,
-              args.exclude_algorithms, args.exclude_algorithms)
+    run_tests(args.tests_file, args.log_path, args.num_runs, args.num_processes, args.limit_algorithms,
+              args.limit_graphs, args.exclude_algorithms, args.exclude_algorithms, args.dry_run)

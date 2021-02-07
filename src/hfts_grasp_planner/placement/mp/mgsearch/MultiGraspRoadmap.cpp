@@ -295,7 +295,15 @@ Roadmap::NodePtr Roadmap::getNode(unsigned int node_id) const
 
 Roadmap::NodeWeakPtr Roadmap::addNode(const Config& config)
 {
-  NodePtr new_node = std::shared_ptr<Node>(new Node(_node_id_counter++, config));
+  NodePtr new_node = std::shared_ptr<Node>(new Node(_node_id_counter, config));
+  if (_nn.size() > 0)
+  {  // first check whether we already have this exact configuration
+    auto nearest_existing = _nn.nearest(new_node);
+    if (_state_space->distance(nearest_existing->config, config) == 0.0)
+      return nearest_existing;
+  }
+  // otherwise keep new node
+  _node_id_counter++;
   _nn.add(new_node);
   _nodes.insert(std::make_pair(new_node->uid, new_node));
   _logger.newNode(new_node);
@@ -590,11 +598,19 @@ void MultiGraspGoalSet::removeGoal(unsigned int gid)
     assert(gid2rid_iter != _goal_id_to_roadmap_id.end());
     unsigned int rid = gid2rid_iter->second;
     _goal_id_to_roadmap_id.erase(gid2rid_iter);
-    // remove inverse mapping
-    auto rid2gid_iter = _roadmap_id_to_goal_id.find(rid);
-    assert(rid2gid_iter != _roadmap_id_to_goal_id.end());
-    assert(rid2gid_iter->second == gid);
-    _roadmap_id_to_goal_id.erase(rid2gid_iter);
+    {  // remove inverse mappings, first _roadmap_id_to_goal_ids
+      auto rid2gidset_iter = _roadmap_id_to_goal_ids.find(rid);
+      assert(rid2gidset_iter != _roadmap_id_to_goal_ids.end());
+      assert(rid2gidset_iter->second.find(gid) != rid2gidset_iter->second.end());
+      rid2gidset_iter->second.erase(gid);
+      if (rid2gidset_iter->second.empty())
+        _roadmap_id_to_goal_ids.erase(rid2gidset_iter);
+    }
+    {  // next _roadmap_grasp_id_to_goal_id
+      auto rgid2gid_iter = _roadmap_grasp_id_to_goal_id.find({rid, goal_iter->second.grasp_id});
+      assert(rgid2gid_iter != _roadmap_grasp_id_to_goal_id.end());
+      _roadmap_grasp_id_to_goal_id.erase(rgid2gid_iter);
+    }
     // remove it from grasp_id_to_goal_id
     _grasp_id_to_goal_ids.at(goal_iter->second.grasp_id).erase(gid);
     // fix quality range
@@ -640,20 +656,13 @@ bool MultiGraspGoalSet::isGoal(Roadmap::NodePtr node, unsigned int grasp_id) con
 bool MultiGraspGoalSet::isGoal(unsigned int node_id, unsigned int grasp_id) const
 {
   // check whether this roadmap node is affiliated with a goal
-  unsigned int goal_id;
-  {
-    auto iter = _roadmap_id_to_goal_id.find(node_id);
-    if (iter == _roadmap_id_to_goal_id.end())
-      return false;
-    goal_id = iter->second;
-  }
-  // check whether the goal is for the given grasp
-  return grasp_id == _goals.at(goal_id).grasp_id;
+  auto iter = _roadmap_grasp_id_to_goal_id.find({node_id, grasp_id});
+  return iter != _roadmap_grasp_id_to_goal_id.end();
 }
 
 bool MultiGraspGoalSet::canBeGoal(unsigned int node_id) const
 {
-  return _roadmap_id_to_goal_id.find(node_id) != _roadmap_id_to_goal_id.end();
+  return _roadmap_id_to_goal_ids.find(node_id) != _roadmap_id_to_goal_ids.end();
 }
 
 unsigned int MultiGraspGoalSet::getRoadmapId(unsigned int goal_id) const
@@ -663,24 +672,23 @@ unsigned int MultiGraspGoalSet::getRoadmapId(unsigned int goal_id) const
 
 std::pair<unsigned int, bool> MultiGraspGoalSet::getGoalId(unsigned int node_id, unsigned int grasp_id)
 {
-  auto iter = _roadmap_id_to_goal_id.find(node_id);
-  if (iter == _roadmap_id_to_goal_id.end())
+  auto iter = _roadmap_grasp_id_to_goal_id.find({node_id, grasp_id});
+  if (iter == _roadmap_grasp_id_to_goal_id.end())
   {
     return {0, false};
   }
-  // get the grasp for this goal
-  bool valid_grasp = _goals.at(iter->second).grasp_id == grasp_id;
-  return {iter->second, valid_grasp};
+  return {iter->second, true};
 }
 
 std::vector<unsigned int> MultiGraspGoalSet::getGoalIds(unsigned int node_id) const
 {
-  auto iter = _roadmap_id_to_goal_id.find(node_id);
-  if (iter == _roadmap_id_to_goal_id.end())
+  auto iter = _roadmap_id_to_goal_ids.find(node_id);
+  if (iter == _roadmap_id_to_goal_ids.end())
   {
     return {};
   }
-  return {iter->second};  // TODO what if there are multiple goals at the same node?
+  // TODO this is a bit inefficient
+  return std::vector<unsigned int>(iter->second.begin(), iter->second.end());
 }
 
 void MultiGraspGoalSet::getGoals(std::vector<MultiGraspMP::Goal>& goals) const
@@ -739,7 +747,8 @@ void MultiGraspGoalSet::addGoalToMembers(const MultiGraspMP::Goal& goal, unsigne
 {
   _goals.insert(std::make_pair(goal.id, goal));
   _goal_id_to_roadmap_id[goal.id] = rid;
-  _roadmap_id_to_goal_id[rid] = goal.id;
+  _roadmap_id_to_goal_ids[rid].insert(goal.id);
+  _roadmap_grasp_id_to_goal_id[{rid, goal.grasp_id}] = goal.id;
   // add to _grasp_id_to_goal_ids mapping
   auto grasp_iter = _grasp_id_to_goal_ids.find(goal.grasp_id);
   if (grasp_iter != _grasp_id_to_goal_ids.end())

@@ -509,8 +509,11 @@ private:
   std::unordered_map<unsigned int, MultiGraspMP::Goal> _goals;
   // goal id -> roadmap node id
   std::unordered_map<unsigned int, unsigned int> _goal_id_to_roadmap_id;
-  // roadmap node id -> goal id; TODO: what if there are multiple goals for the same roadmap node?
-  std::unordered_map<unsigned int, unsigned int> _roadmap_id_to_goal_id;
+  // roadmap node id -> set of goal ids
+  std::unordered_map<unsigned int, std::set<unsigned int>> _roadmap_id_to_goal_ids;
+  // pair <roadmap node id, grasp id> -> goal id
+  typedef std::pair<unsigned int, unsigned int> NodeIdGraspIdPair;
+  std::unordered_map<NodeIdGraspIdPair, unsigned int, boost::hash<NodeIdGraspIdPair>> _roadmap_grasp_id_to_goal_id;
   // grasp id -> list of goals with this grasp
   std::unordered_map<unsigned int, std::set<unsigned int>> _grasp_id_to_goal_ids;
   const RoadmapPtr _roadmap;
@@ -569,7 +572,7 @@ public:
     GoalIter iter(from);
     while (iter != end)
     {
-      auto [dist, nearest_goal] = nearestGoal(iter->config);
+      auto nearest_goal = _goals.nearest(*iter);
       if (nearest_goal.id == iter->id)
       {
         _goals.remove(*iter);

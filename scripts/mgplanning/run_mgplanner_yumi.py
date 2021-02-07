@@ -9,6 +9,7 @@ import openravepy as orpy
 import IPython
 from hfts_grasp_planner.placement.anytime_planner import MGMotionPlanner
 from hfts_grasp_planner.placement.goal_sampler.interfaces import PlacementGoalSampler
+from reduce_num_grasps import reduce_num_grasps
 import hfts_grasp_planner.utils as hfts_utils
 
 # def sample_arm_configs(manip, num):
@@ -83,19 +84,22 @@ def yaml_dict_to_tf_matrix(adict):
     return m
 
 
-def load_goals(robot, target_object, filename):
+def load_goals(robot, target_object, filename, limit_grasps=0):
     """Load goals from the given file.
 
     Args:
         robot (OpenRAVE Robot): robot to load goals for
         target_object (OpenRAVE KinBody): the target object
         filename (str): Filename to load goals from
+        limit_grasps (int): limit the number of grasps. If 0, don't limit.
     Returns:
         list of PlacementGoals: placement goals
         list of np.array: waypoint configurations
     """
     with open(filename, 'r') as goal_file:
         goal_data = yaml.load(goal_file)
+        if limit_grasps > 0:
+            goal_data = reduce_num_grasps(goal_data, limit_grasps)
     # first create a map from grasp id to grasp information
     grasp_infos = {}
     for grasp in goal_data['grasps']:
@@ -162,6 +166,10 @@ if __name__ == "__main__":
                         help='Step size used for edge cost integration',
                         type=float,
                         default=0.1)
+    parser.add_argument('--limit_grasps',
+                        help="Optionally, limit the number of grasps to consider",
+                        type=int,
+                        default=0)
     parser.add_argument('--show_viewer', help="Show viewer at the end of planning.", action='store_true')
     args = parser.parse_args()
 
@@ -182,7 +190,7 @@ if __name__ == "__main__":
         target_object.SetName(target_obj_name)
         robot = env.GetRobots()[0]
         # load goals
-        goals, waypoints, reverse_task = load_goals(robot, target_object, args.goal_file)
+        goals, waypoints, reverse_task = load_goals(robot, target_object, args.goal_file, args.limit_grasps)
         # goals = [goal for goal in goals if goal.objective_value > 0.7]
         manip = goals[0].manip
         robot.SetActiveDOFs(manip.GetArmIndices())

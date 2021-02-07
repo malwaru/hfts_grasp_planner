@@ -182,21 +182,30 @@ public:
     // 2. pq.top().v is a goal and its goal key (see its definition in computeGoalKey) is <= its PQ key
     // 3. pq.top().v is a normal vertex and we encountered a reachable goal before with key <= _pq.top().key
     while (not _pq.empty() and updateGoalKey(getVertexData(_pq.top().v)) > _pq.top().key)
+    // while (not _pq.empty() and getGoalKey() > _pq.top().key)
     {
       // assert(_pq.top().key <= _);
       PQElement current_el(_pq.top());
       // get vertex data
       VertexData& u_data = getVertexData(current_el.v);
       if constexpr (not G::heuristic_stationary::value)
-      {  // check whether the heuristic value is still correct, else add it back on pq
+      {  // check whether the heuristic value is still correct, else update its key
         if (not _graph.isHeuristicValid(u_data.v))
         {
           u_data.h = _graph.heuristic(u_data.v);
-          updateVertexKey(u_data);
+          auto new_key = computeKey(u_data.g, u_data.h, u_data.rhs);
+          (*u_data.pq_handle).key = new_key;
+          _pq.decrease(u_data.pq_handle);  // priority has decreased
+          // TODO update goal keys?
+          // if (u_data.in_goal_pq)
+          // {
+          //   (*u_data.goal_pq_handle).key = new_key;
+          //   _goal_keys.decrease(u_data.goal_pq_handle);
+          // }
           continue;
         }
       }
-      // resolve inconsistency different depending on edge evaluation type ee_type
+      // resolve inconsistency differently depending on edge evaluation type ee_type
       innerLoopImplementation(inner_loop_type, u_data);
     }
     // the _result keeps track of reached goal nodes and kept across runs of this algorithm
@@ -222,7 +231,7 @@ protected:
    * Compute the goal key for the given vertex data.
    * @param v_data: vertex data to compute goal key for
    * @return the goal key:
-   *  (inf, inf) if:
+   *  (inf, 0) if:
    *    1. v_data.v is not a goal
    *    2. v_data.v is overconsistent (rhs > g)
    *    3. v_data.v is currently unreachable (rhs = inf)
@@ -234,20 +243,27 @@ protected:
   {
     // v must be a goal, not underconsistent and reachable
     if (v_data.rhs > v_data.g or std::isinf(v_data.rhs) or not _graph.isGoal(v_data.v))
-      return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+      return {std::numeric_limits<double>::infinity(), 0.0};
     auto parent_data = getVertexData(v_data.p);
     if (parent_data.in_pq || std::isinf(parent_data.g))
-      return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+      return {std::numeric_limits<double>::infinity(), 0.0};
     if constexpr (ee_type == LazyWeighted)
     {
       if (v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, true) or
           v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, false))
       {
-        return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+        return {std::numeric_limits<double>::infinity(), 0.0};
       }
     }
     double goal_cost = _graph.getGoalCost(v_data.v);
     return {v_data.rhs + goal_cost, v_data.rhs};
+  }
+
+  Key getGoalKey() const
+  {
+    if (_goal_keys.empty())
+      return {std::numeric_limits<double>::infinity(), 0.0};
+    return _goal_keys.top().key;
   }
 
   /**
@@ -283,7 +299,7 @@ protected:
       _result.goal_cost = std::numeric_limits<double>::infinity();
       _result.path_cost = std::numeric_limits<double>::infinity();
       _result.solved = false;
-      return {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+      return {std::numeric_limits<double>::infinity(), 0.0};
     }
     // else _goal_data.top() is our best reachable goal
     if (goal_pq_modified)
@@ -292,7 +308,7 @@ protected:
       _result.goal_node = goal_data.v;
       _result.goal_cost = (*goal_data.goal_pq_handle).key.first - (*goal_data.goal_pq_handle).key.second;
       _result.path_cost = goal_data.rhs;
-      _result.solved = goal_data.rhs <= goal_data.g;
+      _result.solved = goal_data.rhs <= goal_data.g and not std::isinf(_result.path_cost);
     }
     return _goal_keys.top().key;
   }
@@ -509,6 +525,10 @@ protected:
     {
       updateGoalKey(v_data);
     }
+    // if (_graph.isGoal(v_data.v))
+    // {
+    //   updateGoalKey(v_data);
+    // }
   }
 
   VertexData& getVertexData(unsigned int v)

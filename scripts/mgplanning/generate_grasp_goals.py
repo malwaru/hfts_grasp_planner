@@ -163,7 +163,6 @@ if __name__ == "__main__":
                     grasp.gid)
                 goals.append(goal)
         # use store placements function from generate_yumi_goals to save the goals to disk
-        # TODO sample waypoints
         if args.sample_waypoints:
             print "Sampling %i waypoints" % args.sample_waypoints
             # TODO use different volume? Maybe enlarged? Bounding box of goals?

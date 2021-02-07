@@ -6,6 +6,8 @@
 #include <iostream>
 #include <yaml-cpp/yaml.h>
 #include <string>
+#include <algorithm>
+#include <iterator>
 
 namespace po = boost::program_options;
 namespace mgs = placement::mp::mgsearch;
@@ -27,6 +29,7 @@ int main(int argc, char** argv)
   po::options_description desc("Test multi-grasp motion planner on 2D image state spaces.");
   bool print_profile = false;
   bool show_combinations = false;
+  bool enable_debug_log = false;
   // clang-format off
     desc.add_options()
         ("help", "produce help message")
@@ -34,6 +37,7 @@ int main(int argc, char** argv)
         ("start_config", po::value<std::vector<double>>()->multitoken(), "start configuration (2d)")
         ("goal_configs", po::value<std::vector<double>>()->multitoken(), "end configurations (list of quadrets (grasp_id, x, y, quality))")
         ("configs_file", po::value<std::string>()->default_value(""), "Optionally path to configuration file containing start and goal configurations")
+        ("limit_grasps", po::value<int>()->default_value(0), "If a configs file is given, optionally limit the number of goals to those of the first n grasps")
         ("lambda", po::value<double>()->default_value(1.0), "Scaling factor between path and goal cost.")
         ("integrator_step_size", po::value<double>()->default_value(0.0), "Step size for cost integrator.")
         ("algorithm_type", po::value<std::string>(), "Algorithm name")
@@ -45,7 +49,8 @@ int main(int argc, char** argv)
         ("results_file", po::value<std::string>()->default_value("/tmp/results_log"), "Filename to log planning results to")
         ("batch_size", po::value<int>()->default_value(1000), "Number of roadmap samples per densification step")
         ("print_profile", po::bool_switch(&print_profile), "If set, print profiling information")
-        ("show_combinations", po::bool_switch(&show_combinations), "If set, show valid combinations of algorithm and graph");
+        ("show_combinations", po::bool_switch(&show_combinations), "If set, show valid combinations of algorithm and graph")
+        ("debug_log", po::bool_switch(&enable_debug_log), "If set, print debug-level logs.");
   // clang-format on
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -72,6 +77,11 @@ int main(int argc, char** argv)
                 << mgs::MGGraphSearchMP::getName(valid_combi.second) << std::endl;
     }
     return 0;
+  }
+  if (enable_debug_log)
+  {
+    OpenRAVE::RaveSetDebugLevel(OpenRAVE::DebugLevel::Level_Debug);
+    RAVELOG_DEBUG("DEBUG-level logging enabled");
   }
   // load start and goal either from configuration file or from command line arguments
   pmp::Config start;
@@ -112,6 +122,31 @@ int main(int argc, char** argv)
       goal.config.push_back(goal_data.at(2));
       goal.quality = goal_data.at(3);
       goals.push_back(goal);
+    }
+    // filter goals if requested
+    int limit_grasps = vm.at("limit_grasps").as<int>();
+    if (limit_grasps)
+    {
+      // first get the number of grasps we have goals for
+      std::set<unsigned int> grasp_ids;
+      for (auto& goal : goals)
+      {
+        grasp_ids.insert(goal.grasp_id);
+      }
+      // keep first <limit_grasps> grasps
+      std::set<unsigned int> grasp_ids_to_keep;
+      for (auto iter = grasp_ids.begin(); iter != grasp_ids.end() and grasp_ids_to_keep.size() < limit_grasps; ++iter)
+      {
+        grasp_ids_to_keep.insert(*iter);
+      }
+      // std::sample(grasp_ids.begin(), grasp_ids.end(), std::inserter(grasp_ids_to_keep, grasp_ids_to_keep.end()),
+      //             limit_grasps, std::mt19937{std::random_device{}()});
+      // filter goals accordingly
+      goals.erase(std::remove_if(goals.begin(), goals.end(),
+                                 [grasp_ids_to_keep](const pmp::MultiGraspMP::Goal& g) {
+                                   return grasp_ids_to_keep.find(g.grasp_id) == grasp_ids_to_keep.end();
+                                 }),
+                  goals.end());
     }
   }
   else
