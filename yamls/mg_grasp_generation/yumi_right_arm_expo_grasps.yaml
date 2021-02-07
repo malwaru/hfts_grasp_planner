@@ -3,7 +3,7 @@ target_obj_file:  ../../models/objects/expo/expo.kinbody.xml
 target_object_name: 'expo'
 manip_name: right_arm_with_gripper
 urdf_file: ../../models/robots/yumi/yumi.urdf
-gripper_file: ../../models/robots/yumi/yumi_gripper_l.robot.xml
+gripper_file: ../../models/robots/yumi/yumi_gripper_r.robot.xml
 gripper_information: ../../models/robots/yumi/gripper_information.yaml
 dmg_file: ../../models/objects/expo/dmg_info.yaml
 grasp_file: ../placement_problems/grasps/new/expo.yaml

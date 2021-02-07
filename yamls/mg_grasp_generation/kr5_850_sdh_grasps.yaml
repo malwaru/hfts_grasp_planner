@@ -1,0 +1,3 @@
+or_env: ../../models/environments/table_r850.xml
+target_obj_file:  ../../models/objects/expo/expo.kinbody.xml
+manip_name: arm_with_sdh
