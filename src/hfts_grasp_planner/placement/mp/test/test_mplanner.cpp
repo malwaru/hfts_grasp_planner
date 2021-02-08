@@ -67,9 +67,14 @@ struct DummyGraph
     return std::numeric_limits<double>::infinity();
   }
 
-  unsigned int getStartNode() const
+  unsigned int getStartVertex() const
   {
     return 0;
+  }
+
+  unsigned int getGoalVertex() const
+  {
+    return _num_vertices - 1;
   }
 
   bool isGoal(unsigned int v) const

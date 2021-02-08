@@ -41,7 +41,10 @@ protected:
   {
     unsigned int v;
     Key key;
-    PQElement(unsigned int _v, std::pair<double, double> _key) : v(_v), key(_key)
+    bool goal_vertex;  // 0 = max priority. This is used to handle zero edge costs to the goal vertex and give priority
+                       // to non-goal vertices
+    PQElement(unsigned int _v, std::pair<double, double> _key, bool _goal_vertex = false)
+      : v(_v), key(_key), goal_vertex(_goal_vertex)
     {
     }
   };
@@ -51,7 +54,12 @@ protected:
     // Does b have priority over a?
     bool operator()(const PQElement& a, const PQElement& b) const
     {
-      return b.key < a.key;
+      if (b.key < a.key)
+        return true;
+      if (a.key < b.key)
+        return false;
+      // if keys are equal and b is the goal, prioritize a (this is to capture zero edge costs to the goal vertex)
+      return not b.goal_vertex;
     }
   };
 
@@ -74,10 +82,9 @@ protected:
     unsigned int p;        // parent id
     bool in_pq;            // true if vertex is in PQ
     typename PQ::handle_type pq_handle;
-    bool in_goal_pq;  // true if vertex is in goal PQ
-    typename PQ::handle_type goal_pq_handle;
+    // typename PQ::handle_type goal_pq_handle;
     VertexData(unsigned int v_, double g_, double h_, double rhs_, unsigned int p_)
-      : v(v_), g(g_), h(h_), rhs(rhs_), p(p_), in_pq(false), in_goal_pq(false)
+      : v(v_), g(g_), h(h_), rhs(rhs_), p(p_), in_pq(false)
     {
     }
   };
@@ -93,7 +100,8 @@ public:
    */
   LPAStarAlgorithm(G& graph) : _graph(graph)
   {
-    _v_start = _graph.getStartNode();
+    _v_start = _graph.getStartVertex();
+    _v_goal = _graph.getGoalVertex();
     // initialize start state
     if (_graph.checkValidity(_v_start))
     {
@@ -101,11 +109,11 @@ public:
       start_data.rhs = 0.0;
       updateVertexKey(start_data);
       // initialize result
-      _result.solved = false;
-      _result.path.clear();
-      _result.path_cost = std::numeric_limits<double>::infinity();
-      _result.goal_cost = std::numeric_limits<double>::infinity();
-      _result.goal_node = _v_start;
+      // _result.solved = false;
+      // _result.path.clear();
+      // _result.path_cost = std::numeric_limits<double>::infinity();
+      // _result.goal_cost = std::numeric_limits<double>::infinity();
+      // _result.goal_node = _v_start;
     }
   }
 
@@ -138,7 +146,6 @@ public:
           u_data.rhs = std::numeric_limits<double>::infinity();
           updateVertexKey(u_data);
         }
-        // TODO handleLazyCostIncrease
         if constexpr (ee_type == LazyWeighted)
         {
           handleLazyCostIncrease(u_data, v_data);
@@ -155,17 +162,17 @@ public:
    * Update the algorithm state to reflect the invalidation or cost change of goals.
    * @param old_goals - a list of goal vertices that are no longer goals or whose goal costs have changed.
    */
-  void invalidateGoals(const std::vector<unsigned int>& old_goals)
-  {
-    for (auto v : old_goals)
-    {
-      VertexData& v_data = getVertexData(v);
-      if (v_data.in_goal_pq)
-      {
-        updateGoalKey(v_data);
-      }
-    }
-  }
+  // void invalidateGoals(const std::vector<unsigned int>& old_goals)
+  // {
+  //   for (auto v : old_goals)
+  //   {
+  //     VertexData& v_data = getVertexData(v);
+  //     if (v_data.in_goal_pq)
+  //     {
+  //       updateGoalKey(v_data);
+  //     }
+  //   }
+  // }
 
   /**
    * Compute the shortest path given the current algorithm state.
@@ -177,14 +184,8 @@ public:
     // main loop
     // differs depending on edge evaluation type ee_type
     std::integral_constant<EdgeCostEvaluationType, ee_type> inner_loop_type;
-    // We can keep repeating until either:
-    // 1. pq is empty
-    // 2. pq.top().v is a goal and its goal key (see its definition in computeGoalKey) is <= its PQ key
-    // 3. pq.top().v is a normal vertex and we encountered a reachable goal before with key <= _pq.top().key
-    while (not _pq.empty() and updateGoalKey(getVertexData(_pq.top().v)) > _pq.top().key)
-    // while (not _pq.empty() and getGoalKey() > _pq.top().key)
+    while (not terminalCondition())
     {
-      // assert(_pq.top().key <= _);
       PQElement current_el(_pq.top());
       // get vertex data
       VertexData& u_data = getVertexData(current_el.v);
@@ -196,24 +197,28 @@ public:
           auto new_key = computeKey(u_data.g, u_data.h, u_data.rhs);
           (*u_data.pq_handle).key = new_key;
           _pq.decrease(u_data.pq_handle);  // priority has decreased
-          // TODO update goal keys?
-          // if (u_data.in_goal_pq)
-          // {
-          //   (*u_data.goal_pq_handle).key = new_key;
-          //   _goal_keys.decrease(u_data.goal_pq_handle);
-          // }
           continue;
         }
       }
       // resolve inconsistency differently depending on edge evaluation type ee_type
       innerLoopImplementation(inner_loop_type, u_data);
     }
-    // the _result keeps track of reached goal nodes and kept across runs of this algorithm
-    result = _result;
-    // extract path
+    // check if we have a finite rhs value for the goal
+    const auto& goal_data = getVertexData(_v_goal);
+    result.solved = not std::isinf(goal_data.rhs);
     if (result.solved)
     {
+      // extract path
+      result.goal_cost = 0.0;
+      result.goal_node = _v_goal;
       extractPath<VertexDataMap>(_v_start, _vertex_data, result);
+      result.path_cost = goal_data.rhs;
+    }
+    else
+    {
+      result.path_cost = std::numeric_limits<double>::infinity();
+      result.goal_cost = std::numeric_limits<double>::infinity();
+      result.goal_node = _v_start;
     }
   }
 
@@ -221,11 +226,46 @@ protected:
   // VertexData
   PQ _pq;
   VertexDataMap _vertex_data;
-  SearchResult _result;
-  PQ _goal_keys;  // stores the goals that we found to be reachable under their respective goal key (path_cost +
-                  // goal_cost, path_cost)
+  // SearchResult _result;
+  // PQ _goal_keys;  // stores the goals that we found to be reachable under their respective goal key (path_cost +
+  // goal_cost, path_cost)
   G& _graph;
   unsigned int _v_start;
+  unsigned int _v_goal;
+
+  bool terminalCondition()
+  {
+    if (_pq.empty())
+      return true;
+    // ensure rhs is computed with correct edge cost and not lazily
+    const auto& goal_data = getVertexData(_v_goal);
+    const auto& parent_data = getVertexData(goal_data.p);
+    if constexpr (ee_type == LazyWeighted)
+    {
+      if (goal_data.p != goal_data.v)
+      {  // if we have an rhs value, make sure it's correct
+        // catch lazyHandleCostIncrease
+        if (goal_data.rhs != parent_data.g + _graph.getEdgeCost(parent_data.v, goal_data.v, false))
+          return false;
+        // catch lazy edge cost computation
+        if (goal_data.rhs != parent_data.g + _graph.getEdgeCost(parent_data.v, goal_data.v, true))
+          return false;
+      }
+      else
+      {
+        assert(std::isinf(goal_data.rhs));
+      }
+    }
+    // if the final edge cost is zero (the only one that is allowed to be zero), do not terminate yet if parent is
+    // inconsistent; PQElement sorting guarantees that goal vertex is expanded after parent (unless numerical issues
+    // arise)
+    bool goal_rhs_legit = parent_data.v == goal_data.v ||
+                          _graph.getEdgeCost(parent_data.v, goal_data.v, ee_type != Explicit) > 0.0 ||
+                          not parent_data.in_pq;
+    // original terminal conditions (DO NOT SIMPLIFY NEGATION)
+    return !(_pq.top().key < computeKey(goal_data.g, goal_data.h, goal_data.rhs)) and goal_rhs_legit and
+           goal_data.g >= goal_data.rhs;
+  }
 
   /**
    * Compute the goal key for the given vertex data.
@@ -239,79 +279,79 @@ protected:
    *    5. the cost of the incidary edge to v_data.v isn't reflected in rhs
    *  (path_cost + goal_cost, path_cost) otherwise
    */
-  Key computeGoalKey(const VertexData& v_data)
-  {
-    // v must be a goal, not underconsistent and reachable
-    if (v_data.rhs > v_data.g or std::isinf(v_data.rhs) or not _graph.isGoal(v_data.v))
-      return {std::numeric_limits<double>::infinity(), 0.0};
-    auto parent_data = getVertexData(v_data.p);
-    if (parent_data.in_pq || std::isinf(parent_data.g))
-      return {std::numeric_limits<double>::infinity(), 0.0};
-    if constexpr (ee_type == LazyWeighted)
-    {
-      if (v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, true) or
-          v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, false))
-      {
-        return {std::numeric_limits<double>::infinity(), 0.0};
-      }
-    }
-    double goal_cost = _graph.getGoalCost(v_data.v);
-    return {v_data.rhs + goal_cost, v_data.rhs};
-  }
+  // Key computeGoalKey(const VertexData& v_data)
+  // {
+  //   // v must be a goal, not underconsistent and reachable
+  //   if (v_data.rhs > v_data.g or std::isinf(v_data.rhs) or not _graph.isGoal(v_data.v))
+  //     return {std::numeric_limits<double>::infinity(), 0.0};
+  //   auto parent_data = getVertexData(v_data.p);
+  //   if (parent_data.in_pq || std::isinf(parent_data.g))
+  //     return {std::numeric_limits<double>::infinity(), 0.0};
+  //   if constexpr (ee_type == LazyWeighted)
+  //   {
+  //     if (v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, true) or
+  //         v_data.rhs != parent_data.g + _graph.getEdgeCost(v_data.p, v_data.v, false))
+  //     {
+  //       return {std::numeric_limits<double>::infinity(), 0.0};
+  //     }
+  //   }
+  //   double goal_cost = _graph.getGoalCost(v_data.v);
+  //   return {v_data.rhs + goal_cost, v_data.rhs};
+  // }
 
-  Key getGoalKey() const
-  {
-    if (_goal_keys.empty())
-      return {std::numeric_limits<double>::infinity(), 0.0};
-    return _goal_keys.top().key;
-  }
+  // Key getGoalKey() const
+  // {
+  //   if (_goal_keys.empty())
+  //     return {std::numeric_limits<double>::infinity(), 0.0};
+  //   return _goal_keys.top().key;
+  // }
 
   /**
    * Compute the goal key for the given vertex data and update _goal_keys.
    * @param v_data: the vertex data to compute the goal key for
    * @return _goal_keys.top().key: the potentially updated goal key
    */
-  Key updateGoalKey(VertexData& v_data)
-  {
-    Key new_goal_key = computeGoalKey(v_data);
-    bool goal_pq_modified = false;
-    if (std::isinf(new_goal_key.first) and v_data.in_goal_pq)
-    {  // remove v_data from goal_pq
-      _goal_keys.erase(v_data.goal_pq_handle);
-      v_data.in_goal_pq = false;
-      goal_pq_modified = true;
-    }
-    else if (v_data.in_goal_pq and new_goal_key != (*v_data.goal_pq_handle).key)
-    {  // update key (new_goal_key is finite)
-      (*v_data.goal_pq_handle).key = new_goal_key;
-      _goal_keys.update(v_data.goal_pq_handle);  // TODO can new_goal_key even be cheaper? if not use increase
-      goal_pq_modified = true;
-    }
-    else if (not v_data.in_goal_pq and not std::isinf(new_goal_key.first))
-    {  // add to goal_pq
-      v_data.goal_pq_handle = _goal_keys.push(PQElement(v_data.v, new_goal_key));
-      v_data.in_goal_pq = true;
-      goal_pq_modified = true;
-    }
-    if (_goal_keys.empty())
-    {  // no goal key -> return inf, inf
-      _result.goal_node = _v_start;
-      _result.goal_cost = std::numeric_limits<double>::infinity();
-      _result.path_cost = std::numeric_limits<double>::infinity();
-      _result.solved = false;
-      return {std::numeric_limits<double>::infinity(), 0.0};
-    }
-    // else _goal_data.top() is our best reachable goal
-    if (goal_pq_modified)
-    {  // update _result
-      const VertexData& goal_data = _vertex_data.at(_goal_keys.top().v);
-      _result.goal_node = goal_data.v;
-      _result.goal_cost = (*goal_data.goal_pq_handle).key.first - (*goal_data.goal_pq_handle).key.second;
-      _result.path_cost = goal_data.rhs;
-      _result.solved = goal_data.rhs <= goal_data.g and not std::isinf(_result.path_cost);
-    }
-    return _goal_keys.top().key;
-  }
+  // Key updateGoalKey(VertexData& v_data)
+  // {
+  //   Key new_goal_key = computeGoalKey(v_data);
+  //   bool goal_pq_modified = false;
+  //   if (std::isinf(new_goal_key.first) and v_data.in_goal_pq)
+  //   {  // remove v_data from goal_pq
+  //     _goal_keys.erase(v_data.goal_pq_handle);
+  //     v_data.in_goal_pq = false;
+  //     goal_pq_modified = true;
+  //   }
+  //   else if (v_data.in_goal_pq and new_goal_key != (*v_data.goal_pq_handle).key)
+  //   {  // update key (new_goal_key is finite)
+  //     (*v_data.goal_pq_handle).key = new_goal_key;
+  //     _goal_keys.update(v_data.goal_pq_handle);  // TODO can new_goal_key even be cheaper? if not use increase
+  //     goal_pq_modified = true;
+  //   }
+  //   else if (not v_data.in_goal_pq and not std::isinf(new_goal_key.first))
+  //   {  // add to goal_pq
+  //     v_data.goal_pq_handle = _goal_keys.push(PQElement(v_data.v, new_goal_key));
+  //     v_data.in_goal_pq = true;
+  //     goal_pq_modified = true;
+  //   }
+  //   if (_goal_keys.empty())
+  //   {  // no goal key -> return inf, inf
+  //     _result.goal_node = _v_start;
+  //     _result.goal_cost = std::numeric_limits<double>::infinity();
+  //     _result.path_cost = std::numeric_limits<double>::infinity();
+  //     _result.solved = false;
+  //     return {std::numeric_limits<double>::infinity(), 0.0};
+  //   }
+  //   // else _goal_data.top() is our best reachable goal
+  //   if (goal_pq_modified)
+  //   {  // update _result
+  //     const VertexData& goal_data = _vertex_data.at(_goal_keys.top().v);
+  //     _result.goal_node = goal_data.v;
+  //     _result.goal_cost = (*goal_data.goal_pq_handle).key.first - (*goal_data.goal_pq_handle).key.second;
+  //     _result.path_cost = goal_data.rhs;
+  //     _result.solved = goal_data.rhs <= goal_data.g and not std::isinf(_result.path_cost);
+  //   }
+  //   return _goal_keys.top().key;
+  // }
 
   // inner loop for when using explicit edge evaluation
   void innerLoopImplementation(const std::integral_constant<EdgeCostEvaluationType, Explicit>& type, VertexData& u_data)
@@ -456,7 +496,8 @@ protected:
         // updateVertexKey(v_data);
         if (!v_data.in_pq)
         {
-          v_data.pq_handle = _pq.push(PQElement(v_data.v, computeKey(v_data.g, v_data.h, v_data.rhs)));
+          v_data.pq_handle =
+              _pq.push(PQElement(v_data.v, computeKey(v_data.g, v_data.h, v_data.rhs), v_data.v == _v_goal));
           v_data.in_pq = true;
         }
       }  // else v is inconsistent and thus in the PQ -> there is nothing we have to do
@@ -481,7 +522,6 @@ protected:
 
   /**
    * Update v's key in _pq and remove if needed.
-   * If v is a goal and responsible for _goal_key, also update _goal_key.
    */
   void updateVertexKey(VertexData& v_data)
   {
@@ -503,7 +543,7 @@ protected:
     else if (v_data.g != v_data.rhs and not v_data.in_pq)
     {
       // add v to PQ
-      v_data.pq_handle = _pq.push(PQElement(v_data.v, computeKey(v_data.g, v_data.h, v_data.rhs)));
+      v_data.pq_handle = _pq.push(PQElement(v_data.v, computeKey(v_data.g, v_data.h, v_data.rhs), v_data.v == _v_goal));
       v_data.in_pq = true;
     }
     else if (v_data.g == v_data.rhs and v_data.in_pq)
@@ -520,15 +560,6 @@ protected:
           _graph.registerMinimalCost(v_data.v, v_data.g);
       }
     }
-    // update goal key in case we just invalidated the goal responsible for _goal_key.top()
-    if (v_data.v == _result.goal_node)
-    {
-      updateGoalKey(v_data);
-    }
-    // if (_graph.isGoal(v_data.v))
-    // {
-    //   updateGoalKey(v_data);
-    // }
   }
 
   VertexData& getVertexData(unsigned int v)

@@ -52,7 +52,7 @@ bool verifyResult(Graph& g, const SearchResult& sr)
     RAVELOG_DEBUG("Search result invalid as it does not contain a path.");
     return false;
   }
-  if (sr.path.front() != g.getStartNode())
+  if (sr.path.front() != g.getStartVertex())
   {
     RAVELOG_DEBUG("Search result invalid because path does not begin with start node.");
     return false;
@@ -62,11 +62,11 @@ bool verifyResult(Graph& g, const SearchResult& sr)
     RAVELOG_DEBUG("Search result invalid because goal node member differs from path end.");
     return false;
   }
-  if (not g.isGoal(sr.path.back()))
-  {
-    RAVELOG_DEBUG("Search result invalid because path does not end in goal node.");
-    return false;
-  }
+  // if (not g.isGoal(sr.path.back()))
+  // {
+  //   RAVELOG_DEBUG("Search result invalid because path does not end in goal node.");
+  //   return false;
+  // }
   // verify costs
   double path_cost = 0.0;
   unsigned int prev_v = sr.path.front();
@@ -83,14 +83,15 @@ bool verifyResult(Graph& g, const SearchResult& sr)
                          sr.path_cost % path_cost);
     return false;
   }
-  double goal_cost = g.getGoalCost(sr.goal_node);
-  if (std::abs(goal_cost - sr.goal_cost) > 1e-6)
-  {
-    RAVELOG_DEBUG_FORMAT("Search result invalid because goal cost is incorrect. Result goal cost: %1%, True goal cost "
-                         "%2%",
-                         sr.goal_cost % goal_cost);
-    return false;
-  }
+  // double goal_cost = g.getGoalCost(sr.goal_node);
+  // if (std::abs(goal_cost - sr.goal_cost) > 1e-6)
+  // {
+  //   RAVELOG_DEBUG_FORMAT("Search result invalid because goal cost is incorrect. Result goal cost: %1%, True goal cost
+  //   "
+  //                        "%2%",
+  //                        sr.goal_cost % goal_cost);
+  //   return false;
+  // }
   return true;
 }
 
@@ -250,6 +251,8 @@ private:
   {
     MultiGraspMP::WaypointPathPtr wp_path = std::make_shared<MultiGraspMP::WaypointPath>();
     auto [prev_rid, prev_gid] = graph.getGraspRoadmapId(sr.path.front());
+    // TODO remove goal vertex; maybe make this more elegant
+    sr.path.pop_back();
     // extract solution path
     for (unsigned int vid : sr.path)
     {

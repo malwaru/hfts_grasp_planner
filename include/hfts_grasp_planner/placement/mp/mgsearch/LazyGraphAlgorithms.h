@@ -115,7 +115,8 @@ void lazySPLazyLayered(LazyLayeredMultiGraspRoadmapGraph<ctype>& graph, SearchAl
       // update goal changes
       std::vector<unsigned int> goal_changes;
       graph.getGoalChanges(goal_changes, true);
-      algorithm.invalidateGoals(goal_changes);
+      // algorithm.invalidateGoals(goal_changes);
+      // TODO can these goal changes now be completely handled as edge changes?
       all_path_edges_valid = edge_changes.empty() and unknown_edges.empty();
     }
   } while (result.solved and not all_path_edges_valid);

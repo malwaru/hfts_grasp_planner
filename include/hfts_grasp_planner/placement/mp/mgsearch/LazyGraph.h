@@ -95,7 +95,12 @@ public:
   std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
   double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
   bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
-  unsigned int getStartNode() const;
+  unsigned int getStartVertex() const;
+  unsigned int getGoalVertex() const
+  {
+    throw std::runtime_error("Not implemented");
+    return 0;
+  }
   bool isGoal(unsigned int v) const;
   double getGoalCost(unsigned int v) const;
   double heuristic(unsigned int v) const;

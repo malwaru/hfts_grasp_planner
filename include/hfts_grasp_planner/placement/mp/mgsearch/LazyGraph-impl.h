@@ -633,7 +633,7 @@ bool LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::trueEdgeCostKnown(un
 }
 
 template <CostCheckingType cost_checking_type>
-unsigned int LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getStartNode() const
+unsigned int LazyLayeredMultiGraspRoadmapGraph<cost_checking_type>::getStartVertex() const
 {
   return 0;
 }

@@ -380,12 +380,13 @@ public:
   // Provides read access to goals in goal set
   struct GoalIterator
   {
+    // GoalIterator() = default;
     ~GoalIterator() = default;
     GoalIterator& operator++();
     bool operator==(const GoalIterator& other) const;
     bool operator!=(const GoalIterator& other) const;
-    const MultiGraspMP::Goal& operator*();
-    const MultiGraspMP::Goal* operator->();
+    const MultiGraspMP::Goal& operator*() const;
+    const MultiGraspMP::Goal* operator->() const;
     // iterator traits
     using difference_type = long;
     using value_type = MultiGraspMP::Goal;

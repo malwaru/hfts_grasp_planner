@@ -56,6 +56,7 @@ ScopedProfiler::~ScopedProfiler()
   if (iter == profile_data.end())
   {
     FunctionProfile new_profile;
+    new_profile.function_name = _function_name;
     profile_data[_function_name] = new_profile;
   }
   if (!_aggregate)

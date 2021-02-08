@@ -138,12 +138,13 @@ template <typename G, typename PQ = boost::heap::fibonacci_heap<PQElement, boost
 void lwaStarSearch(G& graph, SearchResult& result)
 {
   utils::ScopedProfiler profiler("lwaStarSearch");
-  unsigned int v_start = graph.getStartNode();
+  unsigned int v_start = graph.getStartVertex();
+  unsigned int v_goal = graph.getGoalVertex();
   // initialize result structure
   result.solved = false;
   result.path.clear();
   result.path_cost = std::numeric_limits<double>::infinity();
-  result.goal_cost = std::numeric_limits<double>::infinity();
+  result.goal_cost = std::numeric_limits<double>::infinity();  // TODO obsolete
   result.goal_node = v_start;
   // initialize algorithm data structures
   PQ pq;
@@ -155,8 +156,10 @@ void lwaStarSearch(G& graph, SearchResult& result)
     vertex_data.emplace(std::make_pair(v_start, VertexData(v_start, 0.0, v_start)));
     pq.push(PQElement(v_start, v_start, 0.0, graph.heuristic(v_start)));
   }
+  // add goal vertex
+  vertex_data.emplace(std::make_pair(v_goal, VertexData(v_goal, std::numeric_limits<double>::infinity(), v_goal)));
   // main iteration - is skipped if start vertex is invalid
-  while (not pq.empty() and result.cost() > f(pq.top()))
+  while (not pq.empty() and not vertex_data.at(v_goal).closed)
   {
     PQElement current_el = pq.top();
     pq.pop();
@@ -192,22 +195,8 @@ void lwaStarSearch(G& graph, SearchResult& result)
           flushWaitingList(graph, pq, waiting_lists, current_el.v);
         }
       }
-      if (graph.isGoal(current_el.v))
-      {  // is it a goal?
-        result.solved = true;
-        double path_cost = vertex_data.at(current_el.v).g;
-        double goal_cost = graph.getGoalCost(current_el.v);
-        double new_cost = path_cost + goal_cost;
-        if (new_cost < result.cost())
-        {
-          result.path_cost = path_cost;
-          result.goal_cost = goal_cost;
-          result.goal_node = current_el.v;
-        }
-      }
-      else
-      {
-        // actually extend v
+      if (current_el.v != v_goal)
+      {  // extend v if its not the goal
         auto [siter, send] = graph.getSuccessors(current_el.v, true);
         for (; siter != send; ++siter)
         {
@@ -215,10 +204,10 @@ void lwaStarSearch(G& graph, SearchResult& result)
           // get lower bound of edge cost
           double wvs = graph.getEdgeCost(current_el.v, s, true);
           // TODO is this needed? getSuccessors should skip invalid edges
-          if (std::isinf(wvs))
-          {  // skip edges that are already known to be invalid
-            continue;
-          }
+          // if (std::isinf(wvs))
+          // {  // skip edges that are already known to be invalid
+          //   continue;
+          // }
           // compute the g value s might reach by going through v
           double g_s = current_el.g_value + wvs;
           // get VertexData
@@ -242,8 +231,12 @@ void lwaStarSearch(G& graph, SearchResult& result)
     }
   }
   // extract path
-  if (result.solved)
+  if (vertex_data.at(v_goal).closed)
   {
+    result.solved = true;
+    result.path_cost = vertex_data.at(v_goal).g;
+    result.goal_node = v_goal;
+    result.goal_cost = 0.0;
     extractPath<VertexDataMap>(v_start, vertex_data, result);
   }
 }

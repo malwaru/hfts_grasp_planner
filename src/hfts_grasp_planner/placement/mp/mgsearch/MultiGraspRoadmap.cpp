@@ -548,12 +548,12 @@ bool MultiGraspGoalSet::GoalIterator::operator!=(const MultiGraspGoalSet::GoalIt
   return other._iter != _iter;
 }
 
-const placement::mp::MultiGraspMP::Goal& MultiGraspGoalSet::GoalIterator::operator*()
+const placement::mp::MultiGraspMP::Goal& MultiGraspGoalSet::GoalIterator::operator*() const
 {
   return _iter->second;
 }
 
-const placement::mp::MultiGraspMP::Goal* MultiGraspGoalSet::GoalIterator::operator->()
+const placement::mp::MultiGraspMP::Goal* MultiGraspGoalSet::GoalIterator::operator->() const
 {
   return &(_iter->second);
 }

@@ -73,6 +73,7 @@ class MGRoadmapVisualizer(HasTraits):
         self._log_filename = log_file
         self._last_log_update = None  # last time the logfile was loaded
         self._hide_list = hide_list
+        self._hide_list.append("GOAL_EXPENSION")  # there is nothing to visualize for goal expensions
         # parsed logs: contains tuples ((checked_node_id, grasp_id, state), (checked_edge, grasp_id, state));
         # grasp_id is None if base was only checked; state = 1 if valid, 0 if invalid
         self._logs = []

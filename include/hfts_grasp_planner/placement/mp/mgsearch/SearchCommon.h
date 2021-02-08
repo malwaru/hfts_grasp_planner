@@ -53,13 +53,11 @@ void extractPath(unsigned int v_start, const VertexDataMap& vertex_data, SearchR
   result.path.clear();
   // extract path
   unsigned int v = result.goal_node;
-  // while (v != v_start)
   while (v != vertex_data.at(vertex_data.at(v).p).p)
   {
     result.path.push_back(v);
     v = vertex_data.at(v).p;
   }
-  auto bla = vertex_data.at(v);
   assert(v == v_start);
   result.path.push_back(v_start);
   std::reverse(result.path.begin(), result.path.end());

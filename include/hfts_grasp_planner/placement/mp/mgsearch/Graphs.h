@@ -74,22 +74,14 @@ public:
   bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
 
   /**
-   * Return the id of the start node.
+   * Return the id of the start vertex.
    */
-  unsigned int getStartNode() const;
+  unsigned int getStartVertex() const;
 
   /**
-   * Return whether the node with the given id is a goal.
+   * Return the id of the goal vertex.
    */
-  bool isGoal(unsigned int v) const;
-
-  /**
-   * Return the additive cost associated with the given goal node.
-   * If the given id is not a goal, infinity is returned.
-   * Note that in general getGoalCost(v) can be greater than heuristic(v), as there may
-   * be a better goal with a sufficiently low path cost to be reachable.
-   */
-  double getGoalCost(unsigned int v) const;
+  unsigned int getGoalVertex() const;
 
   // Technically not a function of the graph, but the graph might have its own encoding of vertices, so the
   // heuristic needs to be connected to the graph anyways.
@@ -133,9 +125,44 @@ public:
   ~VertexExpansionLogger();
   void logExpansion(unsigned int rid);
   void logExpansion(unsigned int rid, unsigned int gid);
+  void logGoalExpansion();
 
 private:
   RoadmapPtr _roadmap;
+};
+
+/**
+ * A wrapper around a polymorphic iterator implementation.
+ */
+struct DynamicNeighborIterator
+{
+  struct IteratorImplementation
+  {
+    virtual ~IteratorImplementation() = 0;
+    virtual bool equals(const IteratorImplementation* const other) const = 0;
+    virtual unsigned int dereference() const = 0;
+    virtual void next() = 0;
+    virtual std::unique_ptr<IteratorImplementation> copy() const = 0;
+    virtual bool isEnd() const = 0;
+  };
+  DynamicNeighborIterator();
+  DynamicNeighborIterator(std::unique_ptr<IteratorImplementation>& impl);
+  DynamicNeighborIterator(const DynamicNeighborIterator& other);
+  DynamicNeighborIterator(DynamicNeighborIterator&& other);
+  ~DynamicNeighborIterator() = default;
+  DynamicNeighborIterator& operator++();
+  bool operator==(const DynamicNeighborIterator& other) const;
+  bool operator!=(const DynamicNeighborIterator& other) const;
+  unsigned int operator*();
+  // iterator traits
+  using difference_type = long;
+  using value_type = unsigned int;
+  using pointer = const unsigned int*;
+  using reference = const unsigned int&;
+  using iterator_category = std::forward_iterator_tag;
+
+private:
+  std::unique_ptr<IteratorImplementation> _impl;
 };
 
 /**
@@ -145,36 +172,7 @@ private:
 class SingleGraspRoadmapGraph
 {
 public:
-  struct NeighborIterator
-  {
-    ~NeighborIterator() = default;
-    NeighborIterator& operator++();
-    bool operator==(const NeighborIterator& other) const;
-    bool operator!=(const NeighborIterator& other) const;
-    unsigned int operator*();
-    // iterator traits
-    using difference_type = long;
-    using value_type = unsigned int;
-    using pointer = const unsigned int*;
-    using reference = const unsigned int&;
-    using iterator_category = std::forward_iterator_tag;
-
-    static NeighborIterator begin(unsigned int v, bool lazy, SingleGraspRoadmapGraph const* parent);
-    static NeighborIterator end(unsigned int v, SingleGraspRoadmapGraph const* parent);
-
-  private:
-    NeighborIterator();  // end constructor
-    NeighborIterator(Roadmap::Node::EdgeIterator eiter, Roadmap::Node::EdgeIterator end, bool lazy,
-                     SingleGraspRoadmapGraph const* parent);
-    Roadmap::Node::EdgeIterator _iter;
-    Roadmap::Node::EdgeIterator _end;
-    const bool _lazy;
-    bool _is_end;
-    SingleGraspRoadmapGraph const* _graph;
-    void forwardToNextValid();
-  };
-
-  friend struct NeighborIterator;
+  typedef DynamicNeighborIterator NeighborIterator;
   /**
    * Create a new roadmap graph defined by the given roadmap for the given goals.
    * All goals need to correspond to the same grasp (grasp_id).
@@ -197,9 +195,8 @@ public:
   std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
   double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
   bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
-  unsigned int getStartNode() const;
-  bool isGoal(unsigned int v) const;
-  double getGoalCost(unsigned int v) const;
+  unsigned int getStartVertex() const;
+  unsigned int getGoalVertex() const;
   double heuristic(unsigned int v) const;
   typedef std::bool_constant<true> heuristic_stationary;
 
@@ -210,8 +207,76 @@ private:
   ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;
   ::placement::mp::mgsearch::MultiGoalCostToGo _cost_to_go;
   const unsigned int _grasp_id;
-  const unsigned int _start_id;
+  const unsigned int _start_rid;                  // roadmap node id of the start vertex
+  const static unsigned int START_VERTEX_ID = 0;  // must be 0
+  const static unsigned int GOAL_VERTEX_ID = 1;   // must be 1
+  unsigned int toVertexId(unsigned int rid) const;
+  unsigned int toRoadmapId(unsigned int vid) const;
   VertexExpansionLogger _logger;
+
+  // NeighborIteratorImplementations
+  // StandardIterator governs forward and backward adjacency inherited from the roadmap
+  template <bool lazy>
+  struct StandardIterator : public DynamicNeighborIterator::IteratorImplementation
+  {
+    StandardIterator(SingleGraspRoadmapGraph const* parent, unsigned int roadmap_id);
+    StandardIterator(const StandardIterator<lazy>& other);
+    ~StandardIterator() = default;
+    // interface
+    bool equals(const IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<IteratorImplementation> copy() const override;
+    bool isEnd() const override;
+    unsigned int getRoadmapId() const;
+    SingleGraspRoadmapGraph const* getGraph() const;
+
+  private:
+    SingleGraspRoadmapGraph const* _graph;
+    const unsigned int _roadmap_id;
+    Roadmap::Node::EdgeIterator _iter;
+    Roadmap::Node::EdgeIterator _end;
+    void forwardToNextValid();
+  };
+
+  /**
+   * NeighborIterator for vertices adjacent to the goal vertex - use for forward only.
+   */
+  template <bool lazy>
+  struct GoalEntranceIterator : public DynamicNeighborIterator::IteratorImplementation
+  {
+    GoalEntranceIterator(SingleGraspRoadmapGraph const* parent, unsigned int roadmap_id);
+    GoalEntranceIterator(const GoalEntranceIterator<lazy>& other);
+    ~GoalEntranceIterator() = default;
+    // interface
+    bool equals(const IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<IteratorImplementation> copy() const override;
+    bool isEnd() const override;
+
+  private:
+    StandardIterator<lazy> _standard_iter;
+    bool _is_end;
+  };
+
+  // NeighborIterator for the goal vertex to iterate over its predecessors.
+  struct GoalVertexIterator : public DynamicNeighborIterator::IteratorImplementation
+  {
+    GoalVertexIterator(SingleGraspRoadmapGraph const* parent);
+    ~GoalVertexIterator() = default;
+    // interface
+    bool equals(const IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<IteratorImplementation> copy() const override;
+    bool isEnd() const override;
+
+  private:
+    SingleGraspRoadmapGraph const* _graph;
+    MultiGraspGoalSet::GoalIterator _iter;
+    MultiGraspGoalSet::GoalIterator _end;
+  };
 };
 
 /**
@@ -266,41 +331,7 @@ template <CostCheckingType cost_checking_type = WithGrasp>
 class MultiGraspRoadmapGraph
 {
 public:
-  struct NeighborIterator
-  {
-    ~NeighborIterator() = default;
-    NeighborIterator& operator++();
-    bool operator==(const NeighborIterator& other) const;
-    bool operator!=(const NeighborIterator& other) const;
-    unsigned int operator*();
-    // iterator traits
-    using difference_type = long;
-    using value_type = unsigned int;
-    using pointer = const unsigned int*;
-    using reference = const unsigned int&;
-    using iterator_category = std::forward_iterator_tag;
-
-    static NeighborIterator begin(unsigned int v, bool lazy, MultiGraspRoadmapGraph const* graph);
-    static NeighborIterator end(unsigned int v, MultiGraspRoadmapGraph const* graph);
-
-  private:
-    NeighborIterator();
-    NeighborIterator(unsigned int v, bool lazy, MultiGraspRoadmapGraph const* parent);
-    unsigned int _v;
-    // information about grasps
-    std::set<unsigned int>::iterator _grasp_iter;  // for v == 0
-    unsigned int _grasp_id;                        // grasp id for any other vertex
-    unsigned int _roadmap_id;                      // roadmap node if for any other vertex
-    // iterators for roadmap edges
-    Roadmap::Node::EdgeIterator _iter;
-    Roadmap::Node::EdgeIterator _end;
-    bool _is_end;  // flag to indicate the iterator is at the end
-    bool _lazy;
-    MultiGraspRoadmapGraph const* _graph;
-    // flag for special case edge back to node 0
-    bool _edge_to_0_returned;
-    void forwardToNextValid();
-  };
+  typedef DynamicNeighborIterator NeighborIterator;
   /**
    * Create a new MultiGraspRoadmapGraph defined by the given roadmap for the given grasps.
    * @param roadmap - roadmap to use
@@ -322,9 +353,8 @@ public:
   std::pair<NeighborIterator, NeighborIterator> getPredecessors(unsigned int v, bool lazy = false);
   double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
   bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
-  unsigned int getStartNode() const;
-  bool isGoal(unsigned int v) const;
-  double getGoalCost(unsigned int v) const;
+  unsigned int getStartVertex() const;
+  unsigned int getGoalVertex() const;
   double heuristic(unsigned int v) const;
   typedef std::bool_constant<true> heuristic_stationary;
   // additional functions to evaluate grasp-specific costs in case cost_checking_type is not WithGrasp
@@ -352,6 +382,9 @@ private:
   mutable std::unordered_map<unsigned int, GraspNodeIDPair> _graph_key_to_roadmap;
   unsigned int _roadmap_start_id;
 
+  const static unsigned int START_VERTEX_ID;  // must be 0
+  const static unsigned int GOAL_VERTEX_ID;   // must be 1
+
   // grasp id, roadmap id
   std::pair<unsigned int, unsigned int> toRoadmapKey(unsigned int graph_id) const;
   unsigned int toGraphKey(const std::pair<unsigned int, unsigned int>& roadmap_id) const;
@@ -359,6 +392,134 @@ private:
   mutable unsigned int _num_graph_nodes;
   // logger
   VertexExpansionLogger _logger;
+
+  // Iterator implementations
+  // StandardIterator governs forward and backward adjacency inherited from the roadmap
+  template <bool lazy>
+  struct StandardIterator : public DynamicNeighborIterator::IteratorImplementation
+  {
+    StandardIterator(MultiGraspRoadmapGraph const* parent, unsigned int roadmap_id, unsigned int grasp_id);
+    StandardIterator(const StandardIterator<lazy>& other);
+    ~StandardIterator() = default;
+    // interface
+    bool equals(const IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<IteratorImplementation> copy() const override;
+    bool isEnd() const override;
+    unsigned int getRoadmapId() const;
+    MultiGraspRoadmapGraph const* getGraph() const;
+
+  private:
+    MultiGraspRoadmapGraph const* _graph;
+    const unsigned int _roadmap_id;
+    const unsigned int _grasp_id;
+    Roadmap::Node::EdgeIterator _iter;
+    Roadmap::Node::EdgeIterator _end;
+    void forwardToNextValid();
+  };
+
+  /**
+   * NeighborIterator for vertices adjacent to start or goal vertex in addition to normal adjacency.
+   */
+  template <bool lazy>
+  struct StartGoalBridgeIterator : public DynamicNeighborIterator::IteratorImplementation
+  {
+    // pass id of goal or start vertex as special vertex
+    StartGoalBridgeIterator(MultiGraspRoadmapGraph<cost_checking_type> const* parent, unsigned int roadmap_id,
+                            unsigned int grasp_id, unsigned int special_vertex);
+    StartGoalBridgeIterator(const StartGoalBridgeIterator<lazy>& other);
+    ~StartGoalBridgeIterator() = default;
+    // interface
+    bool equals(const IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<IteratorImplementation> copy() const override;
+    bool isEnd() const override;
+
+  private:
+    StandardIterator<lazy> _standard_iter;
+    bool _is_end;
+    unsigned int _special_vertex;
+  };
+
+  // NeighborIterator for the goal vertex to iterate over its predecessors.
+  struct GoalVertexIterator : public DynamicNeighborIterator::IteratorImplementation
+  {
+    GoalVertexIterator(MultiGraspRoadmapGraph<cost_checking_type> const* parent);
+    ~GoalVertexIterator() = default;
+    // interface
+    bool equals(const IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<IteratorImplementation> copy() const override;
+    bool isEnd() const override;
+
+  private:
+    MultiGraspRoadmapGraph<cost_checking_type> const* _graph;
+    MultiGraspGoalSet::GoalIterator _iter;
+    MultiGraspGoalSet::GoalIterator _end;
+  };
+
+  // IteratorImplementation to get successors of the start vertex.
+  struct StartVertexIterator : public DynamicNeighborIterator::IteratorImplementation
+  {
+    StartVertexIterator(MultiGraspRoadmapGraph<cost_checking_type> const* parent);
+    ~StartVertexIterator() = default;
+    // interface
+    bool equals(const IteratorImplementation* const other) const override;
+    unsigned int dereference() const override;
+    void next() override;
+    std::unique_ptr<IteratorImplementation> copy() const override;
+    bool isEnd() const override;
+
+  private:
+    MultiGraspRoadmapGraph<cost_checking_type> const* _graph;
+    std::set<unsigned int>::const_iterator _iter;
+  };
+
+  // struct StandardIterator : public DynamicNeighborIterator::IteratorImplementation
+  // {
+  //   ~StandardIterator() = 0;
+  //   virtual bool equals(const IteratorImplementation* const other) const = 0;
+  //   virtual unsigned int dereference() const = 0;
+  //   virtual void next() = 0;
+  //   virtual std::unique_ptr<IteratorImplementation> copy() const = 0;
+  //   virtual bool isEnd() const = 0;
+
+  //   ~NeighborIterator() = default;
+  //   NeighborIterator& operator++();
+  //   bool operator==(const NeighborIterator& other) const;
+  //   bool operator!=(const NeighborIterator& other) const;
+  //   unsigned int operator*();
+  //   // iterator traits
+  //   using difference_type = long;
+  //   using value_type = unsigned int;
+  //   using pointer = const unsigned int*;
+  //   using reference = const unsigned int&;
+  //   using iterator_category = std::forward_iterator_tag;
+
+  //   static NeighborIterator begin(unsigned int v, bool lazy, MultiGraspRoadmapGraph const* graph);
+  //   static NeighborIterator end(unsigned int v, MultiGraspRoadmapGraph const* graph);
+
+  // private:
+  //   NeighborIterator();
+  //   NeighborIterator(unsigned int v, bool lazy, MultiGraspRoadmapGraph const* parent);
+  //   unsigned int _v;
+  //   // information about grasps
+  //   std::set<unsigned int>::iterator _grasp_iter;  // for v == 0
+  //   unsigned int _grasp_id;                        // grasp id for any other vertex
+  //   unsigned int _roadmap_id;                      // roadmap node if for any other vertex
+  //   // iterators for roadmap edges
+  //   Roadmap::Node::EdgeIterator _iter;
+  //   Roadmap::Node::EdgeIterator _end;
+  //   bool _is_end;  // flag to indicate the iterator is at the end
+  //   bool _lazy;
+  //   MultiGraspRoadmapGraph const* _graph;
+  //   // flag for special case edge back to node 0
+  //   bool _edge_to_0_returned;
+  //   void forwardToNextValid();
+  // };
 };
 
 /**
@@ -461,7 +622,13 @@ public:
 
   double getEdgeCost(unsigned int v1, unsigned int v2, bool lazy = false);
   bool trueEdgeCostKnown(unsigned int v1, unsigned int v2) const;
-  unsigned int getStartNode() const;
+  unsigned int getStartVertex() const;
+  unsigned int getGoalVertex() const
+  {
+    // TODO implement me
+    throw std::runtime_error("Not implemented");
+    return 0;
+  }
 
   bool isGoal(unsigned int v) const;
   double getGoalCost(unsigned int v) const;
