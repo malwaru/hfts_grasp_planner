@@ -648,6 +648,11 @@ void MultiGraspGoalSet::removeGoals(const GoalIterator& begin, const GoalIterato
   }
 }
 
+unsigned int MultiGraspGoalSet::getNumGoals() const
+{
+  return _goals.size();
+}
+
 bool MultiGraspGoalSet::isGoal(Roadmap::NodePtr node, unsigned int grasp_id) const
 {
   return isGoal(node->uid, grasp_id);

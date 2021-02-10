@@ -166,6 +166,30 @@ private:
 };
 
 /**
+ * A wrapper around an IteratorImplementation to return one additional vertex.
+ * The type T is expected to implement the interface of DynamicNeighborIterator::IteratorImplementation itself.
+ */
+template <typename T>
+struct OneMoreIterator : public DynamicNeighborIterator::IteratorImplementation
+{
+  // pass id of goal or start vertex as special vertex
+  OneMoreIterator(const T& wrapped_iter, unsigned int additional_vertex);
+  OneMoreIterator(const OneMoreIterator<T>& other);
+  ~OneMoreIterator() = default;
+  // interface
+  bool equals(const IteratorImplementation* const other) const override;
+  unsigned int dereference() const override;
+  void next() override;
+  std::unique_ptr<IteratorImplementation> copy() const override;
+  bool isEnd() const override;
+
+private:
+  T _wrapped_iter;
+  bool _is_end;
+  unsigned int _additional_vertex;
+};
+
+/**
  * The SingleGraspRoadmapGraph class implements a view on a MultiGraspRoadmap for a single grasp.
  * that implements the GraspAgnostic graph interface.
  */
@@ -242,23 +266,23 @@ private:
   /**
    * NeighborIterator for vertices adjacent to the goal vertex - use for forward only.
    */
-  template <bool lazy>
-  struct GoalEntranceIterator : public DynamicNeighborIterator::IteratorImplementation
-  {
-    GoalEntranceIterator(SingleGraspRoadmapGraph const* parent, unsigned int roadmap_id);
-    GoalEntranceIterator(const GoalEntranceIterator<lazy>& other);
-    ~GoalEntranceIterator() = default;
-    // interface
-    bool equals(const IteratorImplementation* const other) const override;
-    unsigned int dereference() const override;
-    void next() override;
-    std::unique_ptr<IteratorImplementation> copy() const override;
-    bool isEnd() const override;
+  // template <bool lazy>
+  // struct GoalEntranceIterator : public DynamicNeighborIterator::IteratorImplementation
+  // {
+  //   GoalEntranceIterator(SingleGraspRoadmapGraph const* parent, unsigned int roadmap_id);
+  //   GoalEntranceIterator(const GoalEntranceIterator<lazy>& other);
+  //   ~GoalEntranceIterator() = default;
+  //   // interface
+  //   bool equals(const IteratorImplementation* const other) const override;
+  //   unsigned int dereference() const override;
+  //   void next() override;
+  //   std::unique_ptr<IteratorImplementation> copy() const override;
+  //   bool isEnd() const override;
 
-  private:
-    StandardIterator<lazy> _standard_iter;
-    bool _is_end;
-  };
+  // private:
+  //   StandardIterator<lazy> _standard_iter;
+  //   bool _is_end;
+  // };
 
   // NeighborIterator for the goal vertex to iterate over its predecessors.
   struct GoalVertexIterator : public DynamicNeighborIterator::IteratorImplementation
@@ -422,26 +446,26 @@ private:
   /**
    * NeighborIterator for vertices adjacent to start or goal vertex in addition to normal adjacency.
    */
-  template <bool lazy>
-  struct StartGoalBridgeIterator : public DynamicNeighborIterator::IteratorImplementation
-  {
-    // pass id of goal or start vertex as special vertex
-    StartGoalBridgeIterator(MultiGraspRoadmapGraph<cost_checking_type> const* parent, unsigned int roadmap_id,
-                            unsigned int grasp_id, unsigned int special_vertex);
-    StartGoalBridgeIterator(const StartGoalBridgeIterator<lazy>& other);
-    ~StartGoalBridgeIterator() = default;
-    // interface
-    bool equals(const IteratorImplementation* const other) const override;
-    unsigned int dereference() const override;
-    void next() override;
-    std::unique_ptr<IteratorImplementation> copy() const override;
-    bool isEnd() const override;
+  // template <bool lazy>
+  // struct StartGoalBridgeIterator : public DynamicNeighborIterator::IteratorImplementation
+  // {
+  //   // pass id of goal or start vertex as special vertex
+  //   StartGoalBridgeIterator(MultiGraspRoadmapGraph<cost_checking_type> const* parent, unsigned int roadmap_id,
+  //                           unsigned int grasp_id, unsigned int special_vertex);
+  //   StartGoalBridgeIterator(const StartGoalBridgeIterator<lazy>& other);
+  //   ~StartGoalBridgeIterator() = default;
+  //   // interface
+  //   bool equals(const IteratorImplementation* const other) const override;
+  //   unsigned int dereference() const override;
+  //   void next() override;
+  //   std::unique_ptr<IteratorImplementation> copy() const override;
+  //   bool isEnd() const override;
 
-  private:
-    StandardIterator<lazy> _standard_iter;
-    bool _is_end;
-    unsigned int _special_vertex;
-  };
+  // private:
+  //   StandardIterator<lazy> _standard_iter;
+  //   bool _is_end;
+  //   unsigned int _special_vertex;
+  // };
 
   // NeighborIterator for the goal vertex to iterate over its predecessors.
   struct GoalVertexIterator : public DynamicNeighborIterator::IteratorImplementation

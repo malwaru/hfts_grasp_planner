@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 # from mayavi.core.api import
 # f
-from traits.api import Instance, Range, HasTraits, on_trait_change, Int, Property
+from traits.api import Instance, Range, HasTraits, on_trait_change, Int, Property, String
 from mayavi.core.ui.api import MlabSceneModel, SceneEditor, MayaviScene
 from mayavi.core.api import PipelineBase
 import mayavi.mlab as mlab
@@ -16,6 +16,7 @@ class MGRoadmapVisualizer(HasTraits):
     min_log_length = Int(0)
     # max_log_length = Property()
     max_log_length = Int(1)
+    last_log_message = String("NOT READ YET")
     log_slide_range = Range(low='min_log_length', high='max_log_length')
     scene = Instance(MlabSceneModel, ())
     rm_vertices_plot = Instance(PipelineBase)
@@ -45,6 +46,7 @@ class MGRoadmapVisualizer(HasTraits):
         # TODO according to the documentation it should be possible to provide an editor here: editor=RangeEditor(mode='xslider'), it doesn't work though
         traitsui.api.Item('log_slide_range', label='LogStep'),
         traitsui.api.Item('max_log_length', label='Max log steps', style='readonly'),
+        traitsui.api.Item('last_log_message', label='Last log message', style='readonly'),
         resizable=True)
 
     def __init__(self, roadmap_file, grasp_folder, log_file, max_num_visits, hide_list, grasp_distance=400):
@@ -73,7 +75,8 @@ class MGRoadmapVisualizer(HasTraits):
         self._log_filename = log_file
         self._last_log_update = None  # last time the logfile was loaded
         self._hide_list = hide_list
-        self._hide_list.append("GOAL_EXPENSION")  # there is nothing to visualize for goal expensions
+        self._hide_list.extend(["GOAL_EXPANSION",
+                                "GOAL_EXPENSION"])  # there is nothing to visualize for goal expansions
         # parsed logs: contains tuples ((checked_node_id, grasp_id, state), (checked_edge, grasp_id, state));
         # grasp_id is None if base was only checked; state = 1 if valid, 0 if invalid
         self._logs = []
@@ -118,8 +121,8 @@ class MGRoadmapVisualizer(HasTraits):
 
     def _synch_logs(self):
         def filter_entry(log_line):
-            line_args = log_line.split(',')
-            return line_args[0] not in self._hide_list
+            # line_args = log_line.split(',')
+            return not reduce(lambda x, y: x or y, [s in log_line for s in self._hide_list], False)
 
         def parse_log_entry(log_line):
             line_args = log_line.split(',')
@@ -128,41 +131,43 @@ class MGRoadmapVisualizer(HasTraits):
                 # base evaluation of a vertex
                 vid = int(line_args[1])
                 bvalid = bool(int(line_args[2]))
-                return ((vid, None, bvalid), (), (), ())
+                return ((vid, None, bvalid), (), (), (), log_line)
                 # print vid, bvalid
             elif (event_type == "VAL_GRASP"):
                 # evaluation of a vertex for a certain grasp
                 vid = int(line_args[1])
                 gid = int(line_args[2])
                 bvalid = bool(int(line_args[3]))
-                return ((vid, gid, bvalid), (), (), ())
+                return ((vid, gid, bvalid), (), (), (), log_line)
             elif (event_type == "EDGE_COST"):
                 # base evaluation of an edge
                 vid1 = int(line_args[1])
                 vid2 = int(line_args[2])
                 cost = float(line_args[3])
-                return ((), (vid1, vid2, None, cost), (), ())
+                return ((), (vid1, vid2, None, cost), (), (), log_line)
             elif (event_type == "EDGE_COST_GRASP"):
                 # evaluation of an edge for a certain grasp
                 vid1 = int(line_args[1])
                 vid2 = int(line_args[2])
                 gid = int(line_args[3])
                 cost = float(line_args[4])
-                return ((), (vid1, vid2, gid, cost), (), ())
+                return ((), (vid1, vid2, gid, cost), (), (), log_line)
             elif (event_type == "EXPANSION"):
                 # expanding a node (iterating over its neighbors)
                 vid = int(line_args[1])
                 gid = int(line_args[2])
-                return ((), (), (vid, gid), ())
+                return ((), (), (vid, gid), (), log_line)
             elif (event_type == "BASE_EXPANSION"):
                 # expanding a node (iterating over its neighbors)
                 vid = int(line_args[1])
-                return ((), (), (vid, None), ())
+                return ((), (), (vid, None), (), log_line)
             elif (event_type == "SOLUTION_EDGE"):
                 vid1 = int(line_args[1])
                 vid2 = int(line_args[2])
                 gid = int(line_args[3])
-                return ((), (), (), (vid1, vid2, gid))
+                return ((), (), (), (vid1, vid2, gid), log_line)
+            else:
+                raise ValueError("Unknown event type encountered %s" % event_type)
 
         # check if there are new logs
         if self._last_log_update != os.path.getmtime(self._log_filename):
@@ -219,6 +224,7 @@ class MGRoadmapVisualizer(HasTraits):
         # self.max_log_length = len(self._logs)
         # idx = float(self.log_slide_range) / 100.0 * len(self._logs)
         idx = self.log_slide_range
+        self.trait_set(last_log_message=self._logs[int(idx) - 1][-1].replace('\n', ''))
         # extract checked nodes (valid, invalid)
         nxs, nys, nzs = [[], []], [[], []], [[], []]
         # and checked edges (invalid valid)
@@ -228,7 +234,7 @@ class MGRoadmapVisualizer(HasTraits):
         # map from (vid, layer_id) -> number of expansions
         num_expansions = {}
         for i in xrange(int(idx)):
-            node_check, edge_check, node_expansion, sol_edge = self._logs[i]
+            node_check, edge_check, node_expansion, sol_edge, _ = self._logs[i]
             if len(node_check):
                 vid, gid, valid = node_check
                 gid = 0 if gid is None else gid + 1

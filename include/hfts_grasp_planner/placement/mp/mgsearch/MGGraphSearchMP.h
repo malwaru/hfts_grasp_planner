@@ -251,12 +251,10 @@ private:
   {
     MultiGraspMP::WaypointPathPtr wp_path = std::make_shared<MultiGraspMP::WaypointPath>();
     auto [prev_rid, prev_gid] = graph.getGraspRoadmapId(sr.path.front());
-    // TODO remove goal vertex; maybe make this more elegant
-    sr.path.pop_back();
     // extract solution path
-    for (unsigned int vid : sr.path)
+    for (unsigned int i = 0; i < sr.path.size() - 1; ++i)
     {
-      auto [rid, gid] = graph.getGraspRoadmapId(vid);
+      auto [rid, gid] = graph.getGraspRoadmapId(sr.path.at(i));
       auto node = _roadmap->getNode(rid);
       assert(node);
       wp_path->push_back(node->config);
@@ -265,25 +263,25 @@ private:
       prev_rid = rid;
     }
     // get goal id
-    auto [rid, gid] = graph.getGraspRoadmapId(sr.path.back());
+    auto [rid, gid] = graph.getGraspRoadmapId(sr.path.at(sr.path.size() - 2));
     auto [goal_id, valid_goal] = _goal_set->getGoalId(rid, gid);
     assert(valid_goal);
     sol.goal_id = goal_id;
     sol.path = wp_path;
-    sol.cost = sr.cost();
+    sol.cost = sr.path_cost;
   }
 
   template <CostCheckingType ctype>
   void extractSolution(SearchResult& sr, MultiGraspMP::Solution& sol,
                        const LazyLayeredMultiGraspRoadmapGraph<ctype>& graph)
   {
+    assert(sr.path.size() > 2);
     MultiGraspMP::WaypointPathPtr wp_path = std::make_shared<MultiGraspMP::WaypointPath>();
     // extract solution path
-    auto iter = ++sr.path.begin();  // skip first dummy vertex
-    auto [prev_rid, prev_gid] = graph.getGraspRoadmapId(*iter);
-    for (; iter != sr.path.end(); ++iter)
+    auto [prev_rid, prev_gid] = graph.getGraspRoadmapId(sr.path.at(1));
+    for (unsigned int i = 1; i < sr.path.size() - 1; ++i)  // skip first and last vertex
     {
-      auto [rid, gid] = graph.getGraspRoadmapId(*iter);
+      auto [rid, gid] = graph.getGraspRoadmapId(sr.path.at(i));
       auto node = _roadmap->getNode(rid);
       assert(node);
       wp_path->push_back(node->config);
@@ -294,11 +292,11 @@ private:
       prev_rid = rid;
     }
     // get goal id
-    auto [goal, goal_cost] = graph.getBestGoal(sr.path.back());
+    auto [goal, goal_cost] = graph.getBestGoal(sr.path.at(sr.path.size() - 2));
     assert(not std::isinf(goal_cost));
     sol.goal_id = goal.id;
     sol.path = wp_path;
-    sol.cost = sr.cost();
+    sol.cost = sr.path_cost;
   }
 
   // overload for FoldedMultiGraspRoadmapGraph

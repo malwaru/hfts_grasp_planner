@@ -81,8 +81,9 @@ void lazySPLazyLayered(LazyLayeredMultiGraspRoadmapGraph<ctype>& graph, SearchAl
     algorithm.computeShortestPath(result);
     if (result.solved)
     {
+      assert(result.path.size() > 2);
       // get goal for this solution (to have access to the grasp)
-      auto [goal, cost] = graph.getBestGoal(result.goal_node);
+      auto [goal, cost] = graph.getBestGoal(result.path.at(result.path.size() - 2));
       // identify edges for which the true cost is not known yet
       std::list<Edge> unknown_edges;
       unsigned int u = result.path.front();
@@ -112,11 +113,6 @@ void lazySPLazyLayered(LazyLayeredMultiGraspRoadmapGraph<ctype>& graph, SearchAl
       // add additional new edges to edge changes
       graph.getHiddenEdgeChanges(edge_changes, true);
       algorithm.updateEdges(edge_changes);
-      // update goal changes
-      std::vector<unsigned int> goal_changes;
-      graph.getGoalChanges(goal_changes, true);
-      // algorithm.invalidateGoals(goal_changes);
-      // TODO can these goal changes now be completely handled as edge changes?
       all_path_edges_valid = edge_changes.empty() and unknown_edges.empty();
     }
   } while (result.solved and not all_path_edges_valid);

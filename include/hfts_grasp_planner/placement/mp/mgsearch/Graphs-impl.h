@@ -1,4 +1,61 @@
 #pragma once
+/************************************* OneMoreIterator ********************************/
+template <typename T>
+OneMoreIterator<T>::OneMoreIterator(const T& wrapped_iter, unsigned int additional_vertex)
+  : _wrapped_iter(wrapped_iter), _is_end(false), _additional_vertex(additional_vertex)
+{
+}
+
+template <typename T>
+OneMoreIterator<T>::OneMoreIterator(const OneMoreIterator<T>& other)
+  : _wrapped_iter(other._wrapped_iter), _is_end(other._is_end), _additional_vertex(other._additional_vertex)
+{
+}
+
+template <typename T>
+bool OneMoreIterator<T>::equals(const DynamicNeighborIterator::IteratorImplementation* const other) const
+{
+  auto other_casted = dynamic_cast<const OneMoreIterator<T>*>(other);
+  if (!other_casted)
+    return false;
+  return _wrapped_iter.equals(&(other_casted->_wrapped_iter)) and _is_end == other_casted->_is_end;
+}
+
+template <typename T>
+unsigned int OneMoreIterator<T>::dereference() const
+{
+  if (_wrapped_iter.isEnd())
+  {
+    return _additional_vertex;
+  }
+  return _wrapped_iter.dereference();
+}
+
+template <typename T>
+void OneMoreIterator<T>::next()
+{
+  if (!_wrapped_iter.isEnd())
+  {
+    _wrapped_iter.next();
+  }
+  else
+  {
+    _is_end = true;
+  }
+}
+
+template <typename T>
+std::unique_ptr<DynamicNeighborIterator::IteratorImplementation> OneMoreIterator<T>::copy() const
+{
+  return std::make_unique<OneMoreIterator<T>>(*this);
+}
+
+template <typename T>
+bool OneMoreIterator<T>::isEnd() const
+{
+  return _is_end;
+}
+
 /************************************* SingleGraspRoadmapGraph::StandardIterator ********************************/
 template <bool lazy>
 SingleGraspRoadmapGraph::StandardIterator<lazy>::StandardIterator(SingleGraspRoadmapGraph const* parent,
@@ -95,64 +152,64 @@ void SingleGraspRoadmapGraph::StandardIterator<lazy>::forwardToNextValid()
 }
 
 /************************************* SingleGraspRoadmapGraph::GoalEntranceIterator ********************************/
-template <bool lazy>
-SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::GoalEntranceIterator(SingleGraspRoadmapGraph const* parent,
-                                                                          unsigned int roadmap_id)
-  : _standard_iter(parent, roadmap_id), _is_end(false)
-{
-}
+// template <bool lazy>
+// SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::GoalEntranceIterator(SingleGraspRoadmapGraph const* parent,
+//                                                                           unsigned int roadmap_id)
+//   : _standard_iter(parent, roadmap_id), _is_end(false)
+// {
+// }
 
-template <bool lazy>
-SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::GoalEntranceIterator(const GoalEntranceIterator<lazy>& other)
-  : _standard_iter(other._standard_iter), _is_end(other._is_end)
-{
-}
+// template <bool lazy>
+// SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::GoalEntranceIterator(const GoalEntranceIterator<lazy>& other)
+//   : _standard_iter(other._standard_iter), _is_end(other._is_end)
+// {
+// }
 
-template <bool lazy>
-bool SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::equals(
-    const DynamicNeighborIterator::IteratorImplementation* const other) const
-{
-  auto other_casted = dynamic_cast<const GoalEntranceIterator<lazy>*>(other);
-  if (!other_casted)
-    return false;
-  return _standard_iter.equals(&(other_casted->_standard_iter)) and _is_end == other_casted->_is_end;
-}
+// template <bool lazy>
+// bool SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::equals(
+//     const DynamicNeighborIterator::IteratorImplementation* const other) const
+// {
+//   auto other_casted = dynamic_cast<const GoalEntranceIterator<lazy>*>(other);
+//   if (!other_casted)
+//     return false;
+//   return _standard_iter.equals(&(other_casted->_standard_iter)) and _is_end == other_casted->_is_end;
+// }
 
-template <bool lazy>
-unsigned int SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::dereference() const
-{
-  if (_standard_iter.isEnd())
-  {
-    return GOAL_VERTEX_ID;
-  }
-  return _standard_iter.dereference();
-}
+// template <bool lazy>
+// unsigned int SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::dereference() const
+// {
+//   if (_standard_iter.isEnd())
+//   {
+//     return GOAL_VERTEX_ID;
+//   }
+//   return _standard_iter.dereference();
+// }
 
-template <bool lazy>
-void SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::next()
-{
-  if (!_standard_iter.isEnd())
-  {
-    _standard_iter.next();
-  }
-  else
-  {
-    _is_end = true;
-  }
-}
+// template <bool lazy>
+// void SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::next()
+// {
+//   if (!_standard_iter.isEnd())
+//   {
+//     _standard_iter.next();
+//   }
+//   else
+//   {
+//     _is_end = true;
+//   }
+// }
 
-template <bool lazy>
-std::unique_ptr<DynamicNeighborIterator::IteratorImplementation>
-SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::copy() const
-{
-  return std::make_unique<GoalEntranceIterator<lazy>>(*this);
-}
+// template <bool lazy>
+// std::unique_ptr<DynamicNeighborIterator::IteratorImplementation>
+// SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::copy() const
+// {
+//   return std::make_unique<GoalEntranceIterator<lazy>>(*this);
+// }
 
-template <bool lazy>
-bool SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::isEnd() const
-{
-  return _standard_iter.isEnd() and _is_end;
-}
+// template <bool lazy>
+// bool SingleGraspRoadmapGraph::GoalEntranceIterator<lazy>::isEnd() const
+// {
+//   return _standard_iter.isEnd() and _is_end;
+// }
 
 // MultiGraspRoadmapGraph constants
 template <CostCheckingType ctype>
@@ -284,73 +341,73 @@ void MultiGraspRoadmapGraph<cost_checking_type>::StandardIterator<lazy>::forward
 }
 
 /************************************* MultiGraspRoadmapGraph::StartGoalBridgeIterator ********************************/
-template <CostCheckingType ctype>
-template <bool lazy>
-MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::StartGoalBridgeIterator(
-    MultiGraspRoadmapGraph<ctype> const* parent, unsigned int roadmap_id, unsigned int grasp_id,
-    unsigned int special_vertex)
-  : _standard_iter(parent, roadmap_id, grasp_id), _is_end(false), _special_vertex(special_vertex)
-{
-}
+// template <CostCheckingType ctype>
+// template <bool lazy>
+// MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::StartGoalBridgeIterator(
+//     MultiGraspRoadmapGraph<ctype> const* parent, unsigned int roadmap_id, unsigned int grasp_id,
+//     unsigned int special_vertex)
+//   : _standard_iter(parent, roadmap_id, grasp_id), _is_end(false), _special_vertex(special_vertex)
+// {
+// }
 
-template <CostCheckingType ctype>
-template <bool lazy>
-MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::StartGoalBridgeIterator(
-    const StartGoalBridgeIterator<lazy>& other)
-  : _standard_iter(other._standard_iter), _is_end(other._is_end), _special_vertex(other._special_vertex)
-{
-}
+// template <CostCheckingType ctype>
+// template <bool lazy>
+// MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::StartGoalBridgeIterator(
+//     const StartGoalBridgeIterator<lazy>& other)
+//   : _standard_iter(other._standard_iter), _is_end(other._is_end), _special_vertex(other._special_vertex)
+// {
+// }
 
-template <CostCheckingType ctype>
-template <bool lazy>
-bool MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::equals(
-    const DynamicNeighborIterator::IteratorImplementation* const other) const
-{
-  auto other_casted = dynamic_cast<const StartGoalBridgeIterator<lazy>*>(other);
-  if (!other_casted)
-    return false;
-  return _standard_iter.equals(&(other_casted->_standard_iter)) and _is_end == other_casted->_is_end;
-}
+// template <CostCheckingType ctype>
+// template <bool lazy>
+// bool MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::equals(
+//     const DynamicNeighborIterator::IteratorImplementation* const other) const
+// {
+//   auto other_casted = dynamic_cast<const StartGoalBridgeIterator<lazy>*>(other);
+//   if (!other_casted)
+//     return false;
+//   return _standard_iter.equals(&(other_casted->_standard_iter)) and _is_end == other_casted->_is_end;
+// }
 
-template <CostCheckingType ctype>
-template <bool lazy>
-unsigned int MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::dereference() const
-{
-  if (_standard_iter.isEnd())
-  {
-    return _special_vertex;
-  }
-  return _standard_iter.dereference();
-}
+// template <CostCheckingType ctype>
+// template <bool lazy>
+// unsigned int MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::dereference() const
+// {
+//   if (_standard_iter.isEnd())
+//   {
+//     return _special_vertex;
+//   }
+//   return _standard_iter.dereference();
+// }
 
-template <CostCheckingType ctype>
-template <bool lazy>
-void MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::next()
-{
-  if (!_standard_iter.isEnd())
-  {
-    _standard_iter.next();
-  }
-  else
-  {
-    _is_end = true;
-  }
-}
+// template <CostCheckingType ctype>
+// template <bool lazy>
+// void MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::next()
+// {
+//   if (!_standard_iter.isEnd())
+//   {
+//     _standard_iter.next();
+//   }
+//   else
+//   {
+//     _is_end = true;
+//   }
+// }
 
-template <CostCheckingType ctype>
-template <bool lazy>
-std::unique_ptr<DynamicNeighborIterator::IteratorImplementation>
-MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::copy() const
-{
-  return std::make_unique<StartGoalBridgeIterator<lazy>>(*this);
-}
+// template <CostCheckingType ctype>
+// template <bool lazy>
+// std::unique_ptr<DynamicNeighborIterator::IteratorImplementation>
+// MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::copy() const
+// {
+//   return std::make_unique<StartGoalBridgeIterator<lazy>>(*this);
+// }
 
-template <CostCheckingType ctype>
-template <bool lazy>
-bool MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::isEnd() const
-{
-  return _standard_iter.isEnd() and _is_end;
-}
+// template <CostCheckingType ctype>
+// template <bool lazy>
+// bool MultiGraspRoadmapGraph<ctype>::StartGoalBridgeIterator<lazy>::isEnd() const
+// {
+//   return _standard_iter.isEnd() and _is_end;
+// }
 
 /************************************* MultiGraspRoadmapGraph::GoalVertexIterator ********************************/
 template <CostCheckingType ctype>
@@ -719,11 +776,13 @@ MultiGraspRoadmapGraph<cost_checking_type>::getSuccessors(unsigned int v, bool l
       {
         if (lazy)
         {
-          impl = std::make_unique<StartGoalBridgeIterator<true>>(this, rid, gid, GOAL_VERTEX_ID);
+          impl = std::make_unique<OneMoreIterator<StandardIterator<true>>>(StandardIterator<true>(this, rid, gid),
+                                                                           GOAL_VERTEX_ID);
         }
         else
         {
-          impl = std::make_unique<StartGoalBridgeIterator<false>>(this, rid, gid, GOAL_VERTEX_ID);
+          impl = std::make_unique<OneMoreIterator<StandardIterator<false>>>(StandardIterator<false>(this, rid, gid),
+                                                                            GOAL_VERTEX_ID);
         }
       }
       else
@@ -790,11 +849,13 @@ MultiGraspRoadmapGraph<cost_checking_type>::getPredecessors(unsigned int v, bool
       {
         if (lazy)
         {
-          impl = std::make_unique<StartGoalBridgeIterator<true>>(this, rid, gid, START_VERTEX_ID);
+          impl = std::make_unique<OneMoreIterator<StandardIterator<true>>>(StandardIterator<true>(this, rid, gid),
+                                                                           START_VERTEX_ID);
         }
         else
         {
-          impl = std::make_unique<StartGoalBridgeIterator<false>>(this, rid, gid, START_VERTEX_ID);
+          impl = std::make_unique<OneMoreIterator<StandardIterator<false>>>(StandardIterator<false>(this, rid, gid),
+                                                                            START_VERTEX_ID);
         }
       }
       else

@@ -72,7 +72,7 @@ void VertexExpansionLogger::logExpansion(unsigned int rid, unsigned int gid)
 
 void VertexExpansionLogger::logGoalExpansion()
 {
-  _roadmap->logCustomEvent("GOAL_EXPENSION");
+  // _roadmap->logCustomEvent("GOAL_EXPANSION");
 }
 /************************************* SingleGraspRoadmapGraph::GoalVertexIterator ********************************/
 SingleGraspRoadmapGraph::GoalVertexIterator::GoalVertexIterator(SingleGraspRoadmapGraph const* parent)
@@ -200,11 +200,11 @@ SingleGraspRoadmapGraph::getSuccessors(unsigned int v, bool lazy)
       {  // check if this vertex is an entrance to goal
         if (lazy)
         {
-          impl.reset(new GoalEntranceIterator<true>(this, rid));
+          impl.reset(new OneMoreIterator<StandardIterator<true>>(StandardIterator<true>(this, rid), GOAL_VERTEX_ID));
         }
         else
         {
-          impl.reset(new GoalEntranceIterator<false>(this, rid));
+          impl.reset(new OneMoreIterator<StandardIterator<false>>(StandardIterator<false>(this, rid), GOAL_VERTEX_ID));
         }
       }
       else

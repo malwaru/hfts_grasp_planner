@@ -438,6 +438,11 @@ public:
   void removeGoals(const GoalIterator& begin, const GoalIterator& end);
 
   /**
+   * Return the total number of goals;
+   */
+  unsigned int getNumGoals() const;
+
+  /**
    *  Return whether the given node is a goal under the given grasp.
    */
   bool isGoal(Roadmap::NodePtr node, unsigned int grasp_id) const;
