@@ -258,8 +258,10 @@ private:
       auto node = _roadmap->getNode(rid);
       assert(node);
       wp_path->push_back(node->config);
+#ifdef ENABLE_ROADMAP_LOGGING
       if (prev_rid != rid)
         _roadmap->logCustomEvent((boost::format("SOLUTION_EDGE, %1%, %2%, %3%") % prev_rid % rid % gid).str());
+#endif
       prev_rid = rid;
     }
     // get goal id
@@ -285,10 +287,10 @@ private:
       auto node = _roadmap->getNode(rid);
       assert(node);
       wp_path->push_back(node->config);
+#ifdef ENABLE_ROADMAP_LOGGING
       if (prev_rid != rid)
-      {
         _roadmap->logCustomEvent((boost::format("SOLUTION_EDGE, %1%, %2%, %3%") % prev_rid % rid % gid).str());
-      }
+#endif
       prev_rid = rid;
     }
     // get goal id
@@ -314,10 +316,12 @@ private:
       std::tie(rid_gid_pair, gid_valid) = graph.getGraspRoadmapId(*iter);
       if (gid_valid)
       {
+#ifdef ENABLE_ROADMAP_LOGGING
         if (prev_rid != rid_gid_pair.first)
           _roadmap->logCustomEvent(
               (boost::format("SOLUTION_EDGE, %1%, %2%, %3%") % prev_rid % rid_gid_pair.first % rid_gid_pair.second)
                   .str());
+#endif
         prev_rid = rid_gid_pair.first;
         gid = rid_gid_pair.second;
         auto node = _roadmap->getNode(prev_rid);

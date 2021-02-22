@@ -1,0 +1,20 @@
+- name: cabinet_high_clutter_placing
+  domain: placing
+  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/environments/cabinet_high_clutter.xml
+  object_xml: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/objects/expo/expo.kinbody.xml
+  num_grasps: [10, 200, 422]
+  lambda: [0.1, 10.0]
+  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/rpl_shelf_1000_goals_wp.yaml
+  integrator_step_sizes: [0.1]
+  batch_sizes: [1000, 5000]
+  edge_selector_type: [LastUnknown]
+- name: cabinet_high_clutter_picking
+  domain: picking
+  scene_file: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/environments/cabinet_high_clutter.xml
+  object_xml: /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/models/objects/expo/expo.kinbody.xml
+  num_grasps: [10, 50, 100]
+  lambda: [0.1, 10.0]
+  configs:  /home/joshua/projects/placement_catkin/src/hfts_grasp_planner/yamls/mg_test_data/goals/yumi_picking/picking_goals.yaml
+  integrator_step_sizes: [0.1]
+  batch_sizes: [1000, 5000]
+  edge_selector_type: [LastUnknown]

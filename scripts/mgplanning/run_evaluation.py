@@ -21,7 +21,7 @@ algorithm_graph_combinations = [
     ("LWAstar", "MultiGraspGraph"),
     ("LPAstar", "MultiGraspGraph"),
     ("LWLPAstar", "MultiGraspGraph"),
-    ("LazySP_LLPAstar", "MultiGraspGraph"),
+    ("LazySP_LLPAstar", "MultiGraspGraph"),  # should be identical to LazySP_LLPAstar on LazyEdgeWeightedMultiGraspGraph
     # FoldedMultiGraspGraph
     ("LWAstar", "FoldedMultiGraspGraphStationary"),
     ("LWAstar", "FoldedMultiGraspGraphDynamic"),
@@ -30,7 +30,7 @@ algorithm_graph_combinations = [
     ("LazySP_LWLPAstar", "LazyWeightedMultiGraspGraph"),
     ("LazySP_LPAstar", "LazyWeightedMultiGraspGraph"),
     # LazyEdgeWeightedMultiGraspGraph
-    ("LazySP_LLPAstar", "LazyEdgeWeightedMultiGraspGraph"),
+    # ("LazySP_LLPAstar", "LazyEdgeWeightedMultiGraspGraph"),
     ("LazySP_LWLPAstar", "LazyEdgeWeightedMultiGraspGraph"),
     ("LazySP_LPAstar", "LazyEdgeWeightedMultiGraspGraph"),
     # LazyGrownMultiGraspGraph
@@ -38,11 +38,11 @@ algorithm_graph_combinations = [
     ("LazySP_LWLPAstar", "LazyGrownMultiGraspGraph"),
     ("LazySP_LPAstar", "LazyGrownMultiGraspGraph"),
     # LazyGrownLazyWeightedMultiGraspGraph
-    ("LazySP_LLPAstar", "LazyGrownLazyWeightedMultiGraspGraph"),
+    # ("LazySP_LLPAstar", "LazyGrownLazyWeightedMultiGraspGraph"),
     ("LazySP_LWLPAstar", "LazyGrownLazyWeightedMultiGraspGraph"),
     ("LazySP_LPAstar", "LazyGrownLazyWeightedMultiGraspGraph"),
     # LazyGrownLazyEdgeWeightedMultiGraspGraph
-    ("LazySP_LLPAstar", "LazyGrownLazyEdgeWeightedMultiGraspGraph"),
+    # ("LazySP_LLPAstar", "LazyGrownLazyEdgeWeightedMultiGraspGraph"),
     ("LazySP_LWLPAstar", "LazyGrownLazyEdgeWeightedMultiGraspGraph"),
     ("LazySP_LPAstar", "LazyGrownLazyEdgeWeightedMultiGraspGraph")
 ]
@@ -57,6 +57,7 @@ test_case_info = {
     "configs": "file with goal and extra configs and grasp information",
     "integrator_step_sizes": "(Optional) The step size for edge cost integration",
     "batch_sizes": "(Optional) The base size of the roadmap",
+    "edge_selector_type": "(Optional) List of string describing which edge selector type to use in LazySP"
 }
 
 
@@ -76,47 +77,57 @@ def call_planner(algorithm, graph, log_path, test_case_info, num_runs, dry_run):
         step_sizes = ['default'
                       ] if 'integrator_step_sizes' not in test_case_info else test_case_info['integrator_step_sizes']
         batch_sizes = ['default'] if 'batch_sizes' not in test_case_info else test_case_info['batch_sizes']
-        for num_grasps in test_case_info['num_grasps']:
-            # log_folder_name = log_path + '/' + algorithm + "__" + graph + "__" + test_case_info['name']
-            # log_folder_name += '__' + str(num_grasps)
-            for step_size in step_sizes:
-                for batch_size in batch_sizes:
-                    log_folder_name = (log_path + "/%s__%s__%s__%d-grasps__%s-step_size__%s-batch_size") % (
-                        algorithm, graph, test_case_info['name'], num_grasps, str(step_size), str(batch_size))
-                    if os.path.exists(log_folder_name + '/results'):
-                        # do not overwrite existing results
-                        continue
-                    if test_case_info['domain'] == 'placing':
-                        commands = [
-                            'rosrun', 'hfts_grasp_planner', 'run_mgplanner_yumi.py', test_case_info['scene_file'],
-                            test_case_info['object_xml'], test_case_info['configs'], algorithm, graph, '--lmbda',
-                            test_case_info['lambda'], '--stats_file', log_folder_name + '/run_stats', '--results_file',
-                            log_folder_name + '/results', '--planner_log', log_folder_name + '/log'
-                        ]
-                    elif test_case_info['domain'] == 'picking':
-                        raise NotImplementedError("Picking is not yet implemented")
-                    elif test_case_info['domain'] == '2d':
-                        commands = [
-                            'rosrun', 'hfts_grasp_planner', 'test_image_space_algorithm', '--image_path',
-                            test_case_info['scene_file'], '--configs_file', test_case_info['configs'], '--lambda',
-                            test_case_info['lambda'], '--algorithm_type', algorithm, '--graph_type', graph,
-                            '--stats_file', log_folder_name + '/run_stats', '--results_file',
-                            log_folder_name + '/results', '--roadmap_log_file', log_folder_name + '/log_roadmap',
-                            '--evaluation_log_file', log_folder_name + '/log_evaluation'
-                        ]
-                    else:
-                        raise ValueError("ERROR: Unknown domain type %s." % test_case_info['domain'])
-                    # limit number of grasps
-                    commands.extend(['--limit_grasps', str(num_grasps)])
-                    # append optional commands for step size and roadmap size
-                    if step_size != "default":
-                        commands.extend(['--integrator_step_size', str(step_size)])
-                    if batch_size != "default":
-                        commands.extend(['--batch_size', str(batch_size)])
-                    for i in range(num_runs):
-                        print "Executing command %s for run %d/%d" % (str(commands), i + 1, num_runs)
-                        if not dry_run:
-                            subprocess.call(map(str, commands))
+        lambdas = [test_case_info['lambda']] if type(test_case_info['lambda']) != list else test_case_info['lambda']
+        if 'edge_selector_type' not in test_case_info or 'LazySP' not in algorithm:
+            edge_selector_types = ['default']
+        else:
+            edge_selector_types = test_case_info['edge_selector_type']
+        for num_grasps, step_size, batch_size, lmbda, ee_selector in itertools.product(
+                test_case_info['num_grasps'], step_sizes, batch_sizes, lambdas, edge_selector_types):
+            log_folder_name = (log_path + "/%s__%s__%s__%d-grasps__%s-step_size__%s-batch_size__%s-lambda__%s-eetype"
+                               ) % (algorithm, graph, test_case_info['name'], num_grasps, str(step_size),
+                                    str(batch_size), str(lmbda), ee_selector)
+            # if os.path.exists(log_folder_name + '/results'):
+            # do not overwrite existing results
+            # continue
+            if test_case_info['domain'] == 'placing':
+                commands = [
+                    'rosrun', 'hfts_grasp_planner', 'run_mgplanner_yumi.py', test_case_info['scene_file'],
+                    test_case_info['object_xml'], test_case_info['configs'], algorithm, graph, '--lmbda', lmbda,
+                    '--stats_file', log_folder_name + '/run_stats', '--results_file', log_folder_name + '/results',
+                    '--planner_log', log_folder_name + '/log'
+                ]
+            elif test_case_info['domain'] == 'picking':
+                commands = [
+                    'rosrun', 'hfts_grasp_planner', 'run_mgplanner_yumi.py', test_case_info['scene_file'],
+                    test_case_info['object_xml'], test_case_info['configs'], algorithm, graph, '--lmbda', lmbda,
+                    '--stats_file', log_folder_name + '/run_stats', '--results_file', log_folder_name + '/results',
+                    '--planner_log', log_folder_name + '/log'
+                ]
+            elif test_case_info['domain'] == '2d':
+                commands = [
+                    'rosrun', 'hfts_grasp_planner', 'test_image_space_algorithm', '--image_path',
+                    test_case_info['scene_file'], '--configs_file', test_case_info['configs'], '--lambda', lmbda,
+                    '--algorithm_type', algorithm, '--graph_type', graph, '--stats_file',
+                    log_folder_name + '/run_stats', '--results_file', log_folder_name + '/results',
+                    '--roadmap_log_file', log_folder_name + '/log_roadmap', '--evaluation_log_file',
+                    log_folder_name + '/log_evaluation'
+                ]
+            else:
+                raise ValueError("ERROR: Unknown domain type %s." % test_case_info['domain'])
+            # limit number of grasps
+            commands.extend(['--limit_grasps', str(num_grasps)])
+            # append optional commands for step size and roadmap size
+            if step_size != "default":
+                commands.extend(['--integrator_step_size', str(step_size)])
+            if batch_size != "default":
+                commands.extend(['--batch_size', str(batch_size)])
+            if ee_selector != "default":
+                commands.extend(["--edge_selector_type", ee_selector])
+            for i in range(num_runs):
+                print "Executing command %s for run %d/%d" % (str(commands), i + 1, num_runs)
+                if not dry_run:
+                    subprocess.call(map(str, commands))
     except (ValueError) as e:
         print "An error occured: %s. Skipping this test case." % str(e)
 

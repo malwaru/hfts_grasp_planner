@@ -81,7 +81,7 @@ class MGMotionPlanner(object):
             if edge_selector_type is not None and type(edge_selector_type) == str:
                 command_str += " edge_selector_type=" + edge_selector_type
             if integrator_step_size is not None and type(integrator_step_size) == float:
-                command_str += " integrator_step_size=" + integrator_step_size
+                command_str += " integrator_step_size=" + str(integrator_step_size)
             self._planner_interface.SendCommand(command_str)
             self._known_grasps = set()
             self._goals = {}

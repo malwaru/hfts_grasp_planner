@@ -65,12 +65,18 @@ double IntegralEdgeCostComputer::lowerBound(const Config& a, const Config& b) co
 
 double IntegralEdgeCostComputer::cost(const Config& a, const Config& b) const
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("IntegralEdgeCostComputer::cost");
+#endif
   // auto fn = std::bind(&StateSpace::cost, _state_space, std::placeholders::_1);
   return integrateCosts(a, b, [this](const ::placement::mp::Config& c) { return this->_state_space->cost(c); });
 }
 
 double IntegralEdgeCostComputer::cost(const Config& a, const Config& b, unsigned int grasp_id) const
 {
+#ifdef ENABLE_ROADMAP_PROFILING
+  utils::ScopedProfiler profiler("IntegralEdgeCostComputer::cost::grasp");
+#endif
   return integrateCosts(
       a, b, [this, grasp_id](const ::placement::mp::Config& c) { return this->_state_space->cost(c, grasp_id); });
 }
@@ -219,7 +225,9 @@ Roadmap::Roadmap(StateSpacePtr state_space, EdgeCostComputerPtr cost_computer, u
   , _densification_gen(0)
 {
   assert(_si.lower.size() == _si.upper.size() and _si.lower.size() == _si.dimension);
+#ifdef ENABLE_ROADMAP_LOGGING
   _logger.setLogPath(log_roadmap_path, log_path);
+#endif
   // _nn.setDistanceFunction(distanceFn);
   _nn.setDistanceFunction([this](const Roadmap::NodePtr& a, const Roadmap::NodePtr& b) {
     return _state_space->distance(a->config, b->config);
@@ -273,12 +281,20 @@ void Roadmap::densify(unsigned int batch_size)
 
 void Roadmap::setLogging(const std::string& roadmap_path, const std::string& log_path)
 {
+#ifdef ENABLE_ROADMAP_LOGGING
   _logger.setLogPath(roadmap_path, log_path);
+#else
+  RAVELOG_WARN("Setting logging path although roadmap logging feature is not compiled.");
+#endif
 }
 
 void Roadmap::logCustomEvent(const std::string& msg)
 {
+#ifdef ENABLE_ROADMAP_LOGGING
   _logger.logCustomEvent(msg);
+#else
+  RAVELOG_WARN("Trying to log custom event although roadmap logging feature is not compiled.");
+#endif
 }
 
 Roadmap::NodePtr Roadmap::getNode(unsigned int node_id) const
@@ -306,7 +322,9 @@ Roadmap::NodeWeakPtr Roadmap::addNode(const Config& config)
   _node_id_counter++;
   _nn.add(new_node);
   _nodes.insert(std::make_pair(new_node->uid, new_node));
+#ifdef ENABLE_ROADMAP_LOGGING
   _logger.newNode(new_node);
+#endif
   return new_node;
 }
 
@@ -370,7 +388,9 @@ bool Roadmap::isValid(NodeWeakPtr inode)
   if (!node->initialized)
   {
     bool valid = _state_space->isValid(node->config);
+#ifdef ENABLE_ROADMAP_LOGGING
     _logger.nodeValidityChecked(node, valid);
+#endif
     // check validity
     if (not valid)
     {
@@ -413,7 +433,9 @@ bool Roadmap::isValid(NodeWeakPtr wnode, unsigned int grasp_id)
           edge_pair.second->conditional_costs[grasp_id] = std::numeric_limits<double>::infinity();
         }
       }
+#ifdef ENABLE_ROADMAP_LOGGING
       _logger.nodeValidityChecked(node, grasp_id, valid);
+#endif
       return valid;
     }
     else
@@ -454,7 +476,9 @@ std::pair<bool, double> Roadmap::computeCost(EdgePtr edge)
     node_a->edges_to_delete.push_back(node_b->uid);
     node_b->edges_to_delete.push_back(node_a->uid);
   }
+#ifdef ENABLE_ROADMAP_LOGGING
   _logger.edgeCostChecked(node_a, node_b, edge->base_cost);
+#endif
   return {!invalid, edge->base_cost};
 }
 
@@ -484,7 +508,9 @@ std::pair<bool, double> Roadmap::computeCost(EdgePtr edge, unsigned int grasp_id
     NodePtr node_b = edge->node_b.lock();
     assert(node_b);
     cost = _cost_computer->cost(node_a->config, node_b->config, grasp_id);
+#ifdef ENABLE_ROADMAP_LOGGING
     _logger.edgeCostChecked(node_a, node_b, grasp_id, cost);
+#endif
     edge->conditional_costs.insert(std::make_pair(grasp_id, cost));
   }
   else

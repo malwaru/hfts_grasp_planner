@@ -13,7 +13,7 @@ import hfts_grasp_planner.utils as utils
 import hfts_grasp_planner.ik_solver as ik_module
 
 from generate_yumi_goals import resolve_paths, tf_matrix_to_yaml_dict, grasp_to_yaml_dict, goal_to_yaml_dict,\
-     sample_waypoints, store_goals
+     store_goals, compute_orientations
 
 
 class GraspSet(object):
@@ -101,13 +101,90 @@ def create_grasp_sets(problem_desc, manip, target_object):
     return GraspSet(dmg_grasp_sets=dmg_sets)
 
 
+def compute_grasp_quality(manip, target_object, grasp, gripper_info):
+    """Compute a quality metric for the given grasp.
+
+    The quality is simply the negative distance between the grasp contact point and the center of the object.
+
+    Args:
+        manip (orpy.Manipulator): the manipulator we grasp with
+        target_object (orpy.KinBody): the object we grasp
+        grasp (DMGGraspSet.Grasp): The grasp
+        gripper_info (dict): dictionary containing gripper information
+    Returns:
+        value (float)
+    """
+    robot = manip.GetRobot()
+    with robot:
+        with target_object:
+            eef_pose = manip.GetEndEffectorTransform()
+            obj_tf = np.dot(eef_pose, grasp.eTo)
+            target_object.SetTransform(obj_tf)
+            com = target_object.GetCenterOfMass()
+            finger_link_name, contact_tf = gripper_info['contact_tf']
+            finger_link = robot.GetLink(finger_link_name)
+            contact_tf = np.dot(finger_link.GetTransform(), contact_tf)
+            return -np.linalg.norm(com - contact_tf[:3, 3])
+
+
+def sample_orientation(base, max_rot_distance):
+    """Sample an orientation within max_rot_distance of the given base orientation.
+    The function samples a random rotation axis and rotates base by a random angle <= max_rot_distance.
+
+    Args:
+        base (np array of shape (4,)): base orientation as quaternion
+        max_rot_distance (float): maximal rotation angle
+    Returns:
+        new_orientation (np array of shape (4,)) as quaternion
+    """
+    theta, phi, angle = np.random.random(3) * [np.pi, 2.0 * np.pi, max_rot_distance]
+    axis = np.array([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)])
+    axis = np.sin(angle / 2.0) * axis
+    return orpy.quatMult(base, np.array([np.cos(angle / 2.0), axis[0], axis[1], axis[2]]))
+
+
+def sample_waypoints(target_obj, manip, ik_solver, sample_volume, num_points, goal, orientation_delta=0.3):
+    """Sample waypoints to retrieve the given object with the given manipulator.
+
+    Args:
+        target_obj (or.KinBody): The target object at its picking pose.
+        manip (or.Manipulator): The manipulator to pick the obejct with
+        ik_solver (IKSolver): IKsolver for manip
+        sample_volume (iterable): (min_x, min_y, min_z, max_x, max_y, max_z) bounding box in world frame to sample
+            object retrieval positions in
+        num_points (int): The number of waypoints to sample
+        goal (PlacementGoal): goal to sample waypoints for
+        orientation_delta (float): the maximal delta angle in orientation to sample poses in (relative to object pose)
+
+    Returns:
+        waypoints (list of np.array of shape (manip.GetDOF())
+    """
+    obj_tf = target_obj.GetTransform()
+    base_rot = orpy.quatFromRotationMatrix(obj_tf)
+    waypoints = []
+    sample_volume = np.array(sample_volume)
+    bounding_extents = sample_volume[3:] - sample_volume[:3]
+    sample_volume_center = 0.5 * (sample_volume[:3] + sample_volume[3:])
+    while len(waypoints) < num_points:
+        positions = (np.random.sample((num_points, 3)) - 0.5) * np.array(bounding_extents) + sample_volume_center
+        for pos in positions:
+            m = orpy.matrixFromQuat(sample_orientation(base_rot, orientation_delta))
+            m[:3, 3] = pos
+            eef_m = np.dot(m, goal.grasp_tf)
+            # waypoints.append(orpy.misc.DrawAxes(target_obj.GetEnv(), m, dist=0.1))
+            sol = ik_solver.compute_ik(eef_m, seed=goal.arm_config)
+            if sol is not None:
+                waypoints.append(sol)
+    return waypoints
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Script to generate a collection of grasp goals in a given scene.")
     parser.add_argument('problem_desc', help="Path to a yaml file specifying what world, robot to use etc.", type=str)
     parser.add_argument('num_goals', help="Number of goals to sample", type=int)
     parser.add_argument('output_path', help="Filename in which to store generated goals.", type=str)
     parser.add_argument('--sample_waypoints',
-                        help="Sample n waypoint configurations and store them with the goals.",
+                        help="Sample n approach waypoint configurations per goal.",
                         type=int,
                         default=0)
     parser.add_argument('--show_viewer', help="Show viewer and launch IPython prompt", action='store_true')
@@ -136,6 +213,8 @@ if __name__ == "__main__":
         manip = robot.GetActiveManipulator()
         # create ik solver
         ik_solver = ik_module.IKSolver(manip, problem_desc['urdf_file'])
+        # load gripper info
+        gripper_info = load_gripper_info(problem_desc['gripper_information'], manip.GetName())
         # create grasp sets
         grasp_set = create_grasp_sets(problem_desc, manip, target_object)
         # filter grasps based on collisions
@@ -153,27 +232,19 @@ if __name__ == "__main__":
             if arm_config is not None and col_free:
                 print "Found %i of %i goals" % (len(goals), args.num_goals)
                 goal = PlacementGoalSampler.PlacementGoal(
-                    manip,
-                    arm_config,
-                    obj_tf,
-                    len(goals),
-                    0.0,  # TODO cost of grasp somehow?
-                    grasp.oTe,
-                    grasp.config,
+                    manip, arm_config, obj_tf, len(goals),
+                    compute_grasp_quality(manip, target_object, grasp, gripper_info), grasp.oTe, grasp.config,
                     grasp.gid)
                 goals.append(goal)
         # use store placements function from generate_yumi_goals to save the goals to disk
         if args.sample_waypoints:
-            print "Sampling %i waypoints" % args.sample_waypoints
+            print "Sampling %i waypoints per goal" % args.sample_waypoints
             # TODO use different volume? Maybe enlarged? Bounding box of goals?
-            box_extents = problem_desc['approach_box_extents']
-            approach_volume = (obj_tf[:3, 3] - box_extents, obj_tf[:3, 3] + box_extents)
-            waypoints = sample_waypoints(manip,
-                                         ik_solver,
-                                         approach_volume, (np.array([0, 1, 0]), 1.0),
-                                         args.sample_waypoints,
-                                         pos_delta=0.02,
-                                         num_rot_samples=10)
+            sample_volume = problem_desc['sample_volume']
+            waypoints = []
+            for goal in goals:
+                waypoints.extend(
+                    sample_waypoints(target_object, manip, ik_solver, sample_volume, args.sample_waypoints, goal))
         store_goals(goals, grasp_set, waypoints, args.output_path, reverse_task=True)
         if args.show_viewer:
             IPython.embed()

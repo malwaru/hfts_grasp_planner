@@ -15,11 +15,11 @@ def reduce_num_grasps(yaml_contents, num_grasps, verbose=False):
         filtered yaml_contents
     """
     # get grasp information
-    grasps = {grasp['id']: grasp for grasp in contents['grasps']}
+    grasps = {grasp['id']: grasp for grasp in yaml_contents['grasps']}
     if len(grasps) > num_grasps:
         # create a mapping from grasp_id -> goals with that grasp
         goals_per_grasp = {}
-        for goal in contents['goals']:
+        for goal in yaml_contents['goals']:
             if goal['grasp_id'] not in goals_per_grasp:
                 goals_per_grasp[goal['grasp_id']] = [goal]
             else:
@@ -29,11 +29,11 @@ def reduce_num_grasps(yaml_contents, num_grasps, verbose=False):
         # sort it so that grasps with more goals come first
         num_goals_per_grasp.sort(key=lambda x: x[1], reverse=True)
         # overwrite goals to only contain the goals belonging to the args.number_of_grasps first grasps
-        contents['goals'] = []
-        contents['grasps'] = []
-        for gid, _ in num_goals_per_grasp[:args.number_of_grasps]:
-            contents['goals'].extend(goals_per_grasp[gid])
-            contents['grasps'].append(grasps[gid])
+        yaml_contents['goals'] = []
+        yaml_contents['grasps'] = []
+        for gid, _ in num_goals_per_grasp[:num_grasps]:
+            yaml_contents['goals'].extend(goals_per_grasp[gid])
+            yaml_contents['grasps'].append(grasps[gid])
     elif verbose:
         print "The input only contains %i grasps; will copy original contents" % len(grasps)
     return yaml_contents

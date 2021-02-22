@@ -47,7 +47,7 @@ def show_waypoints(waypoints, manip, sleep_time=1.0):
         time.sleep(sleep_time)
 
 
-def time_traj(robot, traj, vel_scale=0.4):
+def time_traj(robot, traj, vel_scale=0.2):
     """
         Retime the given trajectory.
     """
