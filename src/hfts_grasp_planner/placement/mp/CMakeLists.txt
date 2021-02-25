@@ -65,7 +65,7 @@ add_executable(test_image_space_algorithm
   ../../external/halton/halton.cpp
 )
 
-add_definitions(-DENABLE_GRAPH_PROFILING -DENABLE_ROADMAP_PROFILING) # -DENABLE_GRAPH_LOGGING -DENABLE_ROADMAP_LOGGING
+add_definitions(-DENABLE_GRAPH_PROFILING -DENABLE_ROADMAP_PROFILING -DENABLE_GRAPH_LOGGING -DENABLE_ROADMAP_LOGGING) # 
 
 set_target_properties(test_image_space_algorithm PROPERTIES COMPILE_FLAGS "${OpenRAVE_CXX_FLAGS} -Wall" LINK_FLAGS "${OpenRAVE_LINK_FLAGS}")
 target_link_libraries(test_image_space_algorithm cnpy stdc++fs ${OpenRAVE_LIBRARIES} ${Boost_LIBRARIES} ${OMPL_LIBRARIES} yaml-cpp ${catkin_LIBRARIES})
