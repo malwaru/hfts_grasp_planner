@@ -24,6 +24,7 @@ struct SearchAlgorithm
   void computeShortestPath(SearchResult& result);
 };
 
+template <typename G>
 struct EdgeSelector
 {
   /**
@@ -31,15 +32,16 @@ struct EdgeSelector
    * @param unknown_edges: A list of edges for which the true cost is not known yet.
    * @param edge_iters: Output list of edge iterators to test next.
    */
-  void selectNextEdges(std::list<Edge>& unknown_edges, std::list<std::list<Edge>::iterator>& edges);
+  void selectNextEdges(const G& graph, std::list<Edge>& unknown_edges, std::list<std::list<Edge>::iterator>& edges);
 };
 
 /**
  * FirstUnknownEdgeSelector selects the first unknown edge.
  */
+template <typename G>
 struct FirstUnknownEdgeSelector
 {
-  void selectNextEdges(std::list<Edge>& unknown_edges, std::list<std::list<Edge>::iterator>& edges)
+  void selectNextEdges(const G& graph, std::list<Edge>& unknown_edges, std::list<std::list<Edge>::iterator>& edges)
   {
     assert(not unknown_edges.empty());
     edges.clear();
@@ -50,9 +52,10 @@ struct FirstUnknownEdgeSelector
 /**
  * LastUnknownEdgeSelector selects the last unknown edge.
  */
+template <typename G>
 struct LastUnknownEdgeSelector
 {
-  void selectNextEdges(std::list<Edge>& unknown_edges, std::list<std::list<Edge>::iterator>& edges)
+  void selectNextEdges(const G& graph, std::list<Edge>& unknown_edges, std::list<std::list<Edge>::iterator>& edges)
   {
     assert(not unknown_edges.empty());
     edges.clear();
@@ -148,7 +151,7 @@ void lazySP(G& graph, SearchAlgorithmType& algorithm, EdgeSelectorType& edge_sel
       {
         // ask edge selector which edges to evaluate next (might be multiple at once)
         std::list<std::list<Edge>::iterator> edges_to_evaluate;
-        edge_selector.selectNextEdges(unknown_edges, edges_to_evaluate);
+        edge_selector.selectNextEdges(graph, unknown_edges, edges_to_evaluate);
         for (auto& edge_iter : edges_to_evaluate)
         {
           // evaluate the given edge

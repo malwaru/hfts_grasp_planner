@@ -1144,6 +1144,11 @@ MultiGraspRoadmapGraph<cost_checking_type>::getGraspRoadmapId(unsigned int vid) 
   return {rid, grasp_id};
 }
 
+template <CostCheckingType ctype>
+::placement::mp::mgsaerch::RoadmapConstPtr MultiGraspRoadmapGraph<ctype>::getRoadmap() const {
+  return _roadmap;
+}
+
 template <CostCheckingType cost_checking_type>
 std::pair<unsigned int, unsigned int>
 MultiGraspRoadmapGraph<cost_checking_type>::toRoadmapKey(unsigned int graph_id) const

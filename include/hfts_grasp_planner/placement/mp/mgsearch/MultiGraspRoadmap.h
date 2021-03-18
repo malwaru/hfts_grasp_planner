@@ -368,6 +368,7 @@ private:
   void deleteNode(NodePtr node);
 };
 typedef std::shared_ptr<Roadmap> RoadmapPtr;
+typedef std::shared_ptr<const Roadmap> RoadmapConstPtr;
 
 // Forward declarations
 class MultiGraspGoalSet;

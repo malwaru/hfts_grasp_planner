@@ -390,6 +390,8 @@ public:
   // roadmap id, grasp id
   std::pair<unsigned int, unsigned int> getGraspRoadmapId(unsigned int vid) const;
 
+  ::placement::mp::mgsearch::RoadmapConstPtr getRoadmap() const;
+
 private:
   ::placement::mp::mgsearch::RoadmapPtr _roadmap;
   ::placement::mp::mgsearch::MultiGraspGoalSetPtr _goal_set;

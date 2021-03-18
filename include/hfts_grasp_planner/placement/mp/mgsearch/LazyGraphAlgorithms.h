@@ -102,7 +102,7 @@ void lazySPLazyLayered(LazyLayeredMultiGraspRoadmapGraph<ctype>& graph, SearchAl
       {
         // ask edge selector which edges to evaluate next (might be multiple at once)
         std::list<std::list<Edge>::iterator> edges_to_evaluate;
-        edge_selector.selectNextEdges(unknown_edges, edges_to_evaluate);
+        edge_selector.selectNextEdges(graph, unknown_edges, edges_to_evaluate);
         for (auto& edge_iter : edges_to_evaluate)
         {
           // evaluate the given edge
