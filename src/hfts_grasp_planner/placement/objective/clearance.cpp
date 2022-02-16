@@ -50,7 +50,7 @@ struct Index {
 
     // Return tuple (valid, index) where index is the neighboring index of this one, given the relative
     // index rel_index. The boolean valid is true if this index is within bounds, else false.
-    std::tuple<bool, Index> getNeighbor(const RelativeIndex& rel_index, const size_t* bounds) const
+    std::tuple<bool, Index> getNeighbor(const RelativeIndex& rel_index, const ssize_t* bounds) const
     {
         int nx = x + rel_index.x;
         int ny = y + rel_index.y;
