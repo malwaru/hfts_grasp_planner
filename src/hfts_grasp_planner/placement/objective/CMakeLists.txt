@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 # project(reachability)
+#Had to add this as CMake could not find the pybind11Config.cmake file
+set(pybind11_DIR /home/ros_user/.local/lib/python2.7/site-packages/pybind11/share/cmake/pybind11)
 find_package(Boost REQUIRED)
 find_package(pybind11 REQUIRED)
 # find_package(PythonLibs REQUIRED)

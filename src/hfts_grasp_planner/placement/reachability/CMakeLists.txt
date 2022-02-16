@@ -1,4 +1,5 @@
-# project(reachability)
+# project(reachability)  
+set(pybind11_DIR /home/ros_user/.local/lib/python2.7/site-packages/pybind11/share/cmake/pybind11) 
 find_package(Eigen 3.2 REQUIRED)
 find_package(ompl REQUIRED)
 find_package(pybind11 REQUIRED)
